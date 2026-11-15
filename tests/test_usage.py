@@ -105,6 +105,13 @@ class UsageTest(unittest.TestCase):
         self.assertEqual([r["session"] for r in self.lines()],
                          ["cycle1-worker1-abc", "cycle1-worker2-def"])
 
+    def test_untrusted_logs(self):
+        s = self.session(log='{"type": "result", "duration_ms": NaN, "num_turns": 1e300}')
+        self.assertNotIn("duration_ms", usage.record(self.cfg, s))
+        fifo = self.session("cycle1-worker2-def")
+        os.mkfifo(os.path.join(fifo["working_directory"], "agent.log"))
+        self.assertIsNone(usage.record(self.cfg, fifo))  # returns at once, doesn't block
+
     def test_skips_runs_without_log_and_operators(self):
         self.assertIsNone(usage.record(self.cfg, self.session()))
         self.assertIsNone(usage.record(self.cfg, self.session("op-x", "operator", log="x")))

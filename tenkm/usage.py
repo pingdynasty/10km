@@ -6,7 +6,9 @@ zero, when it doesn't). The figures come from the harness's JSON result at the e
 of agent.log (Claude Code with `--output-format json`). A session is recorded once.
 """
 import json
+import math
 import os
+import stat
 import shlex
 from datetime import datetime, timezone
 
@@ -29,7 +31,9 @@ def harness_name(command):
 
 
 def is_number(value):
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+    """A finite JSON number of sane size (agent logs are untrusted)."""
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value) and abs(value) < 1e12)
 
 
 def parse_result(text):
@@ -66,12 +70,15 @@ def _figures(data):
 def read_log(path):
     """The tail of an agent log as text, or None if it can't be read."""
     try:
-        with open(path, "rb") as f:
-            f.seek(0, os.SEEK_END)
-            f.seek(max(0, f.tell() - TAIL_BYTES))
-            return f.read().decode("utf-8", "replace")
+        fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
     except OSError:
         return None
+    with os.fdopen(fd, "rb") as f:
+        size = os.fstat(fd)
+        if not stat.S_ISREG(size.st_mode):  # a fifo or device must not block or flood a pass
+            return None
+        f.seek(max(0, size.st_size - TAIL_BYTES))
+        return f.read(TAIL_BYTES).decode("utf-8", "replace")
 
 
 def recorded(cfg):
