@@ -84,20 +84,20 @@ def branch_repos(cfg, name):
     return [r for r in cfg.repos() if gitutil.branch_exists(cfg, r, name)]
 
 
-def is_merged(cfg, path, name):
+def is_merged(path, name):
     return gitutil.ok(path, "merge-base", "--is-ancestor", name, "HEAD")
 
 
-def mid_merge(cfg, path):
+def mid_merge(path):
     return gitutil.ok(path, "rev-parse", "-q", "--verify", "MERGE_HEAD")
 
 
-def dirty(cfg, path, untracked=False):
+def dirty(path, untracked=False):
     flag = "--untracked-files=normal" if untracked else "--untracked-files=no"
     return bool(gitutil.git(path, "status", "--porcelain", flag))
 
 
-def conflicts(cfg, path):
+def conflicts(path):
     out = gitutil.git(path, "diff", "--name-only", "--diff-filter=U", check=False)
     return [line for line in out.splitlines() if line]
 
@@ -218,7 +218,7 @@ def merge(cfg, words):
     if pending:
         if pending["item"] not in keys and pending["kind"] != "own":
             dropped = [_pending_item(pending)]
-        done = _finish_pending(cfg, c, state, pending, keys)
+        done = _finish_pending(c, state, pending, keys)
         if done is not None:
             return done
         state = c.load()
@@ -264,19 +264,19 @@ def _apply(cfg, c, state, item, words):
         return _cherry_pick(cfg, c, state, item, words)
     for repo in _repos_for(cfg, item):
         path = c.worktree(repo)
-        if is_merged(cfg, path, item.name):
+        if is_merged(path, item.name):
             continue
         before = gitutil.git(path, "rev-parse", "HEAD")
         rc, _, err = gitutil.run(cfg, path, *RERERE, "merge", "--no-ff", "--no-edit",
                                  "-m", f"Merge {item.name}", item.name)
         if rc == 0:
             continue
-        if not mid_merge(cfg, path):
+        if not mid_merge(path):
             raise CurateError(f"{repo}: merging {item.name} failed: {err}")
-        if not conflicts(cfg, path):  # rerere replayed every resolution
+        if not conflicts(path):  # rerere replayed every resolution
             gitutil.git(path, "commit", "--no-edit")
             continue
-        return _stop(cfg, c, state, item, repo, before, words)
+        return _stop(c, state, item, repo, before, words)
     return None
 
 
@@ -289,24 +289,24 @@ def _cherry_pick(cfg, c, state, item, words):
         if not own:
             _record_pick(c, state, gitutil.git(path, "rev-parse", "HEAD"))
         return None
-    if picking(cfg, path) and not conflicts(cfg, path):
+    if picking(path) and not conflicts(path):
         if "empty" in (out + err).lower() or not gitutil.git(path, "diff", "--cached", "--name-only"):
             gitutil.run(cfg, path, "cherry-pick", "--skip")  # already applied
             return None
-        _continue(cfg, path)
+        _continue(path)
         if not own:
             _record_pick(c, state, gitutil.git(path, "rev-parse", "HEAD"))
         return None
-    if not picking(cfg, path):
+    if not picking(path):
         raise CurateError(f"{item.repo}: cherry-picking {item.name[:12]} failed: {err}")
-    return _stop(cfg, c, state, item, item.repo, before, words)
+    return _stop(c, state, item, item.repo, before, words)
 
 
-def picking(cfg, path):
+def picking(path):
     return gitutil.ok(path, "rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD")
 
 
-def _continue(cfg, path):
+def _continue(path):
     env = dict(os.environ, GIT_EDITOR="true")
     subprocess.run(["git", "-C", path, *RERERE, "cherry-pick", "--continue"], env=env,
                    capture_output=True)
@@ -318,17 +318,17 @@ def _record_pick(c, state, sha):
     c.save(state)
 
 
-def _stop(cfg, c, state, item, repo, before, words):
+def _stop(c, state, item, repo, before, words):
     state = c.load()
     state["pending"] = {"item": item.key(), "kind": item.kind, "name": item.name,
                         "repo": repo, "before": before}
     c.save(state)
-    return _instructions(cfg, c, item, repo, words)
+    return _instructions(c, item, repo, words)
 
 
-def _instructions(cfg, c, item, repo, words):
+def _instructions(c, item, repo, words):
     path = c.worktree(repo)
-    files = conflicts(cfg, path)
+    files = conflicts(path)
     what = "merging" if item.kind == "session" else "cherry-picking"
     finish = "git -C {p} commit --no-edit" if item.kind == "session" \
         else "git -C {p} cherry-pick --continue"
@@ -345,10 +345,10 @@ def _instructions(cfg, c, item, repo, words):
     return {"item": item.label(), "repo": repo, "files": files, "instructions": text}
 
 
-def _finish_pending(cfg, c, state, pending, keys):
+def _finish_pending(c, state, pending, keys):
     """Continue after a conflict. Returns a report to stop with, or None to go on."""
     path = c.worktree(pending["repo"])
-    in_progress = mid_merge(cfg, path) or picking(cfg, path)
+    in_progress = mid_merge(path) or picking(path)
     item = _pending_item(pending)
     if pending["item"] not in keys and pending["kind"] != "own":
         if in_progress:  # the agent dropped the item: abandon its merge
@@ -362,17 +362,17 @@ def _finish_pending(cfg, c, state, pending, keys):
         c.save(state)
         return None
     if in_progress:
-        unresolved = [f for f in conflicts(cfg, path) if _has_markers(os.path.join(path, f))]
+        unresolved = [f for f in conflicts(path) if _has_markers(os.path.join(path, f))]
         if unresolved:
             words = [k.split(":", 2)[2] for k in keys]
             return {"applied": [], "no_branches": [],
-                    "conflict": _instructions(cfg, c, item, pending["repo"], words)}
-        for f in conflicts(cfg, path):
+                    "conflict": _instructions(c, item, pending["repo"], words)}
+        for f in conflicts(path):
             gitutil.git(path, "add", "--", f)
-        if mid_merge(cfg, path):
+        if mid_merge(path):
             gitutil.git(path, *RERERE, "commit", "--no-edit")
         else:
-            _continue(cfg, path)
+            _continue(path)
             if pending["kind"] == "commit":
                 _record_pick(c, state, gitutil.git(path, "rev-parse", "HEAD"))
     elif gitutil.git(path, "rev-parse", "HEAD") != pending["before"] and pending["kind"] == "commit":
@@ -414,7 +414,7 @@ def _rebuild(cfg, c, state, dropped=()):
     repos = c.repos()
     for repo in repos:
         path = c.worktree(repo)
-        if not mid_merge(cfg, path) and not picking(cfg, path) and dirty(cfg, path):
+        if not mid_merge(path) and not picking(path) and dirty(path):
             raise CurateError(f"your {repo} worktree has uncommitted changes, which a rebuild "
                               "would lose; commit or discard them, then rerun curate-merge")
     previous = list(dropped)
@@ -443,20 +443,20 @@ def publish(cfg, report="", accepted=(), rejected=()):
     warnings = []
     for repo in order:
         central_on_main(cfg, repo)
-        if mid_merge(cfg, cfg.repo_path(repo)) or dirty(cfg, cfg.repo_path(repo)):
+        if mid_merge(cfg.repo_path(repo)) or dirty(cfg.repo_path(repo)):
             raise CurateError(f"central/{repo} has uncommitted changes or a merge in progress")
         path = c.worktree(repo)
-        if mid_merge(cfg, path) or picking(cfg, path):
+        if mid_merge(path) or picking(path):
             raise CurateError(f"your {repo} worktree has an unfinished merge or cherry-pick; "
                               "finish it (rerun curate-merge) or abort it first")
-        if dirty(cfg, path):
+        if dirty(path):
             warnings.append(f"your {repo} worktree has uncommitted changes; they are not "
                             "published")
     closing = any(s["role"] == "planner" for s in selection)
     verdicts = _verdicts(cfg, selection, accepted, rejected) if closing else []
     for repo in order:
         central = cfg.repo_path(repo)
-        if is_merged(cfg, central, c.name):
+        if is_merged(central, c.name):
             continue  # already published
         if not gitutil.ok(central, "merge", "--ff-only", "-q", c.name):
             raise CurateError(f"{repo}: main has moved; rerun curate-merge, validate, "
@@ -505,7 +505,7 @@ def cleanup(cfg):
     selection = c.selection()
     warnings = []
     for repo in cfg.repos():
-        if dirty(cfg, cfg.repo_path(repo)):
+        if dirty(cfg.repo_path(repo)):
             warnings.append(f"central/{repo} has uncommitted changes")
     with msm.transaction(cfg.db) as m:
         protected = sessions.protected_branches(m)
