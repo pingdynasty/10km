@@ -8,6 +8,8 @@ S = "tests/test_scripts.py:"
 
 FIELDS = RM + "TestResults.test_records_have_the_fields_of_the_state_block"
 LIST_UPDATE_REMOVE = RM + "TestCycles.test_list_update_and_remove"
+REPLACED = ("tests/test_requirements_roles.py:TestReplacedCycleCount."
+            "test_a_replaced_cycle_does_not_count_as_an_idle_cycle")
 SESSION_CALLS = RM + "TestSessions.test_update_get_and_list_with_a_filter"
 
 MAP = {
@@ -53,8 +55,8 @@ MAP = {
     "R69": [M + "test_preconditions",
             RM + "TestCycles.test_create_needs_plan_phase_and_a_running_loop"],
     "R70": RM + "TestCycles.test_create_sets_id_status_planned_at_and_task_fields",
-    "R71": M + "test_expired_planner_cycle_is_replaced",
-    "R72": RM + "TestCycles.test_empty_cycles_counts_consecutive_empty_cycles",
+    "R71": [M + "test_expired_planner_cycle_is_replaced", REPLACED],
+    "R72": [RM + "TestCycles.test_empty_cycles_counts_consecutive_empty_cycles", REPLACED],
     "R73": M + "test_cycle_curate_sets_verdicts_and_closed_cycle_is_frozen",
     "R74": RM + "TestLoopRecord.test_start_clears_reason_and_goes_to_plan",
     "R75": [M + "test_stop_and_resume", RM + "TestLoopRecord.test_resume_outside_plan_keeps_the_phase"],
@@ -92,8 +94,11 @@ MAP = {
     "R102": [RM + "TestCycles.test_create_and_curate_inputs_are_checked",
              M + "test_cycle_curate_sets_verdicts_and_closed_cycle_is_frozen"],
     "R103": RM + "TestTransactions.test_a_failing_call_changes_nothing",
+    "R104": FIELDS,
     "R105": RM + "TestCycles.test_empty_cycles_counts_consecutive_empty_cycles",
     "R106": LIST_UPDATE_REMOVE,
+    "R107": ("prompts/common.md", "Only the operator decides when cycles, tasks, audits and "
+                                  "issues are archived or removed, and may delegate this"),
     "R108": LIST_UPDATE_REMOVE,
     # Phase transitions
     "R109": [M + "test_full_cycle", M + "test_empty_cycle_goes_to_curate"],
@@ -103,7 +108,4 @@ MAP = {
     "R113": [M + "test_stop_and_resume", RM + "TestLoopRecord.test_resume_outside_plan_keeps_the_phase"],
 }
 
-# R104 (sessions and status are a point in time) is descriptive; R107 (only the
-# operator decides on archiving or removal) is policy nothing enforces or states.
-# Both are raised in an issue.
-PENDING = {"R104", "R107"}
+PENDING = set()

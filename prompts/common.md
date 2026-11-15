@@ -16,6 +16,8 @@ own worktrees; never commit in `$LOOP_ROOT/central/`.
 - Read diffs file by file, never whole.
 - Background processes and scratch files end with your session.
 - Commits get a `Loop-Session:` trailer from the commit hook automatically; don't add one.
+- Only the operator decides when cycles, tasks, audits and issues are archived or
+  removed, and may delegate this to an agent. Don't remove them unless delegated.
 
 ## Issues
 
