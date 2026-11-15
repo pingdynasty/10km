@@ -21,6 +21,11 @@ VALIDATE = CS + "TestValidate.test_failing_work_is_left_out_and_revalidated"
 PUBLISH = CS + "TestPublish.test_fast_forwards_main_and_closes_the_cycle_with_verdicts"
 CLEANUP = CS + "TestCleanup.test_removes_selected_sessions_and_reports_unpublished_work"
 SELECT = CS + "TestSelect.test_contributions_first_then_the_cycle"
+SM = "tests/test_scenarios_more.py:"
+IDLE = SM + "TestIdleStop.test_idle_limit_of_empty_cycles_stops_the_loop"
+OFF_OPERATOR = SM + "TestOffPhaseCurator.test_done_operator_work_is_curated_mid_execute"
+OFF_AUDITOR = SM + "TestOffPhaseCurator.test_done_auditor_work_is_curated_outside_the_curate_phase"
+TWO_REPOS = SM + "TestTwoProjectRepos.test_worker_commits_in_both_repos_are_merged"
 
 MAP = {
     "R203": [STEPS, FULL_PASS, CS + "TestRefusals.test_steps_out_of_order_are_errors"],
@@ -42,7 +47,8 @@ MAP = {
     # Step 2: Select
     "R210": [STEPS, SELECT],
     "R211": SELECT,
-    "R212": [SELECT, RC + "TestSelectRoles.test_a_done_auditor_is_selected_before_the_cycle"],
+    "R212": [SELECT, RC + "TestSelectRoles.test_a_done_auditor_is_selected_before_the_cycle",
+             OFF_OPERATOR, OFF_AUDITOR],
     "R213": [SELECT, CS + "TestSelect.test_expired_workers_are_selected_too",
              RC + "TestSelectRoles.test_done_workers_are_not_selected_before_the_curate_phase"],
     "R214": [CS + "TestSelect.test_nothing_outside_the_curate_phase",
@@ -51,7 +57,7 @@ MAP = {
              CS + "TestPublish.test_publishes_own_commits_with_nothing_selected"],
     # Step 3: Merge
     "R216": [STEPS, CS + "TestMerge.test_merges_sessions_and_reports_json"],
-    "R217": CS + "TestMerge.test_merges_sessions_and_reports_json",
+    "R217": [CS + "TestMerge.test_merges_sessions_and_reports_json", TWO_REPOS],
     "R218": [CS + "TestMerge.test_merges_sessions_and_reports_json",
              CS + "TestMerge.test_unknown_and_ambiguous_items_are_errors",
              C + "TestDeclarativeMerge.test_partial_acceptance_by_commit"],
@@ -102,22 +108,25 @@ MAP = {
     "R245": (P, "update the plan and backlog"),
     "R246": (P, "resolve escalations you can"),
     "R247": [(P, "create a blocking operator escalation with reason `done` or `idle`"),
-             RC + "TestIdleLimit.test_the_idle_limit_and_empty_cycle_count_the_prompt_names_exist"],
+             RC + "TestIdleLimit.test_the_idle_limit_and_empty_cycle_count_the_prompt_names_exist",
+             IDLE],
     "R248": (P, "If there are blocking operator escalations, `notify"),
     # Step 9: Publish
     "R249": [STEPS, PUBLISH],
     "R250": [PUBLISH, CS + "TestPublish.test_rerun_after_a_crash_before_closing_the_cycle",
-             CS + "TestPublish.test_moved_main_is_an_error_until_merge_is_rerun"],
+             CS + "TestPublish.test_moved_main_is_an_error_until_merge_is_rerun",
+             OFF_OPERATOR, OFF_AUDITOR, TWO_REPOS],
     "R251": [PUBLISH, CS + "TestPublish.test_bad_verdicts_are_errors_and_publish_nothing"],
     "R252": [PUBLISH, CS + "TestPublish.test_bad_verdicts_are_errors_and_publish_nothing"],
     "R253": CS + "TestPublish.test_publishes_own_commits_with_nothing_selected",
     # Step 10: Cleanup
     "R254": [STEPS, CLEANUP],
-    "R255": [CLEANUP, CS + "TestCleanup.test_warns_about_a_dirty_central_repo"],
-    "R256": [CLEANUP, CS + "TestCleanup.test_rerun_after_a_crash_mid_cleanup_finishes"],
+    "R255": [CLEANUP, CS + "TestCleanup.test_warns_about_a_dirty_central_repo", TWO_REPOS],
+    "R256": [CLEANUP, CS + "TestCleanup.test_rerun_after_a_crash_mid_cleanup_finishes",
+             OFF_OPERATOR, OFF_AUDITOR, TWO_REPOS],
     # Step 11: Exit
     "R257": (P, "Exit: if there are blocking operator escalations"),
-    "R258": (P, "if there are blocking operator escalations, `msm loop stop blocked`"),
+    "R258": [(P, "if there are blocking operator escalations, `msm loop stop blocked`"), IDLE],
     "R259": [(P, "`msm session done $LOOP_SESSION`"), CLEANUP],
 }
 

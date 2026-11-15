@@ -11,6 +11,10 @@ LIST_UPDATE_REMOVE = RM + "TestCycles.test_list_update_and_remove"
 REPLACED = ("tests/test_requirements_roles.py:TestReplacedCycleCount."
             "test_a_replaced_cycle_does_not_count_as_an_idle_cycle")
 SESSION_CALLS = RM + "TestSessions.test_update_get_and_list_with_a_filter"
+SM = "tests/test_scenarios_more.py:"
+IDLE = SM + "TestIdleStop.test_idle_limit_of_empty_cycles_stops_the_loop"
+OFF_OPERATOR = SM + "TestOffPhaseCurator.test_done_operator_work_is_curated_mid_execute"
+OFF_AUDITOR = SM + "TestOffPhaseCurator.test_done_auditor_work_is_curated_outside_the_curate_phase"
 
 MAP = {
     "R36": RM + "TestTransactions.test_a_failing_call_changes_nothing",
@@ -56,11 +60,12 @@ MAP = {
             RM + "TestCycles.test_create_needs_plan_phase_and_a_running_loop"],
     "R70": RM + "TestCycles.test_create_sets_id_status_planned_at_and_task_fields",
     "R71": [M + "test_expired_planner_cycle_is_replaced", REPLACED],
-    "R72": [RM + "TestCycles.test_empty_cycles_counts_consecutive_empty_cycles", REPLACED],
+    "R72": [RM + "TestCycles.test_empty_cycles_counts_consecutive_empty_cycles", REPLACED, IDLE],
     "R73": M + "test_cycle_curate_sets_verdicts_and_closed_cycle_is_frozen",
     "R74": RM + "TestLoopRecord.test_start_clears_reason_and_goes_to_plan",
     "R75": [M + "test_stop_and_resume", RM + "TestLoopRecord.test_resume_outside_plan_keeps_the_phase"],
-    "R76": [M + "test_stop_and_resume", RM + "TestLoopRecord.test_stop_sets_stopped_and_reason"],
+    "R76": [M + "test_stop_and_resume", RM + "TestLoopRecord.test_stop_sets_stopped_and_reason",
+            IDLE],
     "R77": RM + "TestLoopRecord.test_status_changes_update_updated_at",
     "R78": RM + "TestSessions.test_expired_session_cannot_be_set_to_done",
     "R79": M + "test_cycle_curate_sets_verdicts_and_closed_cycle_is_frozen",
@@ -79,7 +84,8 @@ MAP = {
             "test_database_and_action_log_are_at_the_configured_paths"],
     # Role preconditions
     "R90": [M + "test_preconditions", M + "test_stop_and_resume"],
-    "R91": [M + "test_curator_runs_in_any_phase_for_contributions", M + "test_preconditions"],
+    "R91": [M + "test_curator_runs_in_any_phase_for_contributions", M + "test_preconditions",
+            OFF_OPERATOR, OFF_AUDITOR],
     "R92": M + "test_full_cycle",
     "R93": M + "test_audits_and_auditor_naming",
     "R94": RM + "TestSessions.test_operator_sessions_need_no_precondition",
@@ -101,9 +107,10 @@ MAP = {
                                   "issues are archived or removed, and may delegate this"),
     "R108": LIST_UPDATE_REMOVE,
     # Phase transitions
-    "R109": [M + "test_full_cycle", M + "test_empty_cycle_goes_to_curate"],
+    "R109": [M + "test_full_cycle", M + "test_empty_cycle_goes_to_curate", IDLE],
     "R110": M + "test_full_cycle",
-    "R111": [M + "test_full_cycle", M + "test_curator_runs_in_any_phase_for_contributions"],
+    "R111": [M + "test_full_cycle", M + "test_curator_runs_in_any_phase_for_contributions",
+             IDLE, OFF_OPERATOR],
     "R112": [M + "test_preconditions", RM + "TestLoopRecord.test_start_clears_reason_and_goes_to_plan"],
     "R113": [M + "test_stop_and_resume", RM + "TestLoopRecord.test_resume_outside_plan_keeps_the_phase"],
 }

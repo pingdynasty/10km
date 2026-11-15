@@ -11,15 +11,20 @@ TIME_OUT = D + "test_time_out_sends_sigterm_first_and_relaunches_the_role"
 STOP_RESUME = SC + "TestStopAndResume.test_stop_mid_cycle_then_resume_continues_the_same_cycle"
 DEAD_PLANNER = SC + "TestExpiry.test_dead_planner_is_relaunched_until_it_succeeds"
 CURATOR_CRASH = RD + "TestCuratorCrash.test_a_pass_cut_short_is_redone_by_the_next_curator"
+SM = "tests/test_scenarios_more.py:"
+IDLE = SM + "TestIdleStop.test_idle_limit_of_empty_cycles_stops_the_loop"
+OFF_OPERATOR = SM + "TestOffPhaseCurator.test_done_operator_work_is_curated_mid_execute"
+OFF_AUDITOR = SM + "TestOffPhaseCurator.test_done_auditor_work_is_curated_outside_the_curate_phase"
 
 MAP = {
     "R136": RD + "TestDispatchRules.test_run_loop_dispatches_every_interval",
     "R137": [D + "test_stopped_loop_launches_nothing", LAUNCHES],
     "R138": [TIME_OUT, STOP_RESUME],
     "R139": [D + "test_stopped_loop_launches_nothing",
-             L + "test_stopped_loop_starts_nothing_and_notifies_nothing"],
+             L + "test_stopped_loop_starts_nothing_and_notifies_nothing", IDLE],
     "R140": [D + "test_contributions_get_a_curator_in_any_phase",
-             RD + "TestDispatchRules.test_done_auditor_gets_a_curator_in_the_execute_phase"],
+             RD + "TestDispatchRules.test_done_auditor_gets_a_curator_in_the_execute_phase",
+             OFF_OPERATOR, OFF_AUDITOR],
     "R141": LAUNCHES,
     "R142": D + "test_workers_up_to_max_then_as_slots_free",
     "R143": RD + "TestDispatchRules.test_curate_phase_launches_a_curator_without_waiting",
@@ -29,7 +34,7 @@ MAP = {
              A + "test_missed_trigger_from_yesterday_is_due_after_midnight",
              A + "test_cycle_limit",
              "tests/test_requirements_loop.py:TestDispatchRoles."
-             "test_dispatcher_launches_an_auditor_when_due"],
+             "test_dispatcher_launches_an_auditor_when_due", OFF_AUDITOR],
     "R146": RD + "TestAuditorTriggers.test_either_trigger_can_be_disabled",
     "R147": A + "test_never_before_first_curated_cycle",
     "R148": [RD + "TestLaunching.test_taken_branch_name_is_tried_three_times", LAUNCHES],
@@ -66,7 +71,8 @@ MAP = {
              "test_every_step_twice_in_a_row_gives_the_same_result"],
     "R166": "tests/test_curate_scripts.py:TestPrepare."
             "test_removes_old_curators_and_closed_cycle_sessions",
-    "R167": RD + "TestDispatchRules.test_curate_phase_launches_a_curator_without_waiting",
+    "R167": [RD + "TestDispatchRules.test_curate_phase_launches_a_curator_without_waiting",
+             OFF_OPERATOR, OFF_AUDITOR],
     "R168": DEAD_PLANNER,
     # Resume
     "R169": [STOP_RESUME, "tests/test_msm.py:MsmTest.test_agents_cannot_restart_a_stopped_loop"],
