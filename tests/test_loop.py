@@ -29,7 +29,9 @@ class LoopCase(unittest.TestCase):
         self.root = os.path.join(self.tmp.name, "root")
         base = {"LOOP_ROOT": self.root, "MSM_DB": "", "LOOP_AGENT": "sleep 30",
                 "NOTIFY_CMD": "", "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
-                "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+                "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+                # Host git config (hooks, for one) stays out of the test loop.
+                "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
         self.patch = mock.patch.dict(os.environ, dict(base, **self.env))
         self.patch.start()
         os.environ.pop("MSM_DB")

@@ -38,7 +38,7 @@ class ScenarioCase(ScriptCase):
         "GATE_WAIT": "30",
         "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
     }
-    timeout = 30  # seconds per drive()
+    timeout = 60  # seconds per drive(): generous, for parallel runs (tests/run.py)
 
     # --- driving -----------------------------------------------------------
     def dispatch(self, **env):
@@ -125,7 +125,7 @@ class TestExpiry(ScenarioCase):
         """
         self.loop.start()
         self.drive(self.cycle_planned(2), FAKE_TASKS="a b", FAKE_WORKER2="hang",
-                   WORKER_TIMEOUT="3", MAX_WORKERS="2")
+                   WORKER_TIMEOUT="10", MAX_WORKERS="2")  # time to commit, under load
         tasks = self.tasks(1)
         self.assertEqual((tasks["a"]["status"], tasks["b"]["status"]), ("accepted", "expired"))
         self.assertRegex(tasks["b"]["session"], r"^cycle1-worker2-")

@@ -3,9 +3,10 @@ IMAGE ?= 10km
 
 .PHONY: test scenarios smoke smoke-host
 
-# Unit and script tests.
+# Unit and script tests, in parallel (JOBS=N to set the jobs; default: CPU count).
+JOBS ?=
 test:
-	python3 -m unittest discover tests
+	python3 tests/run.py $(if $(JOBS),-j $(JOBS))
 
 # End-to-end scenarios with the fake agent, on this host (part of `make test`).
 scenarios:

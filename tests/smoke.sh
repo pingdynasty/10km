@@ -14,8 +14,8 @@ mkdir "$tmp/loop" "$tmp/data"
 export LOOP_ROOT="$tmp/loop" MSM_DB="$tmp/data/loop.db"
 export LOOP_AGENT=fake-agent DISPATCH_INTERVAL=1 PATH="$here/bin:$here/tests:$PATH"
 
-# Ignore the host's system and global git config (a system core.hooksPath, for
-# one, would stop 10km init installing the loop's hooks).
+# Ignore the host's system and global git config, so the test does not depend
+# on host settings such as an inherited core.hooksPath and its hooks.
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
 export GIT_AUTHOR_NAME=smoke GIT_AUTHOR_EMAIL=smoke@localhost
 export GIT_COMMITTER_NAME=smoke GIT_COMMITTER_EMAIL=smoke@localhost
