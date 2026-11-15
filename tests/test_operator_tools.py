@@ -159,9 +159,10 @@ class TestLaunchTest(OperatorCase):
         self.assertExit(p, 1)
         self.assertIn("timed out after 2s", p.stdout)
 
-    def test_bad_role_is_refused(self):
-        self.assertExit(self.tenkm("launch-test", "operator"), 1)
-        self.assertExit(self.tenkm("launch-test", "worker", "planner"), 1)
+    def test_usage_errors_exit_2(self):
+        for args in (("operator",), ("worker", "planner"), ("--timeout",),
+                     ("--timeout", "soon")):
+            self.assertExit(self.tenkm("launch-test", *args), 2)
 
 
 class TestOperatorGate(OperatorCase):
