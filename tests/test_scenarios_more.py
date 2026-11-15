@@ -13,7 +13,7 @@ class TestIdleStop(ScenarioCase):
         """R72, R109, R111, R247, R258, R76, R139."""
         settings = dict(FAKE_TASKS="", IDLE_CYCLE_LIMIT="2")
         self.loop.start()
-        self.drive(lambda: self.loop.msm("loop", "get")["stopped"], **settings)
+        self.drive(lambda: self.loop_state()["stopped"], **settings)
         loop = self.loop.msm("loop", "get")
         self.assertEqual((loop["reason"], loop["empty_cycles"], loop["current_cycle"]),
                          ("idle", 2, 2))
@@ -37,8 +37,9 @@ class TestOffPhaseCurator(ScenarioCase):
         settings = dict(AUDIT_CYCLES_LIMIT="1", FAKE_CYCLE2_WORKER1="hang",
                         WORKER_TIMEOUT="3600")
         self.loop.start()
-        self.drive(lambda: "smoke learning" in (self.show("main", "LEARNINGS.md", "loop") or "")
-                   and not self.loop.sessions("auditor"), **settings)
+        self.drive(lambda: not self.sessions("auditor")
+                   and "smoke learning" in (self.show("main", "LEARNINGS.md", "loop") or ""),
+                   **settings)
         self.assertEqual(self.loop.msm("loop", "get")["last_audit"], 1)
         self.assertEqual(len(self.loop.msm("audit", "list")), 1)
         loop = self.loop.msm("loop", "get")
@@ -49,9 +50,8 @@ class TestOffPhaseCurator(ScenarioCase):
         operator = self.loop.session("operator", "mars")["name"]
         self.loop.commit(operator, "project", "op.txt", "op")
         self.loop.done(operator)
-        self.drive(lambda: self.on_main("op.txt")
-                   and operator not in [s["name"] for s in self.loop.sessions()],
-                   **settings)
+        self.drive(lambda: operator not in [s["name"] for s in self.sessions()]
+                   and self.on_main("op.txt"), **settings)
         self.assertEqual(self.show("main", "op.txt"), "op")
         loop = self.loop.msm("loop", "get")
         self.assertEqual((loop["phase"], loop["current_cycle"]), ("execute", 2))
@@ -59,7 +59,7 @@ class TestOffPhaseCurator(ScenarioCase):
         self.assertEqual(self.tasks(2)["hello"]["status"], "active")
         self.assertEqual(len(self.active("worker")), 1)
         curators = self.loop.sessions("curator")
-        self.assertEqual([c["status"] for c in curators], ["done"], self.describe())
+        self.assertEqual([c["status"] for c in curators], ["done"], self.state())
 
 
 class TestTwoProjectRepos(ScenarioCase):

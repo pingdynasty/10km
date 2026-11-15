@@ -5,19 +5,34 @@ A scenario sets the fake agent's behaviour per session with FAKE_* settings (see
 tests/fake-agent), drives Dispatcher passes until a condition holds, then checks
 the loop state, the repos and the issues. Scenarios wait on conditions, not on
 time: to time out a hanging Worker, drive until it has committed (`committed()`),
-then drive with a short WORKER_TIMEOUT.
+then drive with a short WORKER_TIMEOUT. Between passes, drive() waits on events
+(a database write, an agent exiting) and conditions read the state in-process, so
+a scenario starts few processes besides the loop's own.
 """
 import json
 import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
 from test_scripts import ScriptCase  # noqa: E402
+from tenkm import msm  # noqa: E402
+
+
+def alive(pid):
+    """True while process pid exists (agents are not our children: no zombies)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        pass
+    return True
 
 
 @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
@@ -34,19 +49,71 @@ class ScenarioCase(ScriptCase):
         "GATE_WAIT": "30",
     }
 
-    def drive(self, until, timeout=None, interval=0.3, **env):
+    def drive(self, until, timeout=None, interval=1.0, **env):
         """Run Dispatcher passes until `until()` is true; fail with the loop's state
         if it isn't within `timeout` seconds. A pass that did something (launched or
-        expired a session) is followed by the next at once, an idle one after
-        `interval` seconds, while agents work."""
+        expired a session) is followed by the next at once. After an idle one, the
+        next runs as soon as an agent changes the loop state or exits, else after
+        `interval` seconds, for what only time brings (time-outs, the start grace).
+        Idle passes would only take CPU from the agents."""
         deadline = time.time() + (timeout or testenv.DEADLINE)
         while time.time() < deadline:
             busy = self.dispatch(**env).strip()
+            mark = self.writes(), self.agents()
             if until():
                 return
             if not busy:
-                time.sleep(interval)
+                self.wait_for_change(mark, min(interval, max(0, deadline - time.time())))
         self.fail(f"scenario did not reach its condition:\n{self.describe()}")
+
+    def writes(self):
+        """A mark of the database files (mtime and size of the database and its
+        WAL): every committed change moves it, reads leave it alone."""
+        mark = []
+        for path in (self.loop.db, self.loop.db + "-wal"):
+            try:
+                st = os.stat(path)
+                mark.append((st.st_mtime_ns, st.st_size))
+            except OSError:
+                mark.append(None)
+        return tuple(mark)
+
+    def agents(self):
+        """The process ids of the sessions' agents that are running (process
+        launcher), done sessions' too: the Dispatcher records usage once one exits."""
+        pids = []
+        for s in self.sessions():
+            handle = (s.get("handle") or "").split(":")
+            if handle[0] == "process" and len(handle) > 1 and handle[1].isdigit():
+                pids.append(int(handle[1]))
+        return [p for p in pids if alive(p)]
+
+    def wait_for_change(self, mark, timeout, poll=0.02):
+        """Wait at most timeout seconds until the database is written or one of
+        the agents exits (mark: writes() and agents()). Polls file stats and the
+        processes: nothing is started while agents work."""
+        written, pids = mark
+        end = time.time() + timeout
+        while time.time() < end:
+            if self.writes() != written or not all(map(alive, pids)):
+                return
+            time.sleep(poll)
+
+    def state(self):
+        """describe(), only when shown: an assertion message that runs no msm
+        process unless the assertion fails."""
+        case = self
+
+        class State:
+            def __str__(self):
+                return case.describe()
+        return State()
+
+    def read(self, resource, filt=None):
+        """`msm <resource> list [filt]`, read in this process: conditions polled by
+        drive() would otherwise start an msm process per check."""
+        with msm.transaction(self.loop.db) as m:
+            return m.list(resource, json.dumps(filt) if filt else None)
 
     def describe(self):
         """The loop state and agent logs, for failure messages."""
@@ -63,7 +130,7 @@ class ScenarioCase(ScriptCase):
         return "\n".join(parts)
 
     def cycles(self):
-        return self.loop.msm("cycle", "list")
+        return self.read("cycle")
 
     def cycle_planned(self, n):
         return lambda: any(c["id"] == n for c in self.cycles())
@@ -73,19 +140,27 @@ class ScenarioCase(ScriptCase):
 
     def tasks(self, cycle=1):
         """The cycle's tasks by shortname."""
-        return {t["shortname"]: t for t in self.loop.msm("task", "list", json.dumps({"cycle": cycle}))}
+        return {t["shortname"]: t for t in self.read("task", {"cycle": cycle})}
 
     def committed(self, shortname, cycle=1):
         """True once the task's Worker has committed and recorded its branch."""
         task = self.tasks(cycle).get(shortname)
         return bool(task and task["session"] and task["branch"] == task["session"])
 
+    def sessions(self, role=None):
+        return [s for s in self.read("session") if role is None or s["role"] == role]
+
     def active(self, role=None):
-        return self.loop.active(role)
+        return [s for s in self.sessions(role) if s["status"] == "active"]
+
+    def loop_state(self):
+        """`msm loop get`, read in this process."""
+        with msm.transaction(self.loop.db) as m:
+            return m.loop_get()
 
     def backlog(self):
         """Open backlog issues by branch."""
-        return {i["branch"]: i for i in self.loop.msm("issue", "list", '{"type": "backlog"}')
+        return {i["branch"]: i for i in self.read("issue", {"type": "backlog"})
                 if i["status"] == "open"}
 
     def on_main(self, path, repo="project"):
@@ -102,11 +177,36 @@ class ScenarioCase(ScriptCase):
         branch = task["session"]
         self.assertEqual(task["branch"], branch)
         issue = self.backlog().get(branch)
-        self.assertIsNotNone(issue, f"no backlog item for {branch}: {self.describe()}")
+        if issue is None:
+            self.fail(f"no backlog item for {branch}: {self.describe()}")
         self.assertTrue(issue["title"].startswith(why), issue["title"])
         self.assertIn(branch, self.loop.branches("project"))
         self.assertIsNotNone(self.show(branch, f"{task['shortname']}.txt"))
         self.assertFalse(self.on_main(f"{task['shortname']}.txt"))
+
+
+class TestDriveWaits(ScenarioCase):
+    """drive() waits between idle passes on events, not on time."""
+
+    def test_wait_ends_on_a_state_change_an_agent_exit_or_the_timeout(self):  # test helper
+        written = self.writes()
+        self.loop.msm("loop", "get")  # reads don't count
+        self.cycles()
+        self.assertEqual(self.writes(), written)
+        timer = threading.Timer(0.2, self.loop.start)  # a state change, from elsewhere
+        timer.start()
+        self.addCleanup(timer.cancel)
+        self.wait_for_change((written, []), testenv.DEADLINE)
+        self.assertNotEqual(self.writes(), written)
+        self.assertEqual(self.loop_state()["phase"], "plan")
+        # An agent: a process that is not our child, so it leaves no zombie.
+        pid = int(subprocess.run(["sh", "-c", "sleep 0.2 >/dev/null & echo $!"],
+                                 capture_output=True, text=True, check=True).stdout)
+        self.wait_for_change((self.writes(), [pid]), testenv.DEADLINE)
+        self.assertFalse(alive(pid))
+        start = time.time()
+        self.wait_for_change((self.writes(), [os.getpid()]), 0.2)  # nothing happens
+        self.assertGreaterEqual(time.time() - start, 0.2)
 
 
 class TestExpiry(ScenarioCase):
@@ -133,7 +233,7 @@ class TestExpiry(ScenarioCase):
     def test_dead_planner_is_relaunched_until_it_succeeds(self):
         """R159, R161, R162, R168, R90, R141."""
         self.loop.start()
-        self.drive(lambda: any(s["status"] == "expired" for s in self.loop.sessions("planner")),
+        self.drive(lambda: any(s["status"] == "expired" for s in self.sessions("planner")),
                    FAKE_PLANNER="die", START_GRACE="1")
         self.assertEqual(self.loop.msm("loop", "get")["phase"], "plan")
         self.drive(self.cycle_planned(1), START_GRACE="1")
@@ -163,7 +263,7 @@ class TestRejection(ScenarioCase):
         self.assertEqual(self.show("main", "shared.txt"), accepted["session"])
         self.assertEqual(self.show(rejected["session"], "shared.txt"), rejected["session"])
         issue = self.backlog().get(rejected["session"])
-        self.assertIsNotNone(issue, self.describe())
+        self.assertIsNotNone(issue, self.state())
         self.assertTrue(issue["title"].startswith("Rejected"))
         self.assertIn(rejected["session"], self.loop.branches("project"))
 
