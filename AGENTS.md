@@ -7,7 +7,8 @@ Guidance for agents working on 10km, and on loops forked from it.
 10km is an agent loop: a Planner plans cycles of tasks, Workers carry them out,
 a Curator validates and merges, an Auditor improves the loop. `REQUIREMENTS.md` is
 the source of truth. If the code and the requirements disagree, raise it; don't
-change `REQUIREMENTS.md` without the operator.
+change `REQUIREMENTS.md` without the operator. Each requirement has a stable ID
+(`R1`, `R2`, ...): cite IDs in tests and reports, and never renumber them.
 
 ## Layout
 
