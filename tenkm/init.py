@@ -8,16 +8,10 @@ Hooks: init generates tenkm-hooks/ in each repo's git common dir. Each hook
 there runs the loop's hook of that name (hooks/), then the one git would run
 without the loop: in a core.hooksPath inherited from global or system config,
 else in the repo's own hooks dir. Rerun init when the inherited dir changes.
-Init sets no core.hooksPath in the central repos, so commits made there (for
-example on the host, when central/ is mounted from it) run the host's own hooks.
-It enables extensions.worktreeConfig instead, and each session worktree points
-its own core.hooksPath at the generated dir (`git config --worktree`, set by
-tenkm.sessions.create via session_hooks_path), so agent commits get the
-Loop-Session trailer and then run the chained hooks. A repo whose local
-core.hooksPath is set elsewhere keeps it, in every worktree; a local one that
-points at the generated dir (left by an older init) is removed, and the existing
-session worktrees get it per worktree instead. Needs git 2.26 (config
---show-scope; --worktree needs 2.20).
+Init sets no core.hooksPath in the central repos, so commits made there run the
+host's own hooks; it enables extensions.worktreeConfig, and each session worktree
+sets its own core.hooksPath to the generated dir (session_hooks_path). A repo
+with a local core.hooksPath keeps it, in every worktree. Needs git 2.26.
 
 Kickoff (`10km kickoff`) calls this; run it again after adding a repo to central/.
 The central worktrees are the source of truth for which repos the loop has: init
@@ -36,11 +30,9 @@ from .config import CODE_ROOT
 def create_loop_repo(dest, source=CODE_ROOT, branch="main"):
     """Create a loop repo at dest from a copy of the 10km code, with one commit.
 
-    If source is the top of a git work tree, only its tracked files are copied, as
-    they are in the working copy (uncommitted edits included, deleted files left
-    out), so a loop root or other untracked files in the checkout stay out. Else
-    (the container image's /opt/10km has no .git) the whole tree is copied, less
-    .git, caches, databases and editor files."""
+    From a git checkout, copy only the tracked files as they are in the working
+    copy; else (the container's /opt/10km) the whole tree, less .git, caches,
+    databases and editor files."""
     tracked = _tracked_files(source)
     if tracked is None:
         shutil.copytree(source, dest, symlinks=True,
@@ -57,23 +49,21 @@ def create_loop_repo(dest, source=CODE_ROOT, branch="main"):
 
 
 def _tracked_files(source):
-    """The paths git tracks in source, relative to it, if source is the top of a git
-    work tree; else None."""
+    """The paths git tracks in source if it is the top of a git work tree, else None."""
     def git(*args):
         return subprocess.run(["git", "-C", source, *args], capture_output=True)
     top = git("rev-parse", "--show-toplevel")
     if top.returncode or not _same_dir(os.fsdecode(top.stdout.strip()), source):
         return None
-    listed = git("ls-files", "-z", "--cached")
+    listed = git("ls-files", "-z")
     if listed.returncode:
         return None
     return [os.fsdecode(p) for p in listed.stdout.split(b"\0") if p]
 
 
 def _copy_files(source, dest, paths):
-    """Copy paths (relative to source) to dest as they are in source: symlinks as
-    symlinks, modes kept. Paths missing from source (deleted, not yet committed)
-    are skipped."""
+    """Copy paths (relative to source) to dest, keeping symlinks and modes and
+    skipping those deleted from the working copy."""
     os.makedirs(dest)
     for rel in paths:
         src, dst = os.path.join(source, rel), os.path.join(dest, rel)
@@ -147,32 +137,25 @@ def write_hooks(gen, hooks, inherited):
 
 
 def install_hooks(path, hooks):
-    """Generate the repo's hooks dir and enable per-worktree config, unless its
-    local core.hooksPath is set elsewhere. Remove a local core.hooksPath that points
-    at the generated dir, moving it to each existing linked worktree. Reads config
-    with --show-scope (git 2.26+)."""
+    """Generate the repo's hooks dir and enable per-worktree config, unless the repo
+    has a local core.hooksPath. Reads config with --show-scope (git 2.26+)."""
     rc, out, err = gitutil.run(path, "config", "--show-scope", "--type=path", "--get-all",
                                "core.hooksPath")
     if rc not in (0, 1):  # 1: not set
         raise msm.MSMError(msm.EINVAL, f"10km init needs git 2.26 or later: {err}")
     values = dict(line.split("\t", 1) for line in out.splitlines() if "\t" in line)
-    common = gitutil.git(path, "rev-parse", "--git-common-dir")
-    gen = generated_dir(path)
-    local = values.get("local", "")
-    if local and not _same_dir(local, gen):
+    if values.get("local"):
         return
+    gen = generated_dir(path)
     # Chain what git would run without us: the global or system hooksPath (relative
     # to the worktree, as git resolves it), else the repo's own hooks dir.
-    inherited = values.get("global") or values.get("system") or os.path.join(common, "hooks")
+    inherited = (values.get("global") or values.get("system")
+                 or os.path.join(os.path.dirname(gen), "hooks"))
     inherited = os.path.join(path, inherited)
     if _same_dir(inherited, gen):
         inherited = ""
     write_hooks(gen, hooks, inherited)
     gitutil.git(path, "config", "--local", "extensions.worktreeConfig", "true")
-    if local:  # an older init's setting, which applies to every worktree
-        for worktree in _linked_worktrees(path):
-            gitutil.git(worktree, "config", "--worktree", "core.hooksPath", gen)
-        gitutil.git(path, "config", "--local", "--unset-all", "core.hooksPath")
 
 
 def generated_dir(path):
@@ -182,26 +165,15 @@ def generated_dir(path):
 
 
 def session_hooks_path(path):
-    """The core.hooksPath a new worktree of the central repo at path should set with
-    `git config --worktree`: its generated hooks dir, once init has made it and
-    enabled extensions.worktreeConfig. None if init hasn't, or if the repo's local
-    core.hooksPath is the user's own (it applies to every worktree)."""
-    gen = generated_dir(path)
-    local = gitutil.git(path, "config", "--local", "--type=path", "--get", "core.hooksPath",
-                        check=False)
-    if local and not _same_dir(local, gen):
+    """The core.hooksPath for `git config --worktree` in a new session worktree of
+    the central repo at path: its generated hooks dir, or None if init hasn't set
+    the repo up for it or the repo has a local core.hooksPath."""
+    if gitutil.ok(path, "config", "--local", "--get", "core.hooksPath"):
         return None
     enabled = gitutil.git(path, "config", "--local", "--type=bool", "--get",
                           "extensions.worktreeConfig", check=False)
+    gen = generated_dir(path)
     return gen if enabled == "true" and os.path.isdir(gen) else None
-
-
-def _linked_worktrees(path):
-    """The existing linked worktrees of the repo at path (not the main one)."""
-    out = gitutil.git(path, "worktree", "list", "--porcelain")
-    paths = [line[len("worktree "):] for line in out.splitlines()
-             if line.startswith("worktree ")]
-    return [p for p in paths[1:] if os.path.isdir(p)]
 
 
 def _same_dir(a, b):
