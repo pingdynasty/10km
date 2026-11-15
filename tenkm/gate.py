@@ -16,6 +16,15 @@ session's scratch directory.
 A pass is only cached for committed work: with uncommitted changes the gate runs
 but its result isn't reused.
 
+    10km gate worker|validation
+
+The operator's run, outside any session (LOOP_SESSION is ignored): the gates run
+in the central worktrees, as they are, and `10km gate` waits until they finish
+(interrupting it leaves the run going; rerun to wait for it). Its logs, pass
+cache and SCRATCH_DIR are in <state dir>/evidence/operator/, apart from the
+sessions' evidence, so an operator run never stands in for a session's gate and
+is recorded against no session.
+
 Exit status: 0 all passed, 1 a gate failed, 2 refused, 3 still running (rerun to wait).
 """
 import hashlib
@@ -30,6 +39,7 @@ from .launchers import process
 from .locks import lock
 
 EXIT_FAILED, EXIT_RUNNING = 1, 3
+OPERATOR = "operator"  # the name and evidence subdir of `10km gate` runs
 
 
 def gates(cfg, tier):
@@ -46,8 +56,9 @@ def gates(cfg, tier):
     return out
 
 
-def _evidence(cfg):
-    path = os.path.join(cfg.state_dir, "evidence")
+def _evidence(cfg, *sub):
+    """The evidence dir, <state dir>/evidence, or a dir in it."""
+    path = os.path.join(cfg.state_dir, "evidence", *sub)
     os.makedirs(path, exist_ok=True)
     return path
 
@@ -80,15 +91,18 @@ def _new_log(evidence, name):
             n += 1
 
 
-def run_gate(cfg, session, repo, command, wait):
-    """Run one gate. Returns (status, log): status 'passed', 'skipped', 'failed', 'running'."""
+def run_gate(cfg, session, repo, command, wait, evidence=None, scratch=None):
+    """Run one gate in <session working_directory>/<repo>. Returns (status, log):
+    status 'passed', 'skipped', 'failed', 'running'. evidence (default: the
+    sessions' evidence dir) holds the logs and the pass cache; scratch (default:
+    the session's scratch dir) is the gate's SCRATCH_DIR."""
     cwd = os.path.join(session["working_directory"], repo)
     cacheable = not gitutil.git(cwd, "status", "--porcelain")
     tree = gitutil.git(cwd, "rev-parse", "HEAD^{tree}")
     key = f"{hashlib.sha1(command.encode()).hexdigest()[:12]}-{tree[:12]}"
     if not cacheable:
         key += f"-dirty-{session['name']}"
-    evidence = _evidence(cfg)
+    evidence = evidence or _evidence(cfg)
     passed_path = os.path.join(evidence, "passed.json")
     running_path = os.path.join(evidence, f"running-{key}.json")
     with lock(cfg, "gate"):
@@ -99,7 +113,7 @@ def run_gate(cfg, session, repo, command, wait):
         if run is None or os.path.exists(run["rc"]) and _rc(run) != 0:
             log = _new_log(evidence, f"{session['name']}-{repo}-{key}")
             rc_path = log[:-4] + ".rc"
-            scratch = os.path.join(session["working_directory"], "scratch")
+            scratch = scratch or os.path.join(session["working_directory"], "scratch")
             os.makedirs(scratch, exist_ok=True)
             # The command runs in a subshell, so its own exit or set -e can't skip
             # recording its status.
@@ -168,11 +182,31 @@ def main(argv):
     if session is None or session["status"] != "active":
         print(f"LOOP_SESSION {name or '(unset)'} is not an active session; stop.", file=sys.stderr)
         return 2
-    session = dict(session)
-    wait = cfg.int("GATE_WAIT", 540)
+    return run_tier(cfg, argv[0], dict(session), cfg.int("GATE_WAIT", 540))
+
+
+def operator_main(argv):
+    """`10km gate <tier>`: the operator's run, outside any session (see the module doc)."""
+    if len(argv) != 1 or argv[0] not in ("worker", "validation"):
+        print("usage: 10km gate worker|validation", file=sys.stderr)
+        return 2
+    cfg = config.load()
+    evidence = _evidence(cfg, OPERATOR)
+    place = {"name": OPERATOR, "working_directory": cfg.central}
+    try:
+        return run_tier(cfg, argv[0], place, float("inf"), evidence,
+                        os.path.join(evidence, "scratch"))
+    except KeyboardInterrupt:
+        print("\ninterrupted; the gate keeps running: rerun to wait for it", file=sys.stderr)
+        return EXIT_RUNNING
+
+
+def run_tier(cfg, tier, session, wait, evidence=None, scratch=None):
+    """Run a tier's gates in order, stopping at the first that fails or is still
+    running; print the results as JSON. Returns the exit status."""
     results, status = [], 0
-    for repo, command in gates(cfg, argv[0]):
-        state, log = run_gate(cfg, session, repo, command, wait)
+    for repo, command in gates(cfg, tier):
+        state, log = run_gate(cfg, session, repo, command, wait, evidence, scratch)
         results.append({"repo": repo, "command": command, "result": state, "log": log})
         if state == "running":
             status = EXIT_RUNNING
