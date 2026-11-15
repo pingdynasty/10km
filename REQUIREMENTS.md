@@ -330,49 +330,58 @@ It selects and returns the sessions to curate:
 - if they exist: inactive operator and Auditor sessions
 - else if phase = curate: the current, open cycle's inactive Planner and Worker sessions
 - else: nothing
-If the selection is empty, the Curator skips to Step 7: Assess.
+If the selection is empty, the Curator skips to Step 8: Assess.
 Note: Selection makes sure that operator and Auditor work is curated as soon as it is done, whatever the phase. The cycle is then curated with fresh context, in its own pass, against updated goals and prompts.
 
-Step 3: Triage (script `curate-merge`)
-The script merges done sessions into the Curator session, reporting conflicts.
-The agent resolves reported conflicts, then triages expired sessions:
-- complete work is merged by rerunning `curate-merge` with the session; it is kept if the merge is clean
+Step 3: Merge (script `curate-merge`)
+`curate-merge <item>...` updates the Curator branch in every repo to main plus the given items. An item is a session name or a commit. The Curator's own commits are kept.
+The agent always passes the full list. Leaving an item out removes it; the branch is rebuilt and resolutions already made are replayed.
+In case of conflicts the script stops with that repo mid-merge, and prints the conflict details and suggested resolution steps.
+When rerun, it continues where it stopped: it completes a merge in progress once no conflict markers remain, and keeps a merge the agent completed itself.
+
+Step 4: Triage
+The agent merges the done sessions, then triages expired sessions:
+- complete work is added to the list; the agent may leave it out if its conflicts aren't worth resolving
 - incomplete work is either backlogged or discarded
 
-Step 4: Read
+Step 5: Read
 It reads the plan, goals, open escalations, the current cycle, and audits since the cycle was planned.
 
-Step 5: Evaluate
-For each done or accepted expired Worker session:
+Step 6: Evaluate
+For each done or included expired Worker session:
 - read the associated task
 - review commits and diffs against goals and task instructions
 - accept or reject the task, in whole or in part
+It re-runs `curate-merge` with only the accepted sessions and commits.
 
-Step 6: Validate
-It runs the validation gates listed in config.env, and may make small fixes to failing work.
-If any gate fails, it rejects the responsible work.
-For all work rejected in Step 5 or 6, it calls `curate-rebuild --without <sessions>` and re-validates. Partially accepted work is cherry-picked before re-validation.
+Step 7: Validate
+It runs the validation gates listed in config.env.
+If any gate fails:
+- identify the responsible work
+- it may make and commit small fixes
+- call `curate-merge` with only accepted work
+- re-validate
 If operator work is rejected then the failure shall be escalated to the operator.
 If other work is rejected then it shall be either backlogged or discarded.
 
-Step 7: Assess
+Step 8: Assess
 It evaluates milestones, goals and deliverables
 It may update the plan and backlog.
 It may resolve escalations.
 If the project is done, or `Loop.empty_cycles` has reached the idle limit from config.env, create a blocking operator escalation with reason `done` or `idle`.
 If there are blocking operator escalations, notify the operator.
 
-Step 8: Publish (script `curate-publish`)
+Step 9: Publish (script `curate-publish`)
 The script fast-forwards main onto the Curator branch in each project repo, then in the loop repo.
 If the selection includes a Planner session:
 - run `cycle curate` with the report and the task verdicts.
 The agent passes any task verdicts and the cycle report as arguments. It publishes even if nothing was selected, so that its own plan and backlog updates reach main.
 
-Step 9: Cleanup (script `curate-cleanup`)
+Step 10: Cleanup (script `curate-cleanup`)
 It updates central worktrees.
 It removes the selected sessions with their worktrees and branches.
 
-Step 10: Exit
+Step 11: Exit
 If there are blocking operator escalations, it calls `loop stop blocked`.
 It sets the Curator session to done (phase = plan if the cycle is not open).
 
