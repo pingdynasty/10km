@@ -22,6 +22,10 @@ def log(message):
     print(message, flush=True)
 
 
+class DatabaseUnreadable(Exception):
+    """The database can't be read, or holds no loop record."""
+
+
 class Pass:
     def __init__(self, cfg, now=None):
         self.cfg = cfg
@@ -192,7 +196,16 @@ class Pass:
         return trigger.astimezone(timezone.utc)
 
     # --- the pass ----------------------------------------------------------
+    def check_database(self):
+        """Raise DatabaseUnreadable unless the database opens and has a loop record."""
+        try:
+            with msm.transaction(self.cfg.db) as m:
+                m.loop_get()
+        except (sqlite3.DatabaseError, msm.MSMError) as e:
+            raise DatabaseUnreadable(str(e)) from e
+
     def run(self):
+        self.check_database()
         self.expire_sessions()
         self.record_usage()
         with msm.transaction(self.cfg.db) as m:
@@ -241,9 +254,8 @@ def run_pass(cfg=None, now=None):
         try:
             p.run()
             notify.forget(cfg, "db-unreadable")
-        except (sqlite3.DatabaseError, msm.MSMError) as e:
-            if isinstance(e, msm.MSMError) and e.code in (1, 2, 3):
-                raise
+        except (sqlite3.DatabaseError, DatabaseUnreadable) as e:
+            # Other MSMErrors are refusals or bugs, not a database problem: raise them.
             p.notice("Loop database unreadable", f"{cfg.db}: {e}. The Dispatcher starts "
                      "nothing until it can read the database.", "critical", key="db-unreadable")
     p.flush()

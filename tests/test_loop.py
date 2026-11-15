@@ -312,6 +312,31 @@ class TestDispatch(LoopCase):
         with open(os.path.join(self.cfg.central, "loop", "NOTIFICATIONS.md")) as f:
             self.assertIn("database unreadable", f.read())
 
+    def assert_unreadable_notice(self):
+        self.assertEqual(dispatch.run_pass(self.cfg), 0)
+        self.assertEqual(self.sessions_on_disk(), [])
+        with open(os.path.join(self.cfg.central, "loop", "NOTIFICATIONS.md")) as f:
+            self.assertIn("database unreadable", f.read())
+
+    def sessions_on_disk(self):
+        return [n for n in os.listdir(self.root) if n.startswith("cycle")]
+
+    def test_empty_database_notifies_and_starts_nothing(self):  # R300
+        self.start_loop()
+        for suffix in ("", "-wal", "-shm"):
+            if os.path.exists(self.cfg.db + suffix):
+                os.remove(self.cfg.db + suffix)
+        open(self.cfg.db, "w").close()
+        self.assert_unreadable_notice()
+
+    def test_uninitialised_database_notifies_and_starts_nothing(self):  # R300
+        self.start_loop()
+        with self.m() as m:
+            m.db.execute("DELETE FROM loop")
+        self.assert_unreadable_notice()
+        with self.m() as m:
+            self.assertEqual([s["role"] for s in m.list("session")], ["operator"])
+
 
 class TestAuditorDue(LoopCase):
     def due(self, now, **overrides):
