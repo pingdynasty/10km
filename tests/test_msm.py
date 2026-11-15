@@ -13,6 +13,7 @@ class MsmTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.env = dict(os.environ, MSM_DB=os.path.join(self.tmp.name, "loop.db"),
                         LOOP_ROOT=self.tmp.name)
+        self.env.pop("LOOP_SESSION", None)  # gates run the tests inside a session
         self.ok("init")
 
     def tearDown(self):

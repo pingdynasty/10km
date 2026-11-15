@@ -32,6 +32,7 @@ class LoopCase(unittest.TestCase):
         self.patch = mock.patch.dict(os.environ, dict(base, **self.env))
         self.patch.start()
         os.environ.pop("MSM_DB")
+        os.environ.pop("LOOP_SESSION", None)  # gates run the tests inside a session
         self.cfg = config.load()
         init.run(self.cfg)
 
