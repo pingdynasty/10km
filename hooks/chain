@@ -1,0 +1,9 @@
+#!/bin/sh
+# Run the hook of this name from the hooks dir the repo would have used without
+# the loop's (tenkm.chainHooksPath, set by 10km init from system or global
+# config), with the same arguments and stdin. The standard hook names link here;
+# hooks with their own work source this file last.
+dir=$(git config --get tenkm.chainHooksPath) || exit 0
+hook="$dir/${0##*/}"
+[ -n "$dir" ] && [ -f "$hook" ] && [ -x "$hook" ] || exit 0
+exec "$hook" "$@"
