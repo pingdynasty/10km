@@ -54,13 +54,16 @@ class ScenarioCase(ScriptCase):
 
     def drive(self, until, timeout=None, interval=0.3, **env):
         """Run Dispatcher passes until `until()` is true; fail with the loop's state
-        if it isn't within `timeout` seconds."""
+        if it isn't within `timeout` seconds. A pass that did something (launched or
+        expired a session) is followed by the next at once, an idle one after
+        `interval` seconds, while agents work."""
         deadline = time.time() + (timeout or self.timeout)
         while time.time() < deadline:
-            self.dispatch(**env)
+            busy = self.dispatch(**env).strip()
             if until():
                 return
-            time.sleep(interval)
+            if not busy:
+                time.sleep(interval)
         self.fail(f"scenario did not reach its condition:\n{self.describe()}")
 
     def describe(self):
