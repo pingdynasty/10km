@@ -21,13 +21,12 @@ the loop repo (`central/loop`). Commit straight to each repo's main branch.
    - `user.name` and `user.email`: the identity for the loop's commits;
    - remotes, if the loop pushes or the operator pulls.
    Then run `10km init`: it records any missing branch settings and generates the
-   loop's git hooks for every repo, which session worktrees use; the central
-   worktrees keep their own hooks. Do the same for `central/loop` if the operator
-   wants a different identity there.
+   loop's git hooks, which session worktrees use. Do the same for `central/loop`
+   if the operator wants a different identity there.
 3. **Gates.** `WORKER_GATES` (Workers, before done) and `VALIDATION_GATES` (the
    Curator) in `config.env` take one command per line, or `repo: command` to run in
-   another repo (default: the first project repo). Agree on them, then run every
-   command in its repo to check it exists and runs. If a gate script is missing,
+   another repo (default: the first project repo). Agree on them, then check they
+   run: `10km gate worker` and `10km gate validation`. If a gate script is missing,
    offer a skeleton: a minimal shell script that prints what it should check and
    exits non-zero until filled in. Commit it in its repo.
 4. **Notification.** `NOTIFY_CMD`: commands run with `TENKM_PRIORITY`,
@@ -37,9 +36,10 @@ the loop repo (`central/loop`). Commit straight to each repo's main branch.
    fatal errors unless the operator wants more; record that in the prompts.
 5. **Agent commands.** `LOOP_AGENT` launches every role; `PLANNER_AGENT`,
    `WORKER_AGENT`, `CURATOR_AGENT` and `AUDITOR_AGENT` override it (e.g. a model
-   per role). `OPERATOR_AGENT` runs kickoff and operator sessions. Check each
-   command exists. Review the other `config.env` settings (time-outs,
-   `MAX_WORKERS`, audit schedule) with the operator.
+   per role). `OPERATOR_AGENT` runs kickoff and operator sessions. Check that a
+   role's command starts an agent with `10km launch-test <role>` (a short real
+   run). Review the other `config.env` settings (time-outs, `MAX_WORKERS`, audit
+   schedule) with the operator.
 6. **Agent files.** Agree what files agents may produce (research notes, reports,
    logs) and where (repo, directory, committed or scratch). Record it in
    `prompts/common.md`.
@@ -47,4 +47,5 @@ the loop repo (`central/loop`). Commit straight to each repo's main branch.
    test commands, conventions, workflow (for example, whether the Curator publishes
    by opening pull requests), and what each role must check. Keep them short.
 8. **Finish.** Commit in every central worktree you changed, and leave them clean
-   and on their main branch. Then `msm loop start`: the first Planner runs.
+   and on their main branch. Run `10km doctor` and fix what fails. Then
+   `msm loop start`: the first Planner runs.
