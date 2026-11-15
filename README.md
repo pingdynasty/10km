@@ -83,7 +83,7 @@ Settings are in `config.env` in the central loop worktree, sourced as shell. Rep
 | `PLANNER_AGENT`, `WORKER_AGENT`, `CURATOR_AGENT`, `AUDITOR_AGENT` | Per-role overrides of `LOOP_AGENT`, e.g. to choose a model. |
 | `OPERATOR_AGENT` | The operator's agent, for kickoff and operator sessions; run with `FIRST_MESSAGE` and, for one-shot instructions, `ONE_SHOT=1`. It doesn't fall back to `LOOP_AGENT`. |
 
-Also in `config.env`: `SESSION_TIMEOUT` (and per-role `PLANNER_TIMEOUT` etc.), `MAX_WORKERS`, `BACKLOG_SIZE`, `AUDIT_TIME`, `AUDIT_TIMEZONE`, `AUDIT_CYCLES_LIMIT`, `IDLE_CYCLE_LIMIT`, `DISPATCH_INTERVAL`, `GATE_WAIT` (how long `gate` waits before exiting 3; keep it under the agent's tool-call limit), `LAUNCHER`, `MSM_DB`, `MSM_LOG` and `USAGE_LOG`. Each is described in the file.
+Also in `config.env`: `SESSION_TIMEOUT` (and per-role `PLANNER_TIMEOUT` etc.), `MAX_WORKERS`, `BACKLOG_SIZE`, `AUDIT_TIME`, `AUDIT_TIMEZONE`, `AUDIT_CYCLES_LIMIT`, `IDLE_CYCLE_LIMIT`, `DISPATCH_INTERVAL`, `KILL_GRACE`, `START_GRACE`, `GATE_WAIT` (how long `gate` waits before exiting 3; keep it under the agent's tool-call limit), `LAUNCHER`, `PROJECT_NAME`, `MSM_DB`, `MSM_LOG` and `USAGE_LOG`. Each is described in the file.
 
 ## Interacting with a loop
 
@@ -102,15 +102,16 @@ For example:
 Loop: running, phase curate, cycle 1
 
 Cycle 1 (open, planned 19:35, 12m ago):
-  PH1: DEL2 (resume after idle stop resets empty_cycles) and DEL3 (small bugs)
+  PH1: DEL2 (resume resets the idle count) and DEL3 (small bugs)
   done  msm-fixes       cycle1-worker1-uru425rs
   done  dispatch-fixes  cycle1-worker2-bhuva5n5
 
 Active sessions: 1
   cycle1-curator-y7hgc9yb  since 19:47  25s  pid 20940
-Waiting to be curated or removed: 2
+Waiting to be curated or removed: 3
   cycle1-planner-48y3tkot  done 19:37  10m ago
   cycle1-worker1-uru425rs  done 19:44  3m ago
+  cycle1-worker2-bhuva5n5  done 19:46  1m ago
 
 Open escalations: 0
 Open backlog items: 0
@@ -118,11 +119,11 @@ Answered issues: 0
 Audits: 0
 
 Repository  Branch  Commit   When     Message
-loop        main    47b55b0  0s ago   Kickoff: goals, plan and settings for improving 10km
+loop        main    47b55b0  0s ago   Kickoff: goals, plan and settings
 10km        main    e6075ca  54m ago  Metrics: skip trailer values with control characters
 ```
 
-Clock times are local (`TZ`, else the system zone), with the zone in the first line: `19:47` today, `Nov 14 23:05` on another day, `Nov 14 2025 23:05` in another year. Elapsed times read `45s`, `3m`, `1h12m`, `2d4h`. The Loop line counts empty cycles in a row only when there are any. Each repository row shows its main branch and latest commit.
+Times are local (`TZ`, else the system zone), with the zone in the first line.
 
 Agents raise escalations as issues for the Planner, Curator, Auditor or you. The loop notifies you only of blocking escalations and fatal errors, through `NOTIFY_CMD`. Test it with `10km notify <title> [body]`.
 
@@ -194,7 +195,7 @@ git add <files> && git commit -m "<what and why>"
 10km session done <session>                    # hand the work to the Curator
 ```
 
-Commit everything before `session done`: the Curator merges commits only, and uncommitted changes are lost when the session is removed. Commits get a `Loop-Session:` trailer from the session branch: each session worktree sets `core.hooksPath` (per worktree) to the hooks `10km init` generates, which add the trailer and then run the hooks git would otherwise run. The central worktrees set no `core.hooksPath`, so commits made there run only your own hooks.
+Commit everything before `session done`: the Curator merges commits only, and uncommitted changes are lost when the session is removed. Commits get a `Loop-Session:` trailer from the session branch, added by the hooks `10km init` generates; each session worktree uses them, and they then run your own hooks. Commits made in `central/` run only your own hooks.
 
 **Which to use.**
 
@@ -207,49 +208,29 @@ Commit everything before `session done`: the Curator merges commits only, and un
 | Have your agent change files, with you | an interactive session |
 | Have your agent change files from written instructions | a one-shot session |
 
-## Checking a loop
+### Checking a loop
 
-Three commands help you find out whether a loop can run, before kickoff, after a
-configuration change, or when agents fail to start. Run them from your own shell
-(`LOOP_ROOT` and `PATH` set, `LOOP_SESSION` unset); none of them creates a session.
+After kickoff, a configuration change, or when agents fail to start. None of these
+creates a session or writes to the database.
 
 ```sh
-10km doctor                    # one line per check, ok or FAIL and why
-10km launch-test [role]        # a trivial agent through the launcher (default: worker)
-10km gate worker|validation    # a tier's gates in the central worktrees
+10km doctor                    # tools, repos, database, config, agents, gates: ok or FAIL
+10km launch-test [role]        # launch a role's agent with a trivial prompt (default: worker)
+10km gate worker|validation    # run a tier's gates in the central worktrees
 ```
 
-`10km doctor` checks the tools (Bash, git, Python 3.9+), the git version (2.26+),
-the loop root and `config.env`, each central repo (its worktree, `tenkm.mainBranch`,
-`extensions.worktreeConfig` and the hooks dir `10km init` generates), the database,
-the launcher, every role's agent command and every gate. Commands are only looked
-up on the agents' `PATH`, never run, and the database is opened read-only: doctor
-changes nothing. It exits 1 if any check fails; most failures say what to run
-(often `10km init`).
-
-`10km launch-test [planner|worker|curator|auditor] [--timeout SECONDS]` launches
-that role's agent command through `LAUNCHER`, as the Dispatcher would, with a
-one-line prompt ("reply OK"), in a new temporary directory and with no session or
-cycle in msm. The agent gets the Dispatcher's environment plus `LAUNCH_TEST=1`,
-without `LOOP_SESSION`, and with `LOOP_ROOT` and `MSM_DB` pointing into the
-temporary directory, so it can't change the live loop. It follows the agent to the
-end (stopping it after the time-out, default 600 seconds) and prints its exit code,
-how long it ran and its log; the temporary directory is kept. This launches a real
-agent, so it costs what one short agent run costs.
-
-`10km gate worker|validation` runs a tier's gates as `gate` does, but outside any
-session: in the central worktrees as they are, waiting until they finish
-(interrupt it and the run carries on; rerun to wait for it). Its logs, pass cache
-and `SCRATCH_DIR` are in `<root>/.10km/evidence/operator/`, apart from the
-sessions' evidence, so an operator run is recorded against no session and never
-counts as a session's gate. `gate` itself still refuses without an active
-`LOOP_SESSION`.
+`doctor` only looks commands up, running no agent or gate; it exits 1 if a check fails.
+`launch-test` starts a real agent through `LAUNCHER`, as the Dispatcher would, in a
+temporary directory (kept) with its own `LOOP_ROOT` and `MSM_DB`, and prints the
+exit code, time and log (`--timeout SECONDS`, default 600). `10km gate` waits until
+the gates finish and keeps its logs in `<root>/.10km/evidence/operator/`; such a
+run never counts as a session's gate.
 
 ## Metrics and logs
 
-`10km metrics [--cycle N] [--json]` lists every session the loop still knows of, by cycle and role: its task and outcome, start and duration, commits on main (by `Loop-Session:` trailer) and harness usage (agent time, turns, tokens, cost); then totals per cycle and role. Sessions are removed once curated, so times come from what survives: the session row, the Worker's task, the session's lines in the action log, and usage records. `--json` gives the same data for agents.
+`10km metrics [--cycle N] [--json]` lists every session the loop still knows of, by cycle and role: its task and outcome, start and duration, commits on main (by `Loop-Session:` trailer) and harness usage (agent time, turns, tokens, cost or credits); then totals per cycle and role. Sessions are removed once curated, so times come from what survives: the session row, the Worker's task, the session's lines in the action log, and usage records. `--json` gives the same data for agents.
 
-Each session directory holds the agent's `agent.log` and its `prompt.txt` until the session is removed. Usage outlives it in `usage.jsonl` next to the database (`USAGE_LOG`): one JSON line per agent run, with its session, role, cycle and harness, and its duration, turns, tokens and cost when the harness reports them (Claude Code with `--output-format json`, as in the default `LOOP_AGENT`).
+Each session directory holds the agent's `agent.log` and its `prompt.txt` until the session is removed. Usage outlives it in `usage.jsonl` next to the database (`USAGE_LOG`): one JSON line per agent run, with its session, role, cycle and harness, and the figures its harness reports: Claude Code with `--output-format json` (as in the default `LOOP_AGENT`), kiro-cli with `--output-format stream-json` (credits and time).
 
 ## Recovering from a stop
 
