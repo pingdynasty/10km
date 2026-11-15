@@ -46,7 +46,7 @@ for _ in $(seq 90); do
   sleep 1
 done
 
-msm loop stop >/dev/null
+msm loop stop smoke-done >/dev/null
 # Let sessions already launched finish before the temporary directory goes.
 for _ in $(seq 30); do
   [ "$(msm session list '{"status": "active"}' | jq length)" = 0 ] && break

@@ -285,8 +285,11 @@ class MSM:
             raise MSMError(EPERM, f"blocking operator escalation {row['id']} is open: "
                                   "resolve it before resuming")
 
-    def loop_stop(self, reason=None):
+    def loop_stop(self, reason):
+        """Stop the loop; the reason is required (R41, R76)."""
         self.check_caller()
+        if not isinstance(reason, str) or not reason.strip():
+            raise MSMError(EINVAL, "loop stop: a reason is required")
         self.loop()
         self.set_loop(stopped=1, reason=reason)
         return to_dict(self.loop())
@@ -693,7 +696,7 @@ def action_log_path(db=None):
 USAGE = """usage: msm <command>
   init
   loop start|resume|get
-  loop stop [reason]
+  loop stop <reason>
   loop update <json>
   session create <role> [username]
   session update <name> <json>
@@ -732,8 +735,8 @@ def run(m, argv):
             need(0)
             return {"start": m.loop_start, "resume": m.loop_resume, "get": m.loop_get}[verb]()
         if verb == "stop":
-            need(0, 1)
-            return m.loop_stop(*args)
+            need(1)
+            return m.loop_stop(args[0])
         if verb == "update":
             need(1)
             return m.loop_update(parse_json(args[0]))

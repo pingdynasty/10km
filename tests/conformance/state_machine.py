@@ -25,7 +25,8 @@ MAP = {
     # Commands
     "R39": RM + "TestInit.test_init_sets_counters_phase_curate_and_stopped",
     "R40": [M + "test_stop_and_resume", RM + "TestLoopRecord.test_start_clears_reason_and_goes_to_plan"],
-    "R41": [M + "test_stop_and_resume", RM + "TestLoopRecord.test_stop_sets_stopped_and_reason"],
+    "R41": [M + "test_stop_and_resume", RM + "TestLoopRecord.test_stop_sets_stopped_and_reason",
+            RM + "TestLoopRecord.test_stop_without_a_reason_is_refused"],
     "R42": M + "test_stop_and_resume",
     "R43": RM + "TestLoopRecord.test_update_changes_fields_but_not_the_protected_ones",
     "R44": M + "test_full_cycle",
@@ -67,6 +68,7 @@ MAP = {
     "R74": RM + "TestLoopRecord.test_start_clears_reason_and_goes_to_plan",
     "R75": [M + "test_stop_and_resume", RM + "TestLoopRecord.test_resume_outside_plan_keeps_the_phase"],
     "R76": [M + "test_stop_and_resume", RM + "TestLoopRecord.test_stop_sets_stopped_and_reason",
+            RM + "TestLoopRecord.test_stop_without_a_reason_is_refused",
             IDLE],
     "R77": RM + "TestLoopRecord.test_status_changes_update_updated_at",
     "R78": RM + "TestSessions.test_expired_session_cannot_be_set_to_done",
