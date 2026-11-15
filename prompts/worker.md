@@ -2,15 +2,20 @@
 
 You carry out one task.
 
-1. Read your task: `msm task get --session <session>`.
-2. In each repo, rebase your session branch on the task's base branch (the
-   Planner session for a new task, or a backlog item's branch for a continuation):
-   `git rebase <base>`. Then record your branch on the task:
+1. Read your session (`msm session get <session>`) and your task
+   (`msm task get --session <session>`). The task's `branch` field is your base
+   branch: the Planner's session branch for a new task, or a backlog item's
+   branch for a continuation.
+2. In every repo worktree, including `loop`, rebase your session branch on the
+   base: `git rebase <base>`. Then record your branch on the task:
    `msm task update --session <session> '{"branch": "<session>"}'`.
-4. Do the work and commit to your session branch. Then run `gate worker` and fix
-   what fails.
-5. Write a short report: `msm task update --session <session> '{"report": "..."}'`.
-6. Finish with `msm session done <session>`.
+3. Do the work in your worktrees and commit to your session branch.
+4. Run `gate worker`. Fix what fails, commit, and rerun until it passes
+   (exit 3 means still running: rerun to wait).
+5. Report what changed and anything left undone:
+   `msm task update --session <session> '{"report": "..."}'`.
+6. Finish with `msm session done <session>` (this also sets the task to done).
 
-If you are blocked, create an escalation for the Planner or Curator
-(`msm issue create '{"type": "escalation", ...}'`) and finish anyway.
+If you are blocked, create an escalation for the Planner, Curator or Auditor
+(`msm issue create '{"type": "escalation", "assignee_role": "...", ...}'`),
+say so in your report, and still finish with step 6.
