@@ -61,8 +61,12 @@ def _session(argv, cfg):
         print(f"When finished: 10km session done {s['name']}")
         if no_agent:
             return 0
-        return run_operator_agent(cfg, os.path.join(s["working_directory"], "loop"),
-                                  " ".join(message), session=s["name"], one_shot=bool(message))
+        loop = os.path.join(s["working_directory"], "loop")
+        intro = (f"You are the operator's agent in the 10km operator session {s['name']}, in "
+                 f"its loop worktree {loop}. Read prompts/session.md there and follow it.")
+        if message:
+            intro += f"\n\nThe operator's instructions: {' '.join(message)}"
+        return run_operator_agent(cfg, loop, intro, session=s["name"], one_shot=bool(message))
     print(__doc__, file=sys.stderr)
     return 1
 

@@ -100,6 +100,12 @@ msm loop resume                    # resume a stopped loop
 10km session done <name>           # hand the session's work to the Curator
 ```
 
+An operator session's agent follows [prompts/session.md](prompts/session.md). For a
+status report on the loop (state, deliverables, recent cycles, audits, cost and
+open escalations), ask it to follow [prompts/status.md](prompts/status.md), e.g.
+`10km session start <username> -- "Follow prompts/status.md"`. It changes nothing
+but marking its session done.
+
 Run `msm` from your own shell or an operator session: it refuses loop changes from agent sessions while the loop is stopped. An operator session gets its own worktrees and branch, named `operator-<username>-<suffix>`. When you mark it done, the next Dispatcher pass launches a Curator to merge it, whatever the phase. Operator sessions never time out.
 
 Agents raise escalations as issues for the Planner, Curator, Auditor or you. The loop notifies you only of blocking escalations and fatal errors, through `NOTIFY_CMD`. Test it with `10km notify <title> [body]`. To list and answer escalations:

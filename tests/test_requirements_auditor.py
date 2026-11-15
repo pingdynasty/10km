@@ -147,9 +147,9 @@ class TestFakeAgent(ScriptCase):
         self.assertExit(p, 0)
 
     def test_fake_agent_plays_each_role(self):
-        """R301 R304 R305 R306 R307 R308 R309 R310 R311: the fake agent, run with its
-        session, creates the cycle and finishes as Planner; reports and finishes as
-        Worker; curates the cycle with a report and finishes as Curator."""
+        """The fake agent (tests/fake-agent), run with its session, creates the cycle
+        and finishes as Planner; reports and finishes as Worker; curates the cycle with
+        a report and finishes as Curator."""
         self.loop.start()
         planner = self.loop.session("planner")["name"]
         self.agent(planner)

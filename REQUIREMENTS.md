@@ -434,16 +434,3 @@ If the selection includes a Planner session:
 **R297** The operator notification mechanism should be a deterministic action configured during Kickoff.
 **R298** The default notification is to append to NOTIFICATIONS.md in the central loop worktree. **R299** The file is gitignored, so notifications are immediate and don't depend on a merge.
 **R300** Unless given other instructions, the loop only notifies the operator of blocking escalations and fatal errors.
-
-# Test Scripts
-**R301** Replace agent command with test invocation: `LOOP_AGENT=test.sh $SESSION`
-**R302** Test reads next item from script, checks the role, runs command.
-**R303** If next item is 'verify', runs it and checks result.
-**R304** planner: msm cycle create {...}
-**R305** planner: msm session done $SESSION
-**R306** worker: msm task update --session $SESSION {report: ...}
-**R307** worker: msm session done $SESSION
-**R308** verify: msm task get --session $SESSION == {status:done, report: ...}
-**R309** curator: msm cycle curate {...}
-**R310** curator: msm session done $SESSION
-**R311** verify: msm cycle get 1 == {report: ...}

@@ -55,8 +55,12 @@ class TestSessionScriptRules(ScriptCase):
             self.assertExit(p, 0)
             name = p.stdout.split()[1]
             with open(os.path.join(self.loop.root, name, f"{name}.out")) as f:
-                seen.append(f.read())
-        self.assertEqual(seen, ["|", "1|do this"])
+                seen.append(f.read().split("|", 1))
+        self.assertEqual([one_shot for one_shot, _ in seen], ["", "1"])
+        for _, first_message in seen:
+            self.assertIn("prompts/session.md", first_message)
+        self.assertNotIn("do this", seen[0][1])
+        self.assertIn("do this", seen[1][1])
 
     def test_sessions_not_launched_by_the_dispatcher_have_no_handle(self):  # R160
         self.loop.start()
