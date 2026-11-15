@@ -105,7 +105,7 @@ def run(cfg):
         if not gitutil.ok(path, "config", "--get", "tenkm.mainBranch"):
             gitutil.git(path, "config", "tenkm.mainBranch",
                         gitutil.git(path, "symbolic-ref", "--short", "HEAD"))
-        install_hooks(cfg, path, hooks)
+        install_hooks(path, hooks)
         report[repo] = gitutil.main_branch(cfg, repo)
     return report
 
@@ -146,12 +146,12 @@ def write_hooks(gen, hooks, inherited):
         os.remove(os.path.join(gen, name))
 
 
-def install_hooks(cfg, path, hooks):
+def install_hooks(path, hooks):
     """Generate the repo's hooks dir and enable per-worktree config, unless its
     local core.hooksPath is set elsewhere. Remove a local core.hooksPath that points
     at the generated dir, moving it to each existing linked worktree. Reads config
     with --show-scope (git 2.26+)."""
-    rc, out, err = gitutil.run(cfg, path, "config", "--show-scope", "--type=path", "--get-all",
+    rc, out, err = gitutil.run(path, "config", "--show-scope", "--type=path", "--get-all",
                                "core.hooksPath")
     if rc not in (0, 1):  # 1: not set
         raise msm.MSMError(msm.EINVAL, f"10km init needs git 2.26 or later: {err}")

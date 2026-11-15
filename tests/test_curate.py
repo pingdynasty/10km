@@ -433,6 +433,13 @@ class TestGitCalls(CurateCase):
         self.assertEqual(curate.branch_repos(self.cfg, w), self.cfg.repos())
         self.assertEqual(curate.branch_repos(self.cfg, "nope"), [])
 
+    def test_run_takes_the_repo_dir_and_reports_failure(self):  # R218
+        central = self.cfg.repo_path("project")
+        self.assertEqual(gitutil.run(central, "symbolic-ref", "--short", "HEAD"),
+                         (0, "main", ""))
+        rc, out, err = gitutil.run(central, "rev-parse", "--verify", "-q", "nope")
+        self.assertEqual((rc != 0, out), (True, ""))
+
     def test_merge_and_cleanup_read_branches_once_per_repo(self):  # R217 R221 R256
         planner, workers = self.cycle_with_workers(
             ("a.txt", "a"), ("b.txt", "b"), ("c.txt", "c"))
