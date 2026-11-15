@@ -101,8 +101,8 @@ RESOURCES = {
                  update=("shortname", "instructions", "branch", "report", "status")),
     "cycle": dict(table="cycles", key="id", update=("headline", "report")),
     "issue": dict(table="issues", key="id",
-                  create=("type", "title", "description", "assigner_session", "assignee_role",
-                          "severity", "urgent_if", "branch"),
+                  create=("type", "title", "description", "assignee_role", "severity",
+                          "urgent_if", "branch"),
                   required=("type", "title"),
                   update=("title", "description", "assignee_role", "severity",
                           "urgent_if", "status", "branch", "resolution")),
@@ -112,17 +112,7 @@ RESOURCES = {
 
 HIDDEN = {"seq"}
 USERNAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
-# The role in a session name, as session_create makes it.
-SESSION_ROLE = re.compile(r"^(?:cycle\d+-(planner|curator|worker)\d*|(auditor)\d+|(operator))-")
 UNRESOLVED = ("open", "answered")
-
-
-def role_of(name):
-    """The role in session name `name`; operator when there is no name, None if unknown."""
-    if not name:
-        return "operator"
-    match = SESSION_ROLE.match(name)
-    return next((g for g in match.groups() if g), None) if match else None
 
 
 class MSMError(Exception):
@@ -570,9 +560,9 @@ class MSM:
             raise MSMError(EINVAL, f"missing fields: {', '.join(missing)}")
         t = now()
         if res == "issue":
-            session = data.get("assigner_session") or self.caller
-            row = dict(data, id=str(uuid.uuid4()), assigner_session=session,
-                       assigner_role=self.assigner_role(session), status="open", created_at=t)
+            s = self.caller_session()
+            row = dict(data, id=str(uuid.uuid4()), assigner_session=self.caller,
+                       assigner_role=s["role"] if s else "operator", status="open", created_at=t)
         else:
             if not isinstance(data["period"], dict) or set(data["period"]) != {"from", "to"}:
                 raise MSMError(EINVAL, "period must be {from, to}")
@@ -588,15 +578,6 @@ class MSM:
             raise MSMError(EINVAL, str(e))
         self.log(f"{res} create", id=row["id"])
         return to_dict(self.get_row(res, row["id"]))
-
-    def assigner_role(self, session):
-        """The role of the session raising an issue: its record's role, else the role in
-        its name; operator when there is no session (R314-R317)."""
-        row = self.one("SELECT role FROM sessions WHERE name = ?", session) if session else None
-        role = row["role"] if row else role_of(session)
-        if role is None:
-            raise MSMError(EINVAL, f"no role in session name {session}")
-        return role
 
     def update(self, res, key, data):
         self.check_caller()
@@ -745,9 +726,8 @@ USAGE = """usage: msm <command>
 A filter is a JSON object of field values, e.g. answered issues raised by Planners:
   issue list '{"status":"answered","assigner_role":"planner"}'
 An unknown field is EINVAL; an unknown value matches nothing.
-Issue status goes open, answered (sets answered_at), resolved (sets
-resolved_at). msm sets assigner_session to the caller unless given, and
-assigner_role from it (operator without a session)."""
+Issue status goes open, answered, resolved (R314). msm sets assigner_session
+and assigner_role from the caller's session (R317)."""
 
 
 def run(m, argv):
