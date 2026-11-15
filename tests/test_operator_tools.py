@@ -86,6 +86,12 @@ class TestDoctor(OperatorCase):
         self.assertIn("run 10km init", checks["repo project hooks"][1])
         self.assertEqual(checks["repo project main branch"], (False, "gone: no such branch"))
 
+    def test_own_hooks_path_is_left_alone(self):
+        self.loop.git(self.loop.repo("project"), "config", "core.hooksPath", "my-hooks")
+        checks = self.lines(self.tenkm("doctor"))
+        self.assertEqual(checks["repo project hooks"],
+                         (True, "repo sets its own core.hooksPath; loop hooks not installed"))
+
     def test_broken_config_and_old_git_fail(self):
         fake = os.path.join(self.tmp, "fakebin")
         os.makedirs(fake)

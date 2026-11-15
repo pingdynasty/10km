@@ -109,10 +109,10 @@ def check_hooks(cfg, path, name):
     """The hooks dir `10km init` generates is in use and has every loop hook."""
     local = gitutil.git(path, "config", "--local", "--type=path", "--get", "core.hooksPath",
                         check=False)
+    if local:
+        return True, name, "repo sets its own core.hooksPath; loop hooks not installed"
     gen = init.session_hooks_path(path)
     if gen is None:
-        if local:
-            return True, name, f"own core.hooksPath {local}; loop hooks not used"
         return False, name, "not set up; run 10km init"
     wanted = init._executables(os.path.join(cfg.repo_path("loop"), "hooks"))
     missing = sorted(wanted - init._executables(gen))
