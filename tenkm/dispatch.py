@@ -133,7 +133,7 @@ class Pass:
         try:
             with open(prompt_file, "w") as f:
                 f.write(self.prompt(role, session))
-        except OSError as e:  # no agent to run: don't leave a session without one
+        except OSError as e:
             log(f"launch {role} failed: prompt not written: {e}")
             sessions.remove(self.cfg, name)
             return False
@@ -272,8 +272,7 @@ def run_pass(cfg=None, now=None):
         try:
             p.run()
             notify.forget(cfg, "db-unreadable")
-        except (sqlite3.DatabaseError, DatabaseUnreadable) as e:
-            # Other MSMErrors are refusals or bugs, not a database problem: raise them.
+        except (sqlite3.DatabaseError, DatabaseUnreadable) as e:  # other MSMErrors raise
             p.notice("Loop database unreadable", f"{cfg.db}: {e}. The Dispatcher starts "
                      "nothing until it can read the database.", "critical", key="db-unreadable")
     p.flush()

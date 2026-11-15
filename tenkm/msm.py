@@ -576,10 +576,8 @@ class MSM:
 
     @staticmethod
     def check_issue_status(old, new):
-        """Issues go open, answered, resolved, or open to resolved (R314, R318, R319).
-
-        Setting the current status again is allowed and keeps its timestamp, so a
-        rerun is safe; returns whether the status changes. Other moves are EPERM."""
+        """True if old -> new changes the status (R314, R318); EPERM if not allowed.
+        Setting the current status again is a no-op, so a rerun is safe."""
         if old == new:
             return False
         if (old, new) not in ISSUE_TRANSITIONS:
