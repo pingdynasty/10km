@@ -39,6 +39,7 @@ class MsmTest(unittest.TestCase):
         self.ok("session", "done", op)
         self.ok("loop", "start")
         cur = self.ok("session", "create", "curator")["name"]
+        self.ok("session", "remove", op)  # curate-cleanup removes the selected sessions
         self.ok("session", "done", cur)
         self.assertEqual(self.phase(), "plan")
 
@@ -115,6 +116,20 @@ class MsmTest(unittest.TestCase):
         self.fails(2, "session", "create", "curator")
         self.fails(1, "loop", "update", '{"phase": "plan"}')
         self.fails(3, "session", "get", "nope")
+
+    def test_curator_runs_in_any_phase_for_contributions(self):
+        self.start_and_curate_kickoff()
+        self.ok("session", "done", self.plan(["a"]))
+        self.assertEqual(self.phase(), "execute")
+        self.fails(2, "session", "create", "curator")  # execute, nothing to contribute
+        op = self.ok("session", "create", "operator", "mars")["name"]
+        self.fails(2, "session", "create", "curator")  # still active
+        self.ok("session", "done", op)
+        cur = self.ok("session", "create", "curator")["name"]  # now allowed in execute
+        self.ok("session", "remove", op)
+        self.ok("session", "done", cur)
+        self.assertEqual(self.phase(), "execute")  # cycle still open: phase unchanged
+        self.assertEqual(self.ok("task", "list")[0]["status"], "waiting")
 
     def test_stop_and_resume(self):
         self.start_and_curate_kickoff()

@@ -30,15 +30,13 @@ case $s in
   *-curator-*)
     curate-clean
     selected=$(curate-select)
-    for name in $(jq -r '.[] | select(.status == "done") | .name' <<<"$selected"); do
-      for repo in $(repos); do git -C "$dir/$repo" merge -q --no-edit "$name"; done
-    done
-    for repo in $(repos); do git -C "$CENTRAL/$repo" merge -q --no-edit "$s"; done
-    for name in $(jq -r '.[] | select(.role == "worker") | .name' <<<"$selected"); do
-      "$MSM" task update --session "$name" '{"status": "accepted"}' >/dev/null
-    done
+    done_names=$(jq -r '.[] | select(.status == "done") | .name' <<<"$selected" | tr '\n' ' ')
+    [ -n "$done_names" ] && curate-merge $done_names
+    verdicts=$(jq -c '[.[] | select(.role == "worker") | {session: .name, status: "accepted"}]' <<<"$selected")
     if jq -e 'any(.[]; .role == "planner")' <<<"$selected" >/dev/null; then
-      "$MSM" cycle curate "{\"curator_session\": \"$s\", \"report\": \"smoke\"}" >/dev/null
+      curate-publish "$verdicts" "{\"curator_session\": \"$s\", \"report\": \"smoke\"}"
+    else
+      curate-publish "$verdicts"
     fi
     curate-cleanup
     "$MSM" session done "$s" >/dev/null ;;

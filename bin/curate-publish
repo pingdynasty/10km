@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Curator Step 8: fast-forward main onto the Curator branch in every repo
+# (project repos first, loop repo last), then atomically record the verdicts
+# and close the cycle. Safe to rerun: fast-forwards are a no-op when main is
+# already up to date, and msm task batch is one transaction.
+# Usage: curate-publish <verdicts-json> [<cycle-curate-json>]
+#   verdicts-json: '[{"session":"...","status":"accepted|rejected"}, ...]'
+#   cycle-curate-json: '{"curator_session":"...","report":"..."}'
+. "$(dirname "$0")/lib.sh"
+
+self=${LOOP_SESSION:?LOOP_SESSION is not set}
+verdicts=${1:?usage: curate-publish <verdicts-json> [<cycle-curate-json>]}
+curate=${2:-}
+
+ordered=()
+for spec in ${PROJECT_REPOS:-}; do ordered+=("${spec%%=*}"); done
+ordered+=(loop)
+
+for repo in "${ordered[@]}"; do
+  worktree="$CENTRAL/$repo"
+  [ "$(git -C "$worktree" symbolic-ref --short HEAD)" = main ] || die "$repo not on main"
+  if ! git -C "$worktree" merge --ff-only "$self" >/dev/null 2>&1; then
+    git -C "$worktree" merge-base --is-ancestor "$self" HEAD || die "$repo cannot fast-forward"
+  fi
+done
+
+if [ -n "$curate" ]; then
+  "$MSM" task batch "$verdicts" "$curate"
+else
+  "$MSM" task batch "$verdicts"
+fi

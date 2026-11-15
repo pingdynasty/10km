@@ -18,10 +18,14 @@ git -C "$LOOP_ROOT/$op/loop" commit -q -m "Set goals"
 msm session done "$op" >/dev/null
 msm loop start >/dev/null
 
-for _ in $(seq 60); do
+# Run until cycle 1 is curated and the Auditor's work has been merged too.
+for _ in $(seq 90); do
   dispatch
   cycle=$(msm cycle get 1 2>/dev/null || echo null)
-  [ "$(jq -r .status <<<"$cycle")" = closed ] && break
+  if [ "$(jq -r .status <<<"$cycle")" = closed ] &&
+     [ -f "$LOOP_ROOT/central/loop/LEARNINGS.md" ]; then
+    break
+  fi
   sleep 1
 done
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Curator Step 2: select the sessions to curate, record them, and print them.
-# Inactive operator and Auditor sessions if any; otherwise the current open
-# cycle's inactive Planner and Worker sessions.
+# Inactive operator and Auditor sessions if any; otherwise, in the curate phase,
+# the current cycle's inactive Planner and Worker sessions; otherwise nothing.
+# An empty selection means the agent skips to Step 7 (Assess).
 . "$(dirname "$0")/lib.sh"
 
 self=${LOOP_SESSION:?LOOP_SESSION is not set}
@@ -9,7 +10,8 @@ sessions=$("$MSM" session list)
 
 selected=$(jq '[.[] | select(.status != "active" and (.role == "operator" or .role == "auditor"))]' \
   <<<"$sessions")
-if [ "$(jq length <<<"$selected")" -eq 0 ]; then
+if [ "$(jq length <<<"$selected")" -eq 0 ] &&
+   [ "$("$MSM" loop get | jq -r .phase)" = curate ]; then
   selected=$(jq --argjson cur "$(current_cycle)" '[.[]
     | select($cur != null and $cur.status == "open" and .cycle == $cur.id)
     | select(.status != "active" and (.role == "planner" or .role == "worker"))]' <<<"$sessions")

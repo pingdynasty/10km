@@ -24,6 +24,7 @@ CREATE TABLE loop (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   current_cycle INTEGER NOT NULL,
   last_audit INTEGER NOT NULL,
+  empty_cycles INTEGER NOT NULL,
   phase TEXT NOT NULL CHECK (phase IN ('plan','execute','curate')),
   stopped INTEGER NOT NULL,
   reason TEXT,
@@ -200,7 +201,7 @@ class Msm:
         for statement in SCHEMA.split(";"):
             if statement.strip():
                 self.db.execute(statement)
-        self.db.execute("INSERT INTO loop VALUES (1, 0, 0, 'curate', 1, NULL, ?)", (now(),))
+        self.db.execute("INSERT INTO loop VALUES (1, 0, 0, 0, 'curate', 1, NULL, ?)", (now(),))
         return to_dict(self.loop())
 
     def loop_get(self):
@@ -235,6 +236,11 @@ class Msm:
     def active(self, role):
         return self.one("SELECT 1 FROM sessions WHERE role = ? AND status = 'active'", role)
 
+    def pending_contributions(self):
+        """Inactive operator or Auditor sessions: work the Curator can take in any phase."""
+        return self.one("SELECT 1 FROM sessions WHERE role IN ('operator', 'auditor') "
+                        "AND status != 'active'")
+
     def session_create(self, role, username=None):
         if role not in ROLES:
             raise MsmError(EINVAL, f"unknown role {role}")
@@ -250,8 +256,11 @@ class Msm:
             cycle = current if cur and cur["status"] == "open" else current + 1
             base = f"cycle{cycle}-planner"
         elif role == "curator":
-            if phase != "curate" or stopped or self.active("curator"):
-                raise MsmError(EPERM, "curator needs phase = curate, not stopped, no active curator")
+            if stopped or self.active("curator"):
+                raise MsmError(EPERM, "curator needs not stopped and no active curator")
+            if phase != "curate" and not self.pending_contributions():
+                raise MsmError(EPERM, "curator needs phase = curate, or inactive operator "
+                                      "or auditor work")
             cycle = current
             base = f"cycle{cycle}-curator"
         elif role == "worker":
@@ -346,6 +355,20 @@ class Msm:
         self.db.execute("DELETE FROM tasks WHERE id = ?", (task["id"],))
         return {"removed": task["id"]}
 
+    def task_batch_update(self, verdicts, curate=None):
+        """Atomic: update tasks to accepted|rejected, optionally curate the cycle."""
+        t = now()
+        for row in verdicts:
+            tid = row.get("id") or self.task_for_session(row["session"])["id"]
+            status = row["status"]
+            if status not in ("accepted", "rejected"):
+                raise MsmError(EINVAL, f"bad verdict {status}")
+            self.db.execute("UPDATE tasks SET status = ?, curated_at = ? WHERE id = ?",
+                            (status, t, tid))
+        if curate is not None:
+            self.cycle_curate(curate)
+        return {"updated": len(verdicts), "curated": curate is not None}
+
     # --- cycles ------------------------------------------------------------
     def cycle_create(self, data):
         self.check_fields(data, ("planner_session", "headline", "tasks"))
@@ -378,6 +401,10 @@ class Msm:
                             "status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'waiting', ?)",
                             (str(uuid.uuid4()), seq, cycle_id, task["shortname"],
                              task["instructions"], task["branch"], t))
+        if tasks:
+            self.set_loop(empty_cycles=0)
+        else:
+            self.set_loop(empty_cycles=loop["empty_cycles"] + 1)
         return self.cycle_get(cycle_id)
 
     def cycle_curate(self, data):
@@ -486,6 +513,7 @@ USAGE = """usage: msm <command>
   task get|remove <id> | --session <name>
   task update <id> | --session <name> <json>
   task list [filter]
+  task batch <verdicts-json> [<cycle-curate-json>]
   cycle create|curate <json>
   cycle get [id]
   cycle list [filter]
@@ -542,6 +570,11 @@ def run(m, argv):
         if verb == "list":
             need(0, 1)
             return m.list("task", *args)
+        if verb == "batch":
+            need(1, 2)
+            data = parse_json(args[0], list)
+            curate = parse_json(args[1]) if len(args) == 2 else None
+            return m.task_batch_update(data, curate)
         if verb in ("get", "remove", "update"):
             if args[:1] == ["--session"]:
                 need(2, 3)

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Curator Step 6: rebuild the Curator branch in each repo by resetting to main
+# and merging every session branch except those passed with --without.
+# Usage: curate-rebuild [--without <session>...] -- <session>...
+. "$(dirname "$0")/lib.sh"
+
+self=${LOOP_SESSION:?LOOP_SESSION is not set}
+dir="$LOOP_ROOT/$self"
+
+excludes=()
+while [ "${1:-}" = --without ]; do
+  shift
+  while [ "$#" -gt 0 ] && [ "$1" != -- ]; do excludes+=("$1"); shift; done
+  [ "${1:-}" = -- ] && shift
+done
+[ "$#" -gt 0 ] || die "usage: curate-rebuild [--without <s>...] -- <s>..."
+
+for repo in $(repos); do
+  git -C "$dir/$repo" reset --hard "origin/main" 2>/dev/null \
+    || git -C "$dir/$repo" reset --hard main
+done
+
+for name in "$@"; do
+  skip=0
+  for x in "${excludes[@]}"; do [ "$name" = "$x" ] && skip=1 && break; done
+  [ "$skip" = 1 ] && continue
+  for repo in $(repos); do
+    git -C "$CENTRAL/$repo" show-ref --verify --quiet "refs/heads/$name" || continue
+    git -C "$dir/$repo" merge --no-edit --no-ff "$name" >/dev/null || exit 1
+  done
+done
