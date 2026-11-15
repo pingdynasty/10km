@@ -13,6 +13,8 @@ import sys
 import tempfile
 import unittest
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import testenv  # noqa: E402,F401  (test config, no caller env: tests/testenv.py)
 sys.path.insert(0, os.path.dirname(__file__))
 from test_scripts import ScriptLoop  # noqa: E402
 

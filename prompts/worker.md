@@ -9,7 +9,8 @@ You carry out one task.
 2. In every repo worktree, including `loop`, rebase your session branch on the
    base: `git rebase <base>`. Then record your branch on the task:
    `msm task update --session <session> '{"branch": "<session>"}'`.
-3. Do the work in your worktrees and commit to your session branch.
+3. Do the work in your worktrees and commit to your session branch. Tests you add
+   must never launch a real agent harness, except opt-in agent tests the gates skip.
 4. Run `gate worker`. Fix what fails, commit, and rerun until it passes
    (exit 3 means still running: rerun to wait).
 5. Report what changed and anything left undone:

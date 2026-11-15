@@ -12,7 +12,6 @@ import fcntl
 import glob
 import json
 import os
-import re
 import shutil
 import signal
 import subprocess
@@ -23,6 +22,8 @@ import unittest
 
 CODE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BIN = os.path.join(CODE, "bin")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
 sys.path.insert(0, CODE)
 from tenkm import init  # noqa: E402
 
@@ -34,21 +35,10 @@ SUFFIX = r"[a-z0-9]{8}"
 HOST_GIT_OFF = {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
 
 
-def _settings():
-    """Names set in config.env: the caller's values must not leak into a test loop."""
-    with open(os.path.join(CODE, "config.env")) as f:
-        return set(re.findall(r"^\s*(?:\[.*\]\s*\|\|\s*)?([A-Z_]+)=", f.read(), re.M))
-
-
-LEAKY = re.compile(r"^(LOOP_|MSM_|TENKM_)|^(SESSION|PROMPT_FILE|FIRST_MESSAGE|ONE_SHOT|"
-                   r"SCRATCH_DIR|PYTHONPATH)$|_(AGENT|TIMEOUT|GATES)$")
-
-
 def clean_env():
-    """os.environ without anything that could point a script at another loop
-    (agents run these tests inside a live loop session)."""
-    drop = _settings()
-    return {k: v for k, v in os.environ.items() if not LEAKY.search(k) and k not in drop}
+    """os.environ without anything that could point a script at another loop or a
+    real agent, with LOOP_CONFIG set to the test config (tests/testenv.py)."""
+    return testenv.clean_env()
 
 
 def wait_for(predicate, timeout=30, interval=0.1):

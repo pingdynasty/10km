@@ -37,6 +37,16 @@ change `REQUIREMENTS.md` without the operator. Each requirement has a stable ID
   `python3 tests/run.py test_msm`). `python3 -m unittest discover tests` runs the
   same tests serially. Tests must be safe to run in parallel: temporary roots, no
   fixed ports or shared paths.
+- Tests never launch a real agent harness (claude, codex, kiro-cli) by default.
+  They run with the test config, `tests/config.env`: every test module imports
+  `tests/testenv.py` first, which drops the caller's loop and agent settings and
+  sets `LOOP_CONFIG` to it. There every agent command fails loudly (exit 97) unless
+  the test sets its own fake (e.g. `LOOP_AGENT`, or `tests/fake-agent`). Tests that
+  read the code's `config.env` defaults may read the file, but run its agent
+  commands only against stubs. `tests/test_no_agent.py` guards this.
+- Agent tests, which run a real harness and spend credits, go in `tests/agent/`
+  and run only with `make agent-test`; `make test`, `tests/run.py` and the gates
+  skip them. See `tests/agent/README.md`.
 - End to end, in the container: `make smoke` (builds the image, runs `tests/smoke.sh`)
 - End to end, on the host (Linux or macOS): `make smoke-host` (runs `tests/smoke.sh`)
 
