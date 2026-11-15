@@ -20,8 +20,9 @@ the loop repo (`central/loop`). Commit straight to each repo's main branch.
      checked out in the central worktree;
    - `user.name` and `user.email`: the identity for the loop's commits;
    - remotes, if the loop pushes or the operator pulls.
-   Then run `10km init`: it records any missing branch settings and installs the
-   loop's git hooks in every repo. Do the same for `central/loop` if the operator
+   Then run `10km init`: it records any missing branch settings and generates the
+   loop's git hooks for every repo, which session worktrees use; the central
+   worktrees keep their own hooks. Do the same for `central/loop` if the operator
    wants a different identity there.
 3. **Gates.** `WORKER_GATES` (Workers, before done) and `VALIDATION_GATES` (the
    Curator) in `config.env` take one command per line, or `repo: command` to run in

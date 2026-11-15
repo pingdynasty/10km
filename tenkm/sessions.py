@@ -2,7 +2,7 @@
 import os
 import shutil
 
-from . import faults, gitutil, msm, usage
+from . import faults, gitutil, init, msm, usage
 from .locks import lock
 
 EAGAIN = 4  # the session's branch name is already taken
@@ -35,9 +35,13 @@ def create(cfg, role, username=None):
                     if gitutil.branch_exists(cfg, repo, name):
                         raise SessionError(EAGAIN, f"branch {name} exists in {repo}")
                     base = gitutil.main_branch(cfg, repo)
+                    worktree = os.path.join(directory, repo)
                     gitutil.git(cfg.repo_path(repo), "worktree", "add", "-q", "-b", name,
-                                os.path.join(directory, repo), base)
+                                worktree, base)
                     created.append(repo)
+                    hooks = init.session_hooks_path(cfg.repo_path(repo))
+                    if hooks:  # the loop's hooks, for this worktree only (tenkm.init)
+                        gitutil.git(worktree, "config", "--worktree", "core.hooksPath", hooks)
                     faults.point(f"session:after-worktree:{repo}")
             except (gitutil.GitError, OSError) as e:
                 raise SessionError(EGIT, str(e))
