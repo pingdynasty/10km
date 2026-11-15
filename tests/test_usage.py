@@ -25,6 +25,12 @@ CLAUDE_RESULT = {
 FIGURES = {"harness_session_id": "4f1c-abcd", "duration_ms": 61234, "num_turns": 12,
            "total_cost_usd": 1.375, "input_tokens": 1200, "output_tokens": 3400,
            "cache_read_input_tokens": 450000, "cache_creation_input_tokens": 23000}
+FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
+
+
+def fixture(name):
+    with open(os.path.join(FIXTURES, name)) as f:
+        return f.read()
 
 
 class UsageTest(unittest.TestCase):
@@ -76,6 +82,48 @@ class UsageTest(unittest.TestCase):
     def test_missing_figures_are_omitted(self):
         partial = {"type": "result", "num_turns": 2, "usage": {"output_tokens": "many"}}
         self.assertEqual(usage.parse_result(json.dumps(partial)), {"num_turns": 2})
+
+    # --- kiro-cli (GOALS DEL6; captured with kiro-cli 2.37.0 --output-format stream-json)
+    def test_parse_kiro_v2_log(self):
+        """R26/R267: engine v2's end-of-turn metadata gives credits and time."""
+        self.assertEqual(usage.parse_kiro(fixture("kiro-v2-stream.jsonl")), {
+            "harness_session_id": "742d77a6-c2e2-429c-9200-7324d02160ca",
+            "duration_ms": 1879, "credits": 0.9612229740630184})
+
+    def test_parse_kiro_v3_log(self):
+        """R26/R267: engine v3's turn_completion and session_usage give credits and time."""
+        self.assertEqual(usage.parse_kiro(fixture("kiro-v3-stream.jsonl")), {
+            "harness_session_id": "sess_dbbb97e6-50d7-437d-85e6-46e591cdb838",
+            "duration_ms": 4986, "credits": 0.4030556404311775})
+
+    def test_parse_kiro_sums_turns(self):
+        turn = {"type": "metadata", "data": {"sessionId": "s", "turnDurationMs": 1000,
+                "meteringUsage": [{"value": 1.5, "unit": "credit"},
+                                  {"value": 9, "unit": "other"}]}}
+        text = "\n".join([json.dumps(turn)] * 3)
+        self.assertEqual(usage.parse_kiro(text),
+                         {"harness_session_id": "s", "duration_ms": 3000, "credits": 4.5})
+
+    def test_parse_kiro_untrusted(self):
+        """Bad shapes, NaN and huge numbers are dropped; plain text reports nothing."""
+        self.assertEqual(usage.parse_kiro("ok\n"), {})
+        bad = ['{"type": "metadata", "data": {"turnDurationMs": NaN, "meteringUsage": 3}}',
+               '{"type": "metadata", "data": {"meteringUsage": [{"value": 1e300, "unit": "credit"}]}}',
+               '{"type": "sessionUpdate", "data": {"update": {"_meta": {"kiro": []}}}}',
+               '{"type": "sessionUpdate", "data": {"update": "x"}}', '{"data": 5}', '[1]',
+               '{"type": "metadata", "data": {"sessionId": 7, "turnDurationMs": true}}']
+        self.assertEqual(usage.parse_kiro("\n".join(bad)), {})
+
+    def test_record_kiro_run_by_harness(self):
+        """The harness of the role's command picks the parser."""
+        self.cfg["WORKER_AGENT"] = 'kiro-cli chat --output-format stream-json "$FIRST_MESSAGE"'
+        rec = usage.record(self.cfg, self.session(log=fixture("kiro-v2-stream.jsonl")))
+        self.assertEqual((rec["harness"], rec["credits"], rec["duration_ms"]),
+                         ("kiro-cli", 0.9612229740630184, 1879))
+        self.assertNotIn("input_tokens", rec)
+        # A Claude result in a kiro log isn't read as kiro's, and vice versa.
+        self.assertEqual(usage.parse_log("kiro-cli", json.dumps(CLAUDE_RESULT)), {})
+        self.assertEqual(usage.parse_log("claude", fixture("kiro-v2-stream.jsonl")), {})
 
     def test_harness_name(self):
         self.assertEqual(usage.harness_name("/usr/bin/claude -p x"), "claude")

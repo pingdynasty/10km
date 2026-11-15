@@ -1,5 +1,7 @@
 """tenkm.metrics: sessions, times, commits and harness usage per cycle and role (R26, R267).
 
+Harness usage is tokens and cost (Claude Code) or credits (kiro-cli).
+
 Sessions are removed at curation, so each session is pieced together from the
 sessions table, task and cycle rows, the action log's session lines and
 usage.jsonl (tenkm.usage); commits are counted by Loop-Session trailer on each
@@ -260,7 +262,7 @@ def _num(value, fmt="{:,}"):
 def text(data):
     """The metrics as readable text tables."""
     head = ("cycle", "role", "session", "task", "outcome", "start", "time", "from",
-            "commits", "agent", "turns", "in tok", "out tok", "cost")
+            "commits", "agent", "turns", "in tok", "out tok", "cost", "credits")
     rows = []
     for r in data["sessions"]:
         u = r["usage"]
@@ -269,9 +271,11 @@ def text(data):
                      r["times_from"] or "-", str(sum(r["commits"].values())),
                      _minutes(u["duration_ms"] / 1000) if "duration_ms" in u else "-",
                      _num(u.get("num_turns")), _num(u.get("input_tokens")),
-                     _num(u.get("output_tokens")), _num(u.get("total_cost_usd"), "${:.2f}")))
+                     _num(u.get("output_tokens")), _num(u.get("total_cost_usd"), "${:.2f}"),
+                     _num(u.get("credits"), "{:.2f}")))
     lines = ["Sessions:"] + _table(head, rows)
-    head = ("cycle", "role", "sessions", "time", "commits", "agent", "in tok", "out tok", "cost")
+    head = ("cycle", "role", "sessions", "time", "commits", "agent", "in tok", "out tok", "cost",
+            "credits")
     rows = []
     for g in data["summary"]:
         u = g["usage"]
@@ -280,7 +284,7 @@ def text(data):
                      str(g["commits"]),
                      _minutes(u["duration_ms"] / 1000) if "duration_ms" in u else "-",
                      _num(u.get("input_tokens")), _num(u.get("output_tokens")),
-                     _num(u.get("total_cost_usd"), "${:.2f}")))
+                     _num(u.get("total_cost_usd"), "${:.2f}"), _num(u.get("credits"), "{:.2f}")))
     lines += ["", "By cycle and role:"] + _table(head, rows)
     if data["notes"]:
         lines += ["", "Notes:"] + [f"- {n}" for n in data["notes"]]

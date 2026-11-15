@@ -1,0 +1,6 @@
+{"type":"runStarted","data":{"payloadSchema":"acp","acpProtocolVersion":1,"engine":"v2"}}
+{"type":"metadata","data":{"sessionId":"742d77a6-c2e2-429c-9200-7324d02160ca","contextUsagePercentage":16.395099639892578,"reasoning":{"support":"toggleable","effortLevels":["low","medium","high","xhigh","max"]}}}
+{"type":"sessionUpdate","data":{"sessionId":"742d77a6-c2e2-429c-9200-7324d02160ca","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"ok"}}}}
+{"type":"metadata","data":{"sessionId":"742d77a6-c2e2-429c-9200-7324d02160ca","contextUsagePercentage":26.17959976196289,"reasoning":{"support":"toggleable","effortLevels":["low","medium","high","xhigh","max"]}}}
+{"type":"metadata","data":{"sessionId":"742d77a6-c2e2-429c-9200-7324d02160ca","contextUsagePercentage":26.17959976196289,"meteringUsage":[{"value":0.9612229740630184,"unit":"credit","unitPlural":"credits"}],"turnDurationMs":1879,"reasoning":{"support":"toggleable","effortLevels":["low","medium","high","xhigh","max"]}}}
+{"type":"runFinished","data":{"sessionId":"742d77a6-c2e2-429c-9200-7324d02160ca","status":"success","stopReason":"end_turn","finalText":"ok","finalTextTruncated":false}}

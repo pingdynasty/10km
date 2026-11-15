@@ -195,6 +195,21 @@ class TestCommand(MetricsCase):
         data = json.loads(out)
         self.assertEqual(len(data["sessions"]), 4)
         self.assertEqual(self.run_cli("--cycle")[0], 1)
+
+    def test_kiro_credits(self):
+        """R267: kiro-cli's credits are summed per session and per cycle and role."""
+        planner, w1, w2, curator = self.one_cycle()
+        self.write_usage(*({"session": w, "role": "worker", "cycle": 1, "harness": "kiro-cli",
+                            "recorded_at": "2026-01-01T10:00:00Z", "credits": 1.25,
+                            "duration_ms": 60000} for w in (w1, w2)))
+        data = metrics.collect(self.cfg)
+        by = {r["session"]: r for r in data["sessions"]}
+        self.assertEqual(by[w1]["usage"]["credits"], 1.25)
+        workers = [g for g in data["summary"] if (g["cycle"], g["role"]) == (1, "worker")][0]
+        self.assertEqual(workers["usage"]["credits"], 2.5)
+        out = metrics.text(data)
+        self.assertIn("credits", out)
+        self.assertIn("2.50", out)
         self.assertEqual(self.run_cli("--bogus")[0], 1)
 
 
