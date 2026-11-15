@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import unittest
 from contextlib import redirect_stdout
 
@@ -27,8 +28,11 @@ class MetricsCase(LoopCase):
 
     def one_cycle(self):
         """A loop through one curated cycle with two Workers; the planner, accepted
-        Worker and curator sessions removed, as the Curator's cleanup leaves them."""
+        Worker and curator sessions removed, as the Curator's cleanup leaves them.
+        The cycle is planned in a later second than the operator session started
+        (times have one-second resolution), so the operator is in no cycle."""
         self.start_loop()
+        time.sleep(1 - time.time() % 1)
         with self.m() as m:
             planner = m.session_create("planner")["name"]
         with msm.transaction(self.cfg.db, caller=planner) as m:
