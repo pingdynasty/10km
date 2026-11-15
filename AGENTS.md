@@ -32,11 +32,14 @@ change `REQUIREMENTS.md` without the operator. Each requirement has a stable ID
 
 ## Testing
 
-- Unit: `python3 -m unittest discover tests`
-- End to end (container): `docker build -t 10km . && docker run --rm 10km /opt/10km/tests/smoke.sh`
+- Unit and script tests: `make test` (`python3 -m unittest discover tests`)
+- End to end, in the container: `make smoke` (builds the image, runs `tests/smoke.sh`)
+- End to end, on the host (Linux or macOS): `make smoke-host` (runs `tests/smoke.sh`)
 
 Run the unit tests before every commit; run the smoke test when changing scripts,
-the Dispatcher or the Curator flow.
+the Dispatcher or the Curator flow. `tests/smoke.sh` works in a temporary
+directory and ignores a live loop's environment, so it is safe to run inside a loop
+session.
 
 ## Commits and branches
 
