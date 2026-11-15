@@ -34,9 +34,9 @@ MAP = {
     "R145": [A + "test_daily_time_in_timezone",
              A + "test_missed_trigger_from_yesterday_is_due_after_midnight",
              A + "test_cycle_limit",
-             "tests/test_requirements_loop.py:TestDispatchRoles."
-             "test_dispatcher_launches_an_auditor_when_due", OFF_AUDITOR],
-    "R146": RD + "TestAuditorTriggers.test_either_trigger_can_be_disabled",
+             "tests/test_requirements_auditor.py:TestAuditorLaunch."
+             "test_auditor_is_launched_with_its_session_name_and_prompt", OFF_AUDITOR],
+    "R146": A + "test_either_trigger_can_be_disabled",
     "R147": A + "test_never_before_first_curated_cycle",
     "R148": [RD + "TestLaunching.test_taken_branch_name_is_tried_three_times", LAUNCHES],
     "R149": [RD + "TestLaunching.test_taken_branch_name_is_tried_three_times",

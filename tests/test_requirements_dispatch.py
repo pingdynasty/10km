@@ -1,9 +1,5 @@
-"""Requirements on sessions, the Dispatcher, session time-out and resume
-(REQUIREMENTS.md, Sessions; Dispatcher) not covered elsewhere. Each test names
-the IDs it checks.
-
-Run: python3 -m unittest discover tests
-"""
+"""Requirements on sessions, the Dispatcher, session time-out and resume not
+covered elsewhere."""
 import fcntl
 import os
 import shutil
@@ -13,14 +9,14 @@ import sys
 import tempfile
 import time
 import unittest
-from datetime import datetime, timezone
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
+from testenv import BIN, SUFFIX  # noqa: E402
 from test_curate_scripts import CurateScriptCase  # noqa: E402
 from test_loop import LoopCase  # noqa: E402
-from test_scripts import BIN, SUFFIX, ScriptCase, wait_for  # noqa: E402
+from test_scripts import ScriptCase  # noqa: E402
 from tenkm import dispatch, sessions  # noqa: E402
 
 
@@ -74,14 +70,6 @@ class TestSessionScriptRules(ScriptCase):
 
 
 class TestDispatchRules(ScriptCase):
-    def dispatch(self, **env):
-        p = self.loop.run("dispatch", env=env)
-        self.assertExit(p, 0)
-        return p.stdout
-
-    def active(self, role):
-        return [s for s in self.loop.sessions(role) if s["status"] == "active"]
-
     def test_run_loop_dispatches_every_interval(self):  # R136
         log = os.path.join(self.tmp, "passes.log")
         fake = os.path.join(self.loop.central, "loop", "bin", "dispatch")
@@ -108,7 +96,7 @@ class TestDispatchRules(ScriptCase):
         self.loop.done(auditor)
         self.dispatch(MAX_WORKERS="0")
         self.assertEqual(self.loop.msm("loop", "get")["phase"], "execute")
-        self.assertEqual(len(self.active("curator")), 1)
+        self.assertEqual(len(self.loop.active("curator")), 1)
 
     def test_curate_phase_launches_a_curator_without_waiting(self):  # R143 R167 R122
         self.loop.start()
@@ -117,10 +105,10 @@ class TestDispatchRules(ScriptCase):
         self.loop.session("operator", "mars")
         self.loop.session("auditor")
         self.dispatch()
-        [curator] = self.active("curator")
+        [curator] = self.loop.active("curator")
         self.assertRegex(curator["name"], rf"^cycle1-curator-{SUFFIX}$")
         self.assertTrue(curator["handle"].startswith("process:"))
-        self.assertEqual(self.active("planner") + self.active("worker"), [])
+        self.assertEqual(self.loop.active("planner") + self.loop.active("worker"), [])
 
     def test_operator_sessions_never_time_out(self):  # R156
         self.loop.start()
@@ -176,29 +164,8 @@ class TestLaunching(LoopCase):
         self.assertEqual(curator["handle"], "fake:curator")
 
 
-class TestAuditorTriggers(LoopCase):
-    def due(self, now, **overrides):
-        p = dispatch.Pass(self.reload(**overrides), now=now)
-        with self.m() as m:
-            return p.auditor_due(m)
-
-    def test_either_trigger_can_be_disabled(self):  # R146
-        with self.m() as m:
-            for i in (1, 2, 3):
-                m.db.execute("INSERT INTO cycles (id, status, planned_at, curated_at) "
-                             "VALUES (?, 'closed', '2026-11-13T10:00:00Z', "
-                             "'2026-11-13T11:00:00Z')", (i,))
-        now = datetime(2026, 11, 14, 12, 0, tzinfo=timezone.utc)
-        self.assertFalse(self.due(now, AUDIT_TIME="", AUDIT_CYCLES_LIMIT="0"))
-        self.assertTrue(self.due(now, AUDIT_TIME="", AUDIT_CYCLES_LIMIT="3"))
-        self.assertTrue(self.due(now, AUDIT_TIME="07:00", AUDIT_TIMEZONE="UTC",
-                                 AUDIT_CYCLES_LIMIT="0"))
-
-
 class TestCuratorCrash(CurateScriptCase):
     def test_a_pass_cut_short_is_redone_by_the_next_curator(self):  # R164 R165
-        """Before Publish: main is unchanged and the next Curator redoes the pass.
-        After Publish: the next Curator's pass selects nothing and changes nothing."""
         planner, (w1,) = self.cycle(("a.txt", "a"))
         before = self.main("project")
         first = self.curator()

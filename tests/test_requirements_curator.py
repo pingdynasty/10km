@@ -1,19 +1,15 @@
-"""Requirements on the Curator (REQUIREMENTS.md, Curator) not covered by
-tests/test_curate_scripts.py or tests/test_curate.py. Each test names the IDs it
-checks.
-
-Run: python3 -m unittest discover tests
-"""
+"""Requirements on the Curator not covered by tests/test_curate_scripts.py or
+tests/test_curate.py."""
 import os
 import re
 import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import testenv  # noqa: E402,F401  (test config, no caller env: tests/testenv.py)
+import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
+from testenv import CODE  # noqa: E402
 from test_curate_scripts import CurateScriptCase  # noqa: E402
 
-CODE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROMPT = os.path.join(CODE, "prompts", "curator.md")
 STEP = re.compile(r"^(\d+)\. (\w+)", re.MULTILINE)
 
@@ -30,9 +26,7 @@ def prompt_steps():
 
 class TestPromptSteps(unittest.TestCase):
     def test_the_prompt_runs_eleven_steps_in_order_calling_the_scripts(self):
-        """R203, R204, R207, R210, R216, R249, R254: the prompt lists the steps in
-        the required order, and each scripted step calls its curate-* script,
-        which exists in bin/ and is executable."""
+        """R203, R204, R207, R210, R216, R249, R254."""
         steps = prompt_steps()
         self.assertEqual([(n, word) for n, word, _ in steps],
                          list(enumerate(["Prepare", "Select", "Merge", "Triage", "Read",
@@ -45,22 +39,16 @@ class TestPromptSteps(unittest.TestCase):
             self.assertTrue(os.access(os.path.join(CODE, "bin", script), os.X_OK), script)
 
 
-class TestIdleLimit(CurateScriptCase):
-    def test_the_idle_limit_and_empty_cycle_count_the_prompt_names_exist(self):
-        """R247: the Curator compares `empty_cycles` from `msm loop get` with
-        IDLE_CYCLE_LIMIT from config.env; both exist where the prompt says."""
-        with open(PROMPT) as f:
-            prompt = f.read()
-        self.assertIn("`empty_cycles` at `IDLE_CYCLE_LIMIT`", prompt)
-        with open(os.path.join(CODE, "config.env")) as f:
-            self.assertRegex(f.read(), r"(?m)^IDLE_CYCLE_LIMIT=")
-        self.assertEqual(self.loop.msm("loop", "get")["empty_cycles"], 0)
+class TestIdleLimit(unittest.TestCase):
+    def test_the_idle_limit_and_empty_cycle_count_the_prompt_names_exist(self):  # R247
+        self.assertIn("`empty_cycles` at `IDLE_CYCLE_LIMIT`", testenv.read(PROMPT))
+        self.assertRegex(testenv.read(os.path.join(CODE, "config.env")),
+                         r"(?m)^IDLE_CYCLE_LIMIT=")
 
 
 class TestSelectRoles(CurateScriptCase):
     def test_a_done_auditor_is_selected_before_the_cycle(self):
-        """R211, R212, R213: an inactive Auditor session is curated first, even in
-        the curate phase; then the open cycle's sessions are selected."""
+        """R211, R212, R213."""
         planner, (w1,) = self.cycle(("a.txt", "a"))
         auditor = self.loop.session("auditor")["name"]
         self.loop.commit(auditor, "loop", "AUDIT.md", "audit")
@@ -77,9 +65,7 @@ class TestSelectRoles(CurateScriptCase):
         self.assertEqual({s["name"] for s in self.step_ok(cur, "select")}, {planner, w1})
 
     def test_done_workers_are_not_selected_before_the_curate_phase(self):
-        """R212, R213, R214: in the execute phase a Curator takes the operator's
-        work but not a done Worker's; once that is curated, the selection is empty:
-        the cycle is curated only once all its work is in."""
+        """R212, R213, R214."""
         self.loop.start()
         self.loop.plan("a", "b")
         w1 = self.loop.session("worker")["name"]

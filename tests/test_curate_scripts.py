@@ -1,13 +1,7 @@
-"""Script tests for the Curator steps: drive bin/curate-prepare, curate-select,
-curate-merge, curate-publish and curate-cleanup as subprocesses against a
-temporary loop (ScriptLoop from test_scripts), never the live one.
-
-tests/test_curate.py covers the merge logic at the library level; these tests
-check what an agent sees: exit codes, JSON output and errors, refusals, the
-state each step leaves on disk, and that rerunning any step after a crash is safe.
-Each test's docstring names the requirements it checks.
-
-Run: python3 -m unittest discover tests
+"""Script tests for the Curator steps: bin/curate-* run as subprocesses against a
+temporary loop (ScriptLoop). tests/test_curate.py covers the merge logic at the
+library level; these check what an agent sees: exit codes, JSON output and
+errors, refusals, the state each step leaves, and that rerunning a step is safe.
 """
 import json
 import os
@@ -15,7 +9,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import testenv  # noqa: E402,F401  (test config, no caller env: tests/testenv.py)
+import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
 from test_scripts import ScriptCase  # noqa: E402
 
 STEPS = ("prepare", "select", "merge", "publish", "cleanup")
@@ -24,7 +18,6 @@ STEPS = ("prepare", "select", "merge", "publish", "cleanup")
 class CurateScriptCase(ScriptCase):
     """Helpers to run a cycle and the Curator steps through bin/."""
 
-    # --- running steps -----------------------------------------------------
     def step(self, curator, name, *args, **env):
         return self.loop.run(f"curate-{name}", *args, session=curator, env=env)
 
@@ -40,7 +33,6 @@ class CurateScriptCase(ScriptCase):
             self.assertIn(text, error)
         return error
 
-    # --- loop state --------------------------------------------------------
     def curator(self):
         return self.loop.session("curator")["name"]
 
@@ -64,19 +56,11 @@ class CurateScriptCase(ScriptCase):
     def names(self):
         return {s["name"] for s in self.loop.sessions()}
 
-    # --- files -------------------------------------------------------------
-    def read(self, path):
-        try:
-            with open(path) as f:
-                return f.read()
-        except FileNotFoundError:
-            return None
-
     def central(self, repo, path):
-        return self.read(os.path.join(self.loop.repo(repo), path))
+        return testenv.read(os.path.join(self.loop.repo(repo), path))
 
     def mine(self, curator, repo, path):
-        return self.read(os.path.join(self.loop.worktree(curator, repo), path))
+        return testenv.read(os.path.join(self.loop.worktree(curator, repo), path))
 
     def main(self, repo):
         return self.loop.git(self.loop.repo(repo), "rev-parse", "main")
@@ -97,8 +81,7 @@ class TestRefusals(CurateScriptCase):
                 self.assertIn("stop", self.assertFails(p, 2))
 
     def test_every_step_refuses_without_an_active_curator(self):
-        """R205, R86, R87: unset, unknown, non-Curator and inactive sessions get exit 2
-        and a JSON error telling the agent to stop; nothing is changed."""
+        """R205, R86, R87."""
         op = self.loop.contribute()
         self.loop.start()
         other = self.loop.session("operator", "venus")["name"]  # active, not a Curator
@@ -114,7 +97,7 @@ class TestRefusals(CurateScriptCase):
         self.assertFalse(os.path.exists(os.path.join(self.loop.root, cur, "curation.json")))
 
     def test_done_curator_is_refused(self):
-        """R205: a Curator that has finished can't run steps again."""
+        """R205."""
         self.loop.start()
         self.loop.contribute()
         cur = self.curator()
@@ -122,8 +105,7 @@ class TestRefusals(CurateScriptCase):
         self.assert_refused_everywhere(cur)
 
     def test_curator_expired_mid_pass_removes_nothing(self):
-        """R205, R87: once the Dispatcher expires the Curator, later steps refuse,
-        and the selected sessions survive for the next Curator."""
+        """R205, R87."""
         self.loop.start()
         op = self.loop.contribute()
         cur = self.curator()
@@ -138,7 +120,7 @@ class TestRefusals(CurateScriptCase):
         self.assertIn(op, self.loop.branches("project"))
 
     def test_steps_out_of_order_are_errors(self):
-        """R203: publish and cleanup need a selection first: exit 1, JSON error."""
+        """R203."""
         self.loop.start()
         self.loop.contribute()
         cur = self.curator()
@@ -146,7 +128,7 @@ class TestRefusals(CurateScriptCase):
         self.assertFails(self.step(cur, "cleanup"), 1, "curate-select")
 
     def test_usage_errors_are_not_a_traceback(self):
-        """R203: unknown options are rejected with a usage message, not a crash."""
+        """R203."""
         self.loop.start()
         self.loop.contribute()
         cur = self.curator()
@@ -171,9 +153,7 @@ class TestPrepare(CurateScriptCase):
         return old, planner, w1
 
     def test_removes_old_curators_and_closed_cycle_sessions(self):
-        """R207, R208, R209: an expired Curator and the closed cycle's Planner and
-        Worker are removed with directories, worktrees and branches; the new
-        Curator and operator sessions are left alone."""
+        """R207, R208, R209."""
         old, planner, w1 = self.closed_cycle_left_behind()
         op = self.loop.contribute()
         cur = self.curator()
@@ -187,9 +167,7 @@ class TestPrepare(CurateScriptCase):
         self.assertEqual(sorted(self.worktrees("project")), sorted([op, cur]))
 
     def test_keeps_branches_of_unresolved_issues(self):
-        """R206, R209: a leftover session referenced by an open or answered issue
-        loses its worktree and record, but not its branch; a resolved issue's
-        branch goes."""
+        """R206, R209."""
         old, planner, w1 = self.closed_cycle_left_behind()
         self.loop.msm("issue", "create", json.dumps(
             {"type": "backlog", "title": "finish it", "branch": w1}))
@@ -207,16 +185,14 @@ class TestPrepare(CurateScriptCase):
         self.assertNotIn(old, self.loop.branches("project"))
 
     def test_keeps_the_open_cycles_sessions(self):
-        """R208, R209: done Workers and the done Planner of the open cycle are work
-        to curate, not leftovers."""
+        """R208, R209."""
         planner, (w1,) = self.cycle(("a.txt", "a"))
         cur = self.curator()
         self.assertEqual(self.step_ok(cur, "prepare")["removed"], [])
         self.assertEqual(self.names(), {planner, w1, cur})
 
     def test_rerun_after_a_crash_mid_removal_finishes(self):
-        """R207, R209: a removal cut short (one worktree gone, the rest left) is
-        finished by rerunning; a further rerun removes nothing."""
+        """R207, R209."""
         old, planner, w1 = self.closed_cycle_left_behind()
         self.loop.git(self.loop.repo("loop"), "worktree", "remove", "--force",
                       self.loop.worktree(w1, "loop"))
@@ -231,9 +207,7 @@ class TestPrepare(CurateScriptCase):
 
 class TestSelect(CurateScriptCase):
     def test_contributions_first_then_the_cycle(self):
-        """R211, R212, R213: inactive operator sessions are selected before the
-        cycle's sessions; once they are curated, the open cycle's inactive Planner
-        and Workers are. Active sessions are never selected."""
+        """R211, R212, R213."""
         planner, (w1, w2) = self.cycle(("a.txt", "a"), ("b.txt", "b"))
         op = self.loop.contribute()
         self.loop.session("operator", "venus")  # still active
@@ -250,7 +224,7 @@ class TestSelect(CurateScriptCase):
         self.assertEqual({s["name"] for s in self.step_ok(cur, "select")}, {planner, w1, w2})
 
     def test_expired_workers_are_selected_too(self):
-        """R213, R225: an expired Worker of the open cycle is selected for triage."""
+        """R213, R225."""
         self.loop.start()
         planner = self.loop.plan("a", "b")
         w1 = self.loop.session("worker")["name"]
@@ -261,8 +235,7 @@ class TestSelect(CurateScriptCase):
         self.assertEqual({s["name"] for s in self.step_ok(cur, "select")}, {planner, w1, w2})
 
     def test_nothing_outside_the_curate_phase(self):
-        """R214, R215: with no contributions left and phase = plan, the selection is
-        empty; rerunning select is safe."""
+        """R214, R215."""
         self.loop.start()
         op = self.loop.contribute()
         cur = self.curator()
@@ -278,8 +251,7 @@ class TestSelect(CurateScriptCase):
 
 class TestMerge(CurateScriptCase):
     def test_merges_sessions_and_reports_json(self):
-        """R217, R218, R219: the Curator branch becomes main plus the items in every
-        repo, with the Curator's own commits kept; the report is JSON."""
+        """R217, R218, R219."""
         planner, (w1,) = self.cycle(("a.txt", "a"))
         self.loop.commit(w1, "loop", "notes.md", "notes")
         cur = self.curator()
@@ -294,9 +266,7 @@ class TestMerge(CurateScriptCase):
         self.assertEqual(again["applied"], [])
 
     def test_conflict_exits_3_with_instructions_then_rerun_completes(self):
-        """R222, R223: a conflict stops with exit 3, the repo mid-merge and the
-        resolution steps on stdout; rerunning with markers left stops again, and
-        once they are gone it completes the merge."""
+        """R222, R223."""
         planner, (w1, w2) = self.cycle(("f.txt", "one\n"), ("f.txt", "two\n"))
         cur = self.curator()
         self.step_ok(cur, "select")
@@ -318,13 +288,12 @@ class TestMerge(CurateScriptCase):
         self.assertEqual(self.loop.git(wt, "status", "--porcelain", "--untracked-files=no"), "")
 
     def test_unknown_and_ambiguous_items_are_errors(self):
-        """R218: an item must be a session with a branch or a commit; a commit in
-        more than one repo must be named repo:sha. Exit 1 and a JSON error."""
+        """R218."""
         planner, (w1,) = self.cycle(("a.txt", "a"))
         cur = self.curator()
         self.step_ok(cur, "select")
         self.assertFails(self.step(cur, "merge", "no-such-session"), 1, "neither")
-        # Both repos start from the same kind of empty commit; make one SHA shared.
+        # A commit in both repos: the loop repo's main, fetched into project.
         loop_sha = self.loop.git(self.loop.repo("loop"), "rev-parse", "main")
         self.loop.git(self.loop.repo("project"), "fetch", "-q", self.loop.repo("loop"), "main")
         self.assertFails(self.step(cur, "merge", loop_sha), 1, "repo:sha")
@@ -332,8 +301,7 @@ class TestMerge(CurateScriptCase):
         self.assertEqual(out["applied"], [planner, w1])
 
     def test_leaving_a_session_out_rejects_its_work(self):
-        """R220, R221, R234: rerunning with a shorter list rebuilds the branch
-        without the left-out session."""
+        """R220, R221, R234."""
         planner, (w1, w2) = self.cycle(("a.txt", "a"), ("b.txt", "b"))
         cur = self.curator()
         self.step_ok(cur, "select")
@@ -344,13 +312,12 @@ class TestMerge(CurateScriptCase):
         self.assertEqual(self.mine(cur, "project", "a.txt"), "a")
 
     def test_rerun_after_a_crash_mid_step_does_not_merge_twice(self):
-        """R223, R203: a crash after git merged an item but before the step recorded
-        it (simulated by merging by hand), or with a half-written state file, is
-        recovered by rerunning the same list."""
+        """R223, R203."""
         planner, (w1, w2) = self.cycle(("a.txt", "a"), ("b.txt", "b"))
         cur = self.curator()
         self.step_ok(cur, "select")
         wt = self.loop.worktree(cur)
+        # As if the step crashed after git merged w1, before recording it.
         self.loop.git(wt, "merge", "-q", "--no-ff", "--no-edit", w1)
         with open(os.path.join(self.loop.root, cur, "curation.json.tmp"), "w") as f:
             f.write("{\"selec")
@@ -365,9 +332,7 @@ class TestMerge(CurateScriptCase):
 
 class TestValidate(CurateScriptCase):
     def test_failing_work_is_left_out_and_revalidated(self):
-        """R235, R236, R237, R239, R240: the validation gate runs on the Curator's
-        merged branch; after merging without the responsible work it passes, and
-        only the accepted work is published."""
+        """R235, R236, R237, R239, R240."""
         planner, (w1, w2) = self.cycle(("a.txt", "a"), ("bad.txt", "bad"))
         cur = self.curator()
         gates = {"VALIDATION_GATES": "test -f a.txt && test ! -f bad.txt"}
@@ -383,7 +348,7 @@ class TestValidate(CurateScriptCase):
         self.assertIsNone(self.central("project", "bad.txt"))
 
     def test_curator_fix_is_kept_and_published(self):
-        """R238, R219: a small fix the Curator commits survives a rerun of merge."""
+        """R238, R219."""
         planner, (w1,) = self.cycle(("a.txt", "broken"))
         cur = self.curator()
         gates = {"VALIDATION_GATES": "grep -q fixed a.txt"}
@@ -409,9 +374,7 @@ class TestPublish(CurateScriptCase):
         return cur, w1, w2
 
     def test_fast_forwards_main_and_closes_the_cycle_with_verdicts(self):
-        """R249, R250, R251, R252: project repos then the loop repo are
-        fast-forwarded to the Curator branch; the cycle is closed with the report
-        (here from a file) and the accepted and rejected verdicts."""
+        """R249, R250, R251, R252."""
         cur, w1, w2 = self.merged()
         report = os.path.join(self.tmp, "report.md")
         with open(report, "w") as f:
@@ -430,8 +393,7 @@ class TestPublish(CurateScriptCase):
         self.assertEqual(self.tasks(), {w1: "accepted", w2: "rejected"})
 
     def test_publishes_own_commits_with_nothing_selected(self):
-        """R253, R215: with an empty selection, the Curator's own plan updates still
-        reach main, and no cycle is touched."""
+        """R253, R215."""
         self.loop.start()
         op = self.loop.contribute()
         cur = self.curator()
@@ -445,8 +407,7 @@ class TestPublish(CurateScriptCase):
         self.assertEqual(self.central("loop", "PLAN.md"), "assessed")
 
     def test_bad_verdicts_are_errors_and_publish_nothing(self):
-        """R251, R252: verdicts must name selected Workers, once each, and every
-        done task needs one; otherwise exit 1, a JSON error, and main is unchanged."""
+        """R251, R252."""
         cur, w1, w2 = self.merged()
         before = (self.main("project"), self.main("loop"))
         cases = [(["--accepted", w1, "cycle9-worker1-gonegone"], "not selected"),
@@ -459,7 +420,7 @@ class TestPublish(CurateScriptCase):
         self.assertEqual(self.loop.msm("cycle", "get")["status"], "open")
 
     def test_expired_task_needs_no_verdict(self):
-        """R251, R227: an expired Worker's discarded work needs no verdict."""
+        """R251, R227."""
         self.loop.start()
         planner = self.loop.plan("a", "b")
         w1 = self.loop.session("worker")["name"]
@@ -474,7 +435,7 @@ class TestPublish(CurateScriptCase):
         self.assertEqual(self.tasks(), {w1: "accepted", w2: "expired"})
 
     def test_refuses_a_dirty_central_repo(self):
-        """R250: uncommitted changes in a central repo stop publishing: exit 1."""
+        """R250."""
         cur, w1, w2 = self.merged()
         with open(os.path.join(self.loop.repo("loop"), "config.env"), "a") as f:
             f.write("# local edit\n")
@@ -484,9 +445,7 @@ class TestPublish(CurateScriptCase):
         self.assertEqual(self.main("project"), before)
 
     def test_moved_main_is_an_error_until_merge_is_rerun(self):
-        """R250, R217: if main moved since the merge, publish fails without changing
-        anything; rerunning curate-merge rebuilds on the new main, then publish
-        succeeds and keeps both."""
+        """R250, R217."""
         cur, w1, w2 = self.merged()
         central = self.loop.repo("project")
         with open(os.path.join(central, "hotfix.txt"), "w") as f:
@@ -504,8 +463,7 @@ class TestPublish(CurateScriptCase):
         self.assertEqual(self.central("loop", "PLAN.md"), "plan")
 
     def test_rerun_after_a_crash_before_closing_the_cycle(self):
-        """R250, R251: a crash after the loop repo is published but before the cycle
-        is closed is finished by a rerun; a further rerun changes nothing."""
+        """R250, R251."""
         cur, w1, w2 = self.merged()
         args = ("--report", "r", "--accepted", w1, "--rejected", w2)
         p = self.step(cur, "publish", *args, TENKM_FAULT="publish:after-ff:loop")
@@ -519,8 +477,7 @@ class TestPublish(CurateScriptCase):
         self.assertEqual(self.tasks(), {w1: "accepted", w2: "rejected"})
 
     def test_warns_about_uncommitted_work_in_the_curator_worktree(self):
-        """R250: uncommitted changes in the Curator's worktree are not published,
-        and publish says so."""
+        """R250."""
         cur, w1, w2 = self.merged()
         with open(os.path.join(self.loop.worktree(cur, "loop"), "PLAN.md"), "w") as f:
             f.write("unsaved")
@@ -543,9 +500,7 @@ class TestCleanup(CurateScriptCase):
         return cur, planner, w1, w2
 
     def test_removes_selected_sessions_and_reports_unpublished_work(self):
-        """R254, R255, R256: the selected sessions lose records, directories,
-        worktrees and branches; central worktrees show main; a removed branch with
-        commits that never reached main is reported."""
+        """R254, R255, R256."""
         cur, planner, w1, w2 = self.published()
         out = self.step_ok(cur, "cleanup")
         self.assertEqual(set(out["removed"]), {planner, w1, w2})
@@ -564,8 +519,7 @@ class TestCleanup(CurateScriptCase):
         self.assertEqual(self.loop.msm("loop", "get")["phase"], "plan")  # R259
 
     def test_keeps_branches_of_unresolved_issues(self):
-        """R206, R242, R256: rejected work backlogged with its branch keeps the
-        branch, and is not reported as lost, also once the item is answered."""
+        """R206, R242, R256."""
         cur, planner, w1, w2 = self.published()
         issue = self.loop.msm("issue", "create", json.dumps(
             {"type": "backlog", "title": "redo b", "branch": w2, "assigner_session": cur}),
@@ -579,8 +533,7 @@ class TestCleanup(CurateScriptCase):
         self.assertNotIn(w2, self.names())
 
     def test_rerun_after_a_crash_mid_cleanup_finishes(self):
-        """R256: cleanup cut short (one session gone, another half removed) is
-        finished by a rerun; a further rerun is harmless."""
+        """R256."""
         cur, planner, w1, w2 = self.published()
         self.loop.msm("session", "remove", planner)
         self.loop.git(self.loop.repo("project"), "worktree", "remove", "--force",
@@ -594,7 +547,7 @@ class TestCleanup(CurateScriptCase):
         self.assertEqual(self.names(), {cur})
 
     def test_warns_about_a_dirty_central_repo(self):
-        """R255: cleanup reports uncommitted changes in a central repo."""
+        """R255."""
         cur, planner, w1, w2 = self.published()
         with open(os.path.join(self.loop.repo("loop"), "config.env"), "a") as f:
             f.write("# local edit\n")
@@ -606,8 +559,7 @@ class TestCleanup(CurateScriptCase):
 
 class TestFullPass(CurateScriptCase):
     def test_every_step_twice_in_a_row_gives_the_same_result(self):
-        """R203, R207-R256: a Curator that crashed after any step and reruns it gets
-        the same outcome: running each step twice publishes and cleans up once."""
+        """R203, R207-R256."""
         planner, (w1, w2) = self.cycle(("a.txt", "a"), ("b.txt", "b"))
         op = self.loop.contribute()
         cur = self.curator()
