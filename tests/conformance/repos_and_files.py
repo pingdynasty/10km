@@ -11,8 +11,10 @@ TWO_REPOS = ("tests/test_scenarios_more.py:TestTwoProjectRepos."
 
 MAP = {
     "R11": [L + "TestInit.test_init_registers_central_repos_and_rerun_is_safe", TWO_REPOS],
-    "R12": ("prompts/auditor.md", "Your loop worktree holds the prompts, scripts, plan, goals, "
-                                  "deliverables, BACKLOG.md and LEARNINGS.md."),
+    "R12": [("prompts/auditor.md", "Your loop worktree holds the prompts, scripts, plan, goals, "
+                                   "deliverables, BACKLOG.md and LEARNINGS.md."),
+            "tests/test_init_loop_repo.py:CreateLoopRepoTest."
+            "test_checkout_copies_tracked_files_only_from_the_working_copy"],
     "R13": RL + "TestStatePaths.test_database_and_action_log_are_at_the_configured_paths",
     "R14": [RL + "TestCentralConfig.test_scripts_read_config_env_from_the_central_loop_worktree",
             L + "TestConfig.test_environment_overrides_config"],

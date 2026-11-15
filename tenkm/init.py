@@ -24,9 +24,19 @@ from .config import CODE_ROOT
 
 
 def create_loop_repo(dest, source=CODE_ROOT, branch="main"):
-    """Create a loop repo at dest from a copy of the 10km code, with one commit."""
-    shutil.copytree(source, dest, symlinks=True,
-                    ignore=shutil.ignore_patterns(".git", "__pycache__", "*.db*", ".#*", "*~"))
+    """Create a loop repo at dest from a copy of the 10km code, with one commit.
+
+    If source is the top of a git work tree, only its tracked files are copied, as
+    they are in the working copy (uncommitted edits included, deleted files left
+    out), so a loop root or other untracked files in the checkout stay out. Else
+    (the container image's /opt/10km has no .git) the whole tree is copied, less
+    .git, caches, databases and editor files."""
+    tracked = _tracked_files(source)
+    if tracked is None:
+        shutil.copytree(source, dest, symlinks=True,
+                        ignore=shutil.ignore_patterns(".git", "__pycache__", "*.db*", ".#*", "*~"))
+    else:
+        _copy_files(source, dest, tracked)
     env = dict(os.environ)
     env.setdefault("GIT_AUTHOR_NAME", "10km")
     env.setdefault("GIT_AUTHOR_EMAIL", "10km@localhost")
@@ -34,6 +44,36 @@ def create_loop_repo(dest, source=CODE_ROOT, branch="main"):
     env.setdefault("GIT_COMMITTER_EMAIL", env["GIT_AUTHOR_EMAIL"])
     for args in (["init", "-q", "-b", branch], ["add", "-A"], ["commit", "-q", "-m", "Loop repo"]):
         subprocess.run(["git", "-C", dest, *args], env=env, check=True, capture_output=True)
+
+
+def _tracked_files(source):
+    """The paths git tracks in source, relative to it, if source is the top of a git
+    work tree; else None."""
+    def git(*args):
+        return subprocess.run(["git", "-C", source, *args], capture_output=True)
+    top = git("rev-parse", "--show-toplevel")
+    if top.returncode or not _same_dir(os.fsdecode(top.stdout.strip()), source):
+        return None
+    listed = git("ls-files", "-z", "--cached")
+    if listed.returncode:
+        return None
+    return [os.fsdecode(p) for p in listed.stdout.split(b"\0") if p]
+
+
+def _copy_files(source, dest, paths):
+    """Copy paths (relative to source) to dest as they are in source: symlinks as
+    symlinks, modes kept. Paths missing from source (deleted, not yet committed)
+    are skipped."""
+    os.makedirs(dest)
+    for rel in paths:
+        src, dst = os.path.join(source, rel), os.path.join(dest, rel)
+        if not os.path.lexists(src):
+            continue
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        if os.path.isdir(src) and not os.path.islink(src):  # a submodule
+            shutil.copytree(src, dst, symlinks=True, ignore=shutil.ignore_patterns(".git"))
+        else:
+            shutil.copy2(src, dst, follow_symlinks=False)
 
 
 def run(cfg):
