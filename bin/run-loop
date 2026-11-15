@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Container main process: run the Dispatcher every DISPATCH_INTERVAL seconds.
+# Uses the loop repo's own copy of dispatch, so agents can adapt it.
+. "$(dirname "$0")/lib.sh"
+
+while :; do
+  dispatch="$CENTRAL/loop/bin/dispatch"
+  [ -x "$dispatch" ] || dispatch="$BIN/dispatch"
+  "$dispatch" || echo "dispatch failed: $?" >&2
+  sleep "${DISPATCH_INTERVAL:-60}"
+done

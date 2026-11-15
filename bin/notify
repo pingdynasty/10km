@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Notify the operator. Runs NOTIFY_CMD with the message as $1 if configured;
+# otherwise appends to NOTIFICATIONS.md in the caller's loop worktree, to be
+# committed and merged with the rest of the session's work.
+. "$(dirname "$0")/lib.sh"
+
+message=${1:?usage: notify <message>}
+if [ -n "${NOTIFY_CMD:-}" ]; then
+  bash -c "$NOTIFY_CMD" notify "$message"
+else
+  file="$LOOP_ROOT/${LOOP_SESSION:?LOOP_SESSION is not set}/loop/NOTIFICATIONS.md"
+  printf -- '- %s %s: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$LOOP_SESSION" "$message" >>"$file"
+fi

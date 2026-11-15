@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# One Dispatcher pass: expire sessions, then launch agents for the current phase.
+. "$(dirname "$0")/lib.sh"
+
+exec 8>"$LOOP_ROOT/.dispatch.lock"
+flock -n 8 || exit 0
+"$MSM" loop get >/dev/null 2>&1 || exit 0
+
+now=$(date +%s)
+epoch() { date -d "$1" +%s; }
+alive() { kill -0 "$1" 2>/dev/null; }
+
+# Signal the agent's process group (launched with setsid), then mark it expired.
+expire() {
+  local name=$1 pid=$2
+  if [ -n "$pid" ] && alive "$pid"; then
+    kill -TERM -- "-$pid" 2>/dev/null || true
+    for _ in $(seq "${KILL_GRACE:-10}"); do alive "$pid" || break; sleep 1; done
+    kill -KILL -- "-$pid" 2>/dev/null || true
+  fi
+  "$MSM" session expired "$name" >/dev/null || true
+  echo "expired $name"
+}
+
+"$MSM" session list '{"status":"active"}' |
+  jq -r '.[] | select(.role != "operator") | [.name, (.pid // "" | tostring), .created_at] | @tsv' |
+  while IFS=$'\t' read -r name pid created; do
+    if (( now - $(epoch "$created") > ${SESSION_TIMEOUT:-3600} )); then
+      expire "$name" "$pid"
+    elif [ -n "$pid" ] && ! alive "$pid"; then
+      expire "$name" ""
+    fi
+  done
+
+loop=$("$MSM" loop get)
+[ "$(jq -r .stopped <<<"$loop")" = true ] && exit 0
+
+# Create a session (retrying on branch name clashes) and start its agent detached.
+launch() {
+  local role=$1 json="" rc=0 var cmd name dir prompt pid
+  for _ in 1 2 3; do
+    json=$("$BIN/session" "$role" 2>/dev/null) && { rc=0; break; } || rc=$?
+    [ "$rc" -eq "$EAGAIN" ] || break
+  done
+  if [ "$rc" -ne 0 ]; then
+    [ "$rc" -eq 2 ] || echo "launch $role failed: $rc" >&2
+    return "$rc"
+  fi
+  name=$(jq -r .name <<<"$json")
+  dir=$(jq -r .working_directory <<<"$json")
+  var="$(tr '[:lower:]' '[:upper:]' <<<"$role")_AGENT"
+  cmd=${!var:-${LOOP_AGENT:?LOOP_AGENT is not configured}}
+  prompt="Your session is $name. Your worktrees are in $dir."$'\n\n'"$(cat "$CENTRAL/loop/prompts/$role.md")"
+  (cd "$dir" && SESSION=$name LOOP_SESSION=$name PROMPT=$prompt PATH="$BIN:$PATH" \
+    exec setsid bash -c "$cmd" </dev/null >"$dir/agent.log" 2>&1) &
+  pid=$!
+  "$MSM" session update "$name" "{\"pid\": $pid}" >/dev/null
+  echo "launched $name ($pid)"
+}
+
+case $(jq -r .phase <<<"$loop") in
+  plan) launch planner || true ;;
+  curate) launch curator || true ;;
+  execute)
+    active=$("$MSM" session list '{"role":"worker","status":"active"}' | jq length)
+    while (( active < ${MAX_WORKERS:-4} )) && launch worker; do active=$((active + 1)); done ;;
+esac
+
+last=$("$MSM" audit list | jq -r 'map(.created_at) | max // empty')
+if [ -z "$last" ] || (( now - $(epoch "$last") >= ${AUDITOR_INTERVAL:-86400} )); then
+  launch auditor || true
+fi

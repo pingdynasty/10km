@@ -1,0 +1,5 @@
+#!/bin/sh
+# Add a Loop-Session trailer to every commit, from LOOP_SESSION or the branch.
+session=${LOOP_SESSION:-$(git symbolic-ref --quiet --short HEAD)} || exit 0
+[ -n "$session" ] && [ "$session" != main ] || exit 0
+git interpret-trailers --in-place --if-exists doNothing --trailer "Loop-Session: $session" "$1"

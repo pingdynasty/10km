@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Fake agent for tests: does the minimum each role must do, using real msm and git.
+# Use as LOOP_AGENT=fake-agent.
+set -euo pipefail
+. "$(dirname "$0")/../bin/lib.sh"
+s=$SESSION
+dir="$LOOP_ROOT/$s"
+project=${PROJECT_REPOS%%=*}
+
+case $s in
+  *-planner-*)
+    "$MSM" cycle create "{\"planner_session\": \"$s\", \"headline\": \"smoke\",
+      \"tasks\": [{\"shortname\": \"hello\", \"instructions\": \"add hello\", \"branch\": \"$s\"}]}" >/dev/null
+    "$MSM" session done "$s" >/dev/null ;;
+  *-worker*)
+    task=$("$MSM" task get --session "$s")
+    git -C "$dir/$project" rebase -q "$(jq -r .branch <<<"$task")"
+    "$MSM" task update --session "$s" "{\"branch\": \"$s\"}" >/dev/null
+    echo hello >"$dir/$project/hello.txt"
+    git -C "$dir/$project" add hello.txt
+    git -C "$dir/$project" commit -q -m "Add hello"
+    "$MSM" task update --session "$s" '{"report": "added hello"}' >/dev/null
+    "$MSM" session done "$s" >/dev/null ;;
+  auditor*)
+    echo "- smoke learning" >>"$dir/loop/LEARNINGS.md"
+    git -C "$dir/loop" add LEARNINGS.md
+    git -C "$dir/loop" commit -q -m "Add learning"
+    "$MSM" audit create '{"period": {"from": "start", "to": "now"}, "summary": "ok"}' >/dev/null
+    "$MSM" session done "$s" >/dev/null ;;
+  *-curator-*)
+    curate-clean
+    selected=$(curate-select)
+    for name in $(jq -r '.[] | select(.status == "done") | .name' <<<"$selected"); do
+      for repo in $(repos); do git -C "$dir/$repo" merge -q --no-edit "$name"; done
+    done
+    for repo in $(repos); do git -C "$CENTRAL/$repo" merge -q --no-edit "$s"; done
+    for name in $(jq -r '.[] | select(.role == "worker") | .name' <<<"$selected"); do
+      "$MSM" task update --session "$name" '{"status": "accepted"}' >/dev/null
+    done
+    if jq -e 'any(.[]; .role == "planner")' <<<"$selected" >/dev/null; then
+      "$MSM" cycle curate "{\"curator_session\": \"$s\", \"report\": \"smoke\"}" >/dev/null
+    fi
+    curate-cleanup
+    "$MSM" session done "$s" >/dev/null ;;
+esac
