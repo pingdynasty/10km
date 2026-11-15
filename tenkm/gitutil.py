@@ -36,8 +36,24 @@ def main_branch(cfg, repo):
     return out if rc == 0 and out else "main"
 
 
+def main_branches(cfg, repos):
+    """main_branch for each repo, as {repo: branch}. A step reads it once: the
+    config and the central checkout don't change while it runs."""
+    return {repo: main_branch(cfg, repo) for repo in repos}
+
+
 def branch_exists(cfg, repo, branch):
     return ok(cfg.repo_path(repo), "show-ref", "--verify", "--quiet", f"refs/heads/{branch}")
+
+
+def branches(cfg, repo):
+    """The repo's local branch names, from one git call (empty if git fails).
+    A snapshot: read it again after anything that creates or deletes branches."""
+    rc, out, _ = run(cfg, cfg.repo_path(repo), "for-each-ref", "--format=%(refname)",
+                     "refs/heads/")
+    prefix = "refs/heads/"
+    return {line[len(prefix):] for line in out.splitlines()
+            if rc == 0 and line.startswith(prefix)}
 
 
 def run(cfg, repo_dir, *args):
