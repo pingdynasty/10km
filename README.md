@@ -76,6 +76,7 @@ Also in `config.env`: `SESSION_TIMEOUT` (and per-role `PLANNER_TIMEOUT` etc.), `
 
 ```sh
 10km status                        # phase, cycle, tasks, sessions, escalations, main
+10km metrics [--cycle N] [--json]  # per cycle and role: sessions, times, commits, usage
 msm loop stop [reason]             # stop: the Dispatcher launches nothing new
 msm loop resume                    # resume a stopped loop
 10km session start <username>      # operator session with OPERATOR_AGENT
@@ -92,6 +93,8 @@ Agents raise escalations as issues for the Planner, Curator, Auditor or you. The
 msm issue list '{"status": "open", "assignee_role": "operator"}'
 msm issue update <id> '{"status": "resolved", "resolution": "..."}'
 ```
+
+`10km metrics` lists every session the loop still knows of, by cycle and role: its task and outcome, start and duration, commits on main by `Loop-Session:` trailer, and harness usage (agent time, turns, tokens, cost) from `usage.jsonl` next to the database; then totals per cycle and role. The Curator removes sessions once curated, so times come from what survives: the session row, the Worker's task, usage records, or failing those the session's first and last state change in the action log or first and last commit, marked `~` as an activity window rather than the whole session. `--json` gives the same data for agents.
 
 ## Recovering from a stop
 
