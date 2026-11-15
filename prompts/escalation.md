@@ -22,7 +22,7 @@ similar escalation is open, update it instead of creating another
 Create with `msm issue create '<json>'`:
 - `type`: `escalation`; `title`: the next free ESCn, then the question, in one
   line (`ESC3: ...`).
-- `owner_session`: your session; `assignee_role`: who must answer (`planner`,
+- `assigner_session`: your session; `assignee_role`: who must answer (`planner`,
   `curator`, `auditor` or `operator`).
 - `severity`: `low`, `high` or `blocking`.
 - `branch`: the branch holding related unmerged work, if any.
@@ -38,13 +38,15 @@ and spell out each shortname on first use (`prompts/common.md`).
 - `low` and `high` don't stop the loop. The assignee acts on them in its own time.
 - `blocking`, on an operator escalation, stops the loop: the Curator notifies the
   operator and stops the loop at the end of its pass, and `msm loop resume` is
-  refused until the escalation is resolved. Use it only when the loop
+  refused while the escalation is open; answering it is enough. Use it only when the loop
   cannot make progress without the answer. A blocking escalation to another role
   does not stop the loop.
 
-## Resolving
+## Answering
 
-The assignee resolves an escalation with
-`msm issue update <id> '{"status":"resolved","resolution":"..."}'`: the decision,
-and what was done about it. The role that acts on the decision records anything
-lasting in the plan.
+The assignee answers an escalation with
+`msm issue update <id> '{"status":"answered","resolution":"..."}'`: the decision.
+The operator answers operator escalations the same way. The raising role
+(`assigner_role`) then acts on the decision, records anything lasting in the plan,
+and sets status `resolved` (`prompts/common.md`). Resolve it yourself instead
+only if nothing is left for the raiser to do.

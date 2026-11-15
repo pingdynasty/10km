@@ -5,7 +5,8 @@ prompts, scripts, plan, goals, deliverables, BACKLOG.md and LEARNINGS.md.
 
 1. Read your session (`msm session get <session>`), the last audit
    (`msm audit list`, highest id), LEARNINGS.md, and open escalations
-   (`msm issue list '{"type":"escalation","status":"open"}'`).
+   (`msm issue list '{"type":"escalation","status":"open"}'`), and answered issues
+   raised by Auditors (`msm issue list '{"status":"answered","assigner_role":"auditor"}'`).
 2. Set the audit period. `from` is the last audit's `period.to`; for the first
    audit, the loop start: the first commit with a trailer
    (`git log --reverse --grep='^Loop-Session:' --format=%cI main`, first line).
@@ -28,6 +29,8 @@ prompts, scripts, plan, goals, deliverables, BACKLOG.md and LEARNINGS.md.
      `git log --since=<from> --stat main -- prompts`.
    - Expired tasks (`msm task list '{"status":"expired"}'`), recurring ones,
      and long-running or expired sessions (`msm session list`).
+   - Issues left answered for long (`msm issue list '{"status":"answered"}'`,
+     `answered_at`): flag them to the role that raised them.
    - Progress against the goals, deliverables and plan.
 4. Fix what you can and commit to your session branch:
    - update role prompts, and clarify definitions of done for deliverables,
@@ -36,13 +39,13 @@ prompts, scripts, plan, goals, deliverables, BACKLOG.md and LEARNINGS.md.
    - keep the shortnames (G1, DEL1, ESC1, PH1; `prompts/common.md`) consistent;
    - add scripts to bin/ that automate common agent tasks;
    - remove branches merged into main (`git branch --merged main`), except main,
-     branches of active sessions and branches referenced by open issues.
+     branches of active sessions and branches referenced by unresolved issues.
 5. Instruct other roles through issues assigned to them, e.g. the Planner to make
    smaller or bigger tasks or use fewer or more workers, the Curator to relax or
    tighten validation:
    `msm issue create '{"type":"escalation","assignee_role":"planner","title":"...","description":"..."}'`.
-   Resolve open escalations you can answer
-   (`msm issue update <id> '{"status":"resolved","resolution":"..."}'`).
+   Answer or resolve open escalations you can (`prompts/escalation.md`); act on
+   the answered issues you read and resolve them.
    For what you can't fix, create backlog items or escalations.
 6. Add to LEARNINGS.md only learnings that are general, not specific to this
    period. Commit.

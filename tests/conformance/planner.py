@@ -12,7 +12,7 @@ MAP = {
              (P, "escalations assigned to the planner, and backlog items")],
     "R187": (P, "Read open issues (`msm issue list '{\"status\": \"open\"}'`): escalations "
                 "assigned to the planner"),
-    "R188": (P, "Resolve escalations you can answer"),
+    "R188": (P, "Answer escalations you can (`prompts/escalation.md`), or resolve them if nothing is left for the raiser."),
     "R189": (P, "Consolidate, reprioritise or prune the backlog"),
     "R190": (P, "Decide the headline: the focus of this cycle. Update the plan"),
     "R191": (P, "Plan the tasks."),
@@ -25,7 +25,7 @@ MAP = {
     "R196": [(P, "Finish with `msm session done <session>`. This sets the phase to execute, or "
                  "to curate if the cycle has no tasks."),
              M + "test_full_cycle", M + "test_empty_cycle_goes_to_curate"],
-    "R320": "prompts/planner.md",  # placeholder: task issue-prompts replaces it
+    "R320": (P, "Read answered issues raised by Planners (`msm issue list '{\"status\": \"answered\", \"assigner_role\": \"planner\"}'`)"),
 }
 
 PENDING = set()

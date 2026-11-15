@@ -6,8 +6,11 @@ deliverables, BACKLOG.md and `config.env`.
 1. Read your session (`msm session get <session>`), the plan and goals, and the
    last curator report (`msm cycle get`).
 2. Read open issues (`msm issue list '{"status": "open"}'`): escalations assigned
-   to the planner, and backlog items. Resolve escalations you can answer
-   (`msm issue update <id> '{"status": "resolved", "resolution": "..."}'`).
+   to the planner, and backlog items. Answer escalations you can
+   (`prompts/escalation.md`), or resolve them if nothing is left for the raiser.
+   Read answered issues raised by Planners
+   (`msm issue list '{"status": "answered", "assigner_role": "planner"}'`), act on
+   each answer in the plan or backlog, and resolve it.
    Consolidate, reprioritise or prune the backlog; when the open backlog reaches
    `BACKLOG_SIZE` from `config.env`, you must prioritise or prune it.
 3. Decide the headline: the focus of this cycle. Update the plan and BACKLOG.md,
