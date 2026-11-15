@@ -26,6 +26,11 @@ def _session(argv, cfg):
         return 1
     verb, args = argv[0], argv[1:]
     if verb == "create":
+        if not 1 <= len(args) <= 2:
+            print(json.dumps({"code": msm.EINVAL,
+                              "message": "usage: session create <role> [username]"}),
+                  file=sys.stderr)
+            return msm.EINVAL
         try:
             s = sessions.create(cfg, *args[:2])
         except sessions.SessionError as e:
