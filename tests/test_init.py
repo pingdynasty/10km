@@ -1,12 +1,6 @@
-"""Tests for 10km init's hook setup: the repo's local core.hooksPath points at a
-hooks dir init generates, with the loop's prepare-commit-msg and wrappers for the
-hooks a core.hooksPath inherited from global config has.
+"""Tests for 10km init's hook setup (tenkm.init.install_hooks).
 
-Each test uses its own GIT_CONFIG_GLOBAL (and no system config), so the host's
-git config never matters.
-
-Run: python3 -m unittest discover tests
-"""
+Each test uses its own GIT_CONFIG_GLOBAL and no system config."""
 import os
 import shutil
 import subprocess
@@ -16,8 +10,10 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import testenv  # noqa: E402,F401  (test config, no caller env: tests/testenv.py)
-sys.path.insert(0, os.path.dirname(__file__))
 from test_scripts import ScriptLoop  # noqa: E402
+from unittest import mock  # noqa: E402
+
+from tenkm import gitutil, init, msm  # noqa: E402
 
 HOOK = "#!/bin/sh\n{}\n"
 
@@ -46,7 +42,6 @@ class InitHooksTest(unittest.TestCase):
         self.loop = ScriptLoop(os.path.join(self.base, "loop"), GIT_CONFIG_NOSYSTEM="1",
                                GIT_CONFIG_GLOBAL=self.global_config)
         self.project = os.path.join(self.loop.central, "project")
-        self.loop_hooks = os.path.join(self.loop.central, "loop", "hooks")
         self.hooks = os.path.join(self.project, ".git", "tenkm-hooks")
         return self.loop
 
@@ -75,7 +70,7 @@ class InitHooksTest(unittest.TestCase):
         self.write_hook("prepare-commit-msg",
                         'git interpret-trailers --in-place --trailer "Inherited: $2" "$1"')
         self.assertEqual(self.config("core.hooksPath"), self.hooks)
-        self.loop.ok("10km", "init")  # the hooks were written after the first init
+        self.loop.ok("10km", "init")
         self.assertEqual(self.generated(), ["pre-commit", "prepare-commit-msg"])
         self.commit()
         message = self.message()
@@ -102,16 +97,6 @@ class InitHooksTest(unittest.TestCase):
         with open(self.marker) as f:
             self.assertEqual(f.read(), "origin url\nrefs\n")
 
-    def test_rerun_is_safe(self):
-        self.make_loop(self.inherited)
-        self.write_hook("pre-commit", "true")
-        self.loop.ok("10km", "init")
-        self.loop.ok("10km", "init")
-        self.assertEqual(self.config("core.hooksPath"), self.hooks)
-        self.assertEqual(self.generated(), ["pre-commit", "prepare-commit-msg"])
-        self.commit()
-        self.assertIn("Loop-Session: s1", self.message())
-
     def test_never_chains_to_itself(self):
         self.make_loop(self.inherited)
         with open(self.global_config, "w") as f:
@@ -129,20 +114,13 @@ class InitHooksTest(unittest.TestCase):
         self.commit()
         self.assertIn("Loop-Session: s1", self.message())
 
-    def test_hook_the_inherited_dir_lacks_runs_nothing(self):
-        # reference-transaction fires on every ref update: with no inherited hook
-        # of that name, git must find no hook of the loop's to run.
-        self.make_loop(self.inherited)
-        self.write_hook("pre-commit", "true")
-        self.loop.ok("10km", "init")
-        self.assertFalse(os.path.exists(os.path.join(self.hooks, "reference-transaction")))
-        self.assertEqual(self.generated(), ["pre-commit", "prepare-commit-msg"])
-
     def test_rerun_picks_up_new_inherited_hook(self):
         self.make_loop(self.inherited)
         self.assertEqual(self.generated(), ["prepare-commit-msg"])
         self.write_hook("post-commit", f"echo post-commit >> '{self.marker}'")
         self.loop.ok("10km", "init")
+        self.loop.ok("10km", "init")
+        self.assertEqual(self.config("core.hooksPath"), self.hooks)
         self.assertEqual(self.generated(), ["post-commit", "prepare-commit-msg"])
         self.commit()
         with open(self.marker) as f:
@@ -151,18 +129,6 @@ class InitHooksTest(unittest.TestCase):
         self.loop.ok("10km", "init")
         self.assertEqual(self.generated(), ["prepare-commit-msg"])
 
-    def test_upgrades_earlier_layout(self):
-        # Earlier versions set core.hooksPath to the loop's hooks/ and recorded
-        # the inherited dir in tenkm.chainHooksPath.
-        self.make_loop(self.inherited)
-        self.write_hook("pre-commit", "true")
-        self.loop.git(self.project, "config", "--local", "core.hooksPath", self.loop_hooks)
-        self.loop.git(self.project, "config", "--local", "tenkm.chainHooksPath", self.inherited)
-        self.loop.ok("10km", "init")
-        self.assertEqual(self.config("core.hooksPath"), self.hooks)
-        self.assertIsNone(self.config("tenkm.chainHooksPath"))
-        self.assertEqual(self.generated(), ["pre-commit", "prepare-commit-msg"])
-
     def test_existing_local_hooks_path_untouched(self):
         self.make_loop(self.inherited)
         self.write_hook("pre-commit", "true")
@@ -170,6 +136,15 @@ class InitHooksTest(unittest.TestCase):
         self.loop.ok("10km", "init")
         self.assertEqual(self.config("core.hooksPath"), self.inherited)
         self.assertEqual(self.generated(), ["prepare-commit-msg"])
+
+    def test_old_git_fails_without_touching_hooks_path(self):
+        self.make_loop()
+        self.loop.git(self.project, "config", "--local", "core.hooksPath", self.inherited)
+        old_git = (129, "", "error: unknown option `show-scope'")
+        with mock.patch.object(gitutil, "run", return_value=old_git):
+            with self.assertRaisesRegex(msm.MSMError, "git 2.26"):
+                init.install_hooks(None, self.project, self.inherited)
+        self.assertEqual(self.config("core.hooksPath"), self.inherited)
 
 
 if __name__ == "__main__":

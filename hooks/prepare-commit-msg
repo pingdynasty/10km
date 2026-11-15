@@ -1,7 +1,5 @@
 #!/bin/sh
 # Add a Loop-Session trailer to every commit, from LOOP_SESSION or the branch.
-# 10km init runs this from the repo's generated hooks dir, which also chains to
-# an inherited prepare-commit-msg, if any (tenkm/init.py).
 session=${LOOP_SESSION:-$(git symbolic-ref --quiet --short HEAD)}
 if [ -n "$session" ] && [ "$session" != main ]; then
   git interpret-trailers --in-place --if-exists doNothing \
