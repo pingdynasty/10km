@@ -7,7 +7,6 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 import warnings
 from datetime import datetime, timezone
@@ -193,6 +192,13 @@ class TestSessions(LoopCase):
             self.assertEqual(m.list("session"), [])
         self.assertEqual([d for d in os.listdir(self.root) if d.startswith("operator")], [])
 
+    def test_shared_setup_covers_a_repo_added_since(self):
+        setup = {}
+        sessions.create(self.cfg, "operator", "mars", setup=setup)
+        testenv.project_repo(self.cfg.repo_path("extra"))
+        s = sessions.create(self.cfg, "operator", "venus", setup=setup)
+        self.assertTrue(os.path.isdir(os.path.join(s["working_directory"], "extra")))
+
     def test_detached_central_head_still_branches_from_main(self):
         subprocess.run(["git", "-C", self.cfg.repo_path("project"), "checkout", "-q", "--detach"],
                        check=True)
@@ -203,6 +209,13 @@ class TestSessions(LoopCase):
         with self.assertRaises(sessions.SessionError) as e:
             sessions.create(self.cfg, "planner")  # loop is stopped
         self.assertEqual(e.exception.code, msm.EPERM)
+
+
+def exited(pid):
+    """True if process pid is gone or a zombie."""
+    stat = subprocess.run(["ps", "-p", str(pid), "-o", "stat="],
+                          capture_output=True, text=True).stdout.strip()
+    return stat[:1] in ("", "Z")
 
 
 class TestDispatch(LoopCase):
@@ -220,10 +233,7 @@ class TestDispatch(LoopCase):
         pid = int(cur["handle"].split(":")[1])
         dispatch.run_pass(self.reload(CURATOR_TIMEOUT="-1", KILL_GRACE="2"))
         self.assertEqual(self.sessions("curator")[0]["status"], "expired")
-        time.sleep(0.2)
-        self.assertNotEqual(subprocess.run(["ps", "-p", str(pid), "-o", "stat="],
-                                           capture_output=True, text=True).stdout.strip()[:1],
-                            "S")
+        self.assertTrue(testenv.wait_for(lambda: exited(pid)))
 
     def test_dead_agent_is_expired_after_start_grace(self):
         self.start_loop()
@@ -281,6 +291,23 @@ class TestDispatch(LoopCase):
         self.assertIn(f"ESC5: Agent may still be running: {names[0]}", titles)
         self.assertIn(f"ESC6: Agent may still be running: {names[1]}", titles)
 
+    def test_undecodable_prompt_still_launches(self):  # R151
+        self.start_loop()
+        with open(os.path.join(self.cfg.central, "loop", "prompts", "curator.md"), "ab") as f:
+            f.write(b"\xff\xfe bad bytes\n")
+        dispatch.run_pass(self.cfg)
+        [cur] = self.sessions("curator")
+        self.assertTrue(cur["handle"].startswith("process:"))
+        with open(os.path.join(cur["working_directory"], "prompt.txt"), encoding="utf-8") as f:
+            self.assertIn("\ufffd", f.read())
+
+    def test_escalation_number_ignores_overlong_digits(self):  # R158
+        self.start_loop()
+        with self.m() as m:
+            m.create("issue", {"type": "escalation", "title": "ESC" + "9" * 5000 + ": x"})
+            m.create("issue", {"type": "escalation", "title": "ESC2: y"})
+            self.assertEqual(dispatch.next_escalation(m), "ESC3")
+
     def test_failed_prompt_write_removes_the_session(self):  # R151
         self.start_loop()
         with mock.patch("tenkm.dispatch.open", side_effect=OSError("disk full"), create=True):
@@ -304,7 +331,7 @@ class TestDispatch(LoopCase):
         cfg = self.reload(LOOP_AGENT="sleep 30 & sleep 30 & exit 0")
         dispatch.run_pass(cfg)
         [cur] = self.sessions("curator")
-        time.sleep(0.5)
+        self.assertTrue(testenv.wait_for(lambda: exited(int(cur["handle"].split(":")[1]))))
         from tenkm.launchers import process
         self.assertTrue(process.alive(cfg, cur["handle"]))  # leader gone, children alive
         self.assertTrue(process.stop(self.reload(KILL_GRACE="2"), cur["handle"]))

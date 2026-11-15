@@ -23,7 +23,7 @@ def log(message):
     print(message, flush=True)
 
 
-ESC = re.compile(r"ESC(\d+)\b")
+ESC = re.compile(r"ESC(\d{1,9})\b")
 
 
 class DatabaseUnreadable(Exception):
@@ -131,9 +131,9 @@ class Pass:
         name, directory = session["name"], session["working_directory"]
         prompt_file = os.path.join(directory, "prompt.txt")
         try:
-            with open(prompt_file, "w") as f:
+            with open(prompt_file, "w", encoding="utf-8") as f:
                 f.write(self.prompt(role, session))
-        except OSError as e:  # no agent to run: don't leave a session without one
+        except (OSError, ValueError) as e:
             log(f"launch {role} failed: prompt not written: {e}")
             sessions.remove(self.cfg, name)
             return False
@@ -163,7 +163,7 @@ class Pass:
         for name in ("common.md", f"{role}.md"):
             path = os.path.join(prompts, name)
             if os.path.exists(path):
-                with open(path) as f:
+                with open(path, encoding="utf-8", errors="replace") as f:
                     parts.append(f.read())
         return "\n".join(parts)
 
@@ -272,8 +272,7 @@ def run_pass(cfg=None, now=None):
         try:
             p.run()
             notify.forget(cfg, "db-unreadable")
-        except (sqlite3.DatabaseError, DatabaseUnreadable) as e:
-            # Other MSMErrors are refusals or bugs, not a database problem: raise them.
+        except (sqlite3.DatabaseError, DatabaseUnreadable) as e:  # other MSMErrors raise
             p.notice("Loop database unreadable", f"{cfg.db}: {e}. The Dispatcher starts "
                      "nothing until it can read the database.", "critical", key="db-unreadable")
     p.flush()

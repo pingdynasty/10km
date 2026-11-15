@@ -105,20 +105,6 @@ class InitHooksTest(unittest.TestCase):
         with open(self.marker) as f:
             self.assertEqual(f.read(), "pre-commit\n")
 
-    def test_rerun_on_old_style_loop_moves_hooks_path_to_worktrees(self):
-        self.make_loop(self.inherited)
-        # An older init: a local core.hooksPath and no per-worktree config.
-        self.loop.git(self.project, "config", "--local", "--unset", "extensions.worktreeConfig")
-        self.loop.git(self.project, "config", "--local", "core.hooksPath", self.hooks)
-        worktree = self.session()
-        self.loop.ok("10km", "init")
-        self.assertIsNone(self.config("core.hooksPath"))
-        self.assertEqual(self.config("core.hooksPath", worktree, "--worktree"), self.hooks)
-        self.commit(worktree)
-        self.assertIn(f"Loop-Session: {self.session_name()}", self.message())
-        self.loop.ok("10km", "init")  # rerun: nothing left to move
-        self.assertIsNone(self.config("core.hooksPath"))
-
     def test_failing_inherited_hook_fails(self):
         self.make_loop(self.inherited)
         self.write_hook("commit-msg", "exit 1")

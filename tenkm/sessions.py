@@ -17,18 +17,15 @@ class SessionError(Exception):
 
 
 def repo_setup(cfg):
-    """{repo: (base, hooks)}: the branch a new session's worktree starts from
-    (gitutil.main_branch) and the core.hooksPath it sets (init.session_hooks_path,
-    or None). Read once, it serves every session created in one step (a Dispatcher
-    pass): neither changes while a step runs."""
+    """{repo: (base, hooks)}: the branch a new worktree starts from and the
+    core.hooksPath it sets (init.session_hooks_path), for a step to read once."""
     mains = gitutil.main_branches(cfg, cfg.repos())
     return {repo: (mains[repo], init.session_hooks_path(cfg.repo_path(repo)))
             for repo in cfg.repos()}
 
 
 def _add_worktree(cfg, repo, name, worktree, base):
-    """`git worktree add -b name`; SessionError EAGAIN if it failed because the
-    branch exists (R134). Checking only on failure saves a git call per repo."""
+    """`git worktree add -b name`; SessionError EAGAIN if the branch exists (R134)."""
     try:
         gitutil.git(cfg.repo_path(repo), "worktree", "add", "-q", "-b", name, worktree, base)
     except gitutil.GitError as e:
@@ -39,9 +36,8 @@ def _add_worktree(cfg, repo, name, worktree, base):
 
 def create(cfg, role, username=None, setup=None):
     """Create a session for a role (R128-R131). Returns its record; raises
-    SessionError with the codes of R132-R135. A caller creating several sessions
-    passes the same dict as setup to each call: the first that gets past msm fills
-    it with repo_setup(cfg), the others reuse it."""
+    SessionError with the codes of R132-R135. Callers creating several sessions
+    share one setup dict; the first to need it fills it with repo_setup(cfg)."""
     setup = {} if setup is None else setup
     with lock(cfg, "session"):
         try:
@@ -55,14 +51,14 @@ def create(cfg, role, username=None, setup=None):
         try:
             try:
                 os.makedirs(directory, exist_ok=True)
-                if not setup:
+                if not setup.keys() >= set(cfg.repos()):  # first call, or a repo added
                     setup.update(repo_setup(cfg))
                 for repo in cfg.repos():
                     base, hooks = setup[repo]
                     worktree = os.path.join(directory, repo)
                     _add_worktree(cfg, repo, name, worktree, base)
                     created.append(repo)
-                    if hooks:  # the loop's hooks, for this worktree only (tenkm.init)
+                    if hooks:
                         gitutil.git(worktree, "config", "--worktree", "core.hooksPath", hooks)
                     faults.point(f"session:after-worktree:{repo}")
             except (gitutil.GitError, OSError) as e:
@@ -99,8 +95,8 @@ def remove(cfg, name, protected=()):
 
 
 def remove_all(cfg, names, protected=()):
-    """remove() for several sessions, with one `branch -D` and one `worktree prune`
-    per repo for all of them. Safe to rerun after a crash: a record goes last."""
+    """remove() for several sessions, with one `branch -D` and `worktree prune` per
+    repo. Records go last, so a rerun after a crash finishes the job."""
     names = list(dict.fromkeys(names))
     if not names:
         return
