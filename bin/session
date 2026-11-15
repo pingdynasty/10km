@@ -1,34 +1,9 @@
-#!/usr/bin/env bash
-# Create a session: msm record, then a branch and worktree in every repo.
-# Usage: session <role> [username]
-# Exit: 0 ok, msm's code if `msm session create` fails, 4 branch exists, 5 git error.
-. "$(dirname "$0")/lib.sh"
+#!/usr/bin/env python3
+"""Create a session: `session <role> [username]`. Prints its JSON."""
+import os
+import sys
 
-role=${1:?usage: session <role> [username]}
-user=${2:-}
-exec 9>"$LOOP_ROOT/.session.lock"
-flock 9
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+from tenkm.cli import main  # noqa: E402
 
-json=$("$MSM" session create "$role" ${user:+"$user"}) || exit $?
-name=$(jq -r .name <<<"$json")
-dir=$(jq -r .working_directory <<<"$json")
-created=()
-
-fail() {
-  local repo
-  for repo in "${created[@]}"; do
-    git -C "$CENTRAL/$repo" worktree remove --force "$dir/$repo" 2>/dev/null || true
-    git -C "$CENTRAL/$repo" branch -D "$name" >/dev/null 2>&1 || true
-  done
-  rm -rf "$dir"
-  "$MSM" session remove "$name" >/dev/null || true
-  exit "$1"
-}
-
-mkdir -p "$dir" || fail $EGIT
-for repo in $(repos); do
-  git -C "$CENTRAL/$repo" show-ref --verify --quiet "refs/heads/$name" && fail $EAGAIN
-  git -C "$CENTRAL/$repo" worktree add -q -b "$name" "$dir/$repo" main >&2 || fail $EGIT
-  created+=("$repo")
-done
-echo "$json"
+sys.exit(main(["session", "create", *sys.argv[1:]]))

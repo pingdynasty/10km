@@ -1,48 +1,9 @@
-#!/usr/bin/env bash
-# Prepare a new loop: create the database, the central loop repo, and the
-# project repos (cloned from a URL, or created empty). Run once, before kickoff.
-set -euo pipefail
+#!/usr/bin/env python3
+"""Create the database and repos. Same as `10km init`."""
+import os
+import sys
 
-BIN="$(cd "$(dirname "$0")" && pwd)"
-SRC="$(dirname "$BIN")"
-LOOP_ROOT="${LOOP_ROOT:-/loop}"
-CENTRAL="$LOOP_ROOT/central"
-# shellcheck source=/dev/null
-. "${LOOP_CONFIG:-$SRC/config.env}"
-export LOOP_ROOT MSM_DB="${MSM_DB:-/data/loop.db}"
-git_id=(-c user.name=10km -c user.email=10km@localhost)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+from tenkm.cli import main  # noqa: E402
 
-"$BIN/msm" init >/dev/null
-mkdir -p "$CENTRAL"
-
-if [ ! -d "$CENTRAL/loop/.git" ]; then
-  if git -C "$SRC" rev-parse --git-dir >/dev/null 2>&1; then
-    git clone -q "$SRC" "$CENTRAL/loop"
-  else
-    mkdir -p "$CENTRAL/loop"
-    cp -a "$SRC/." "$CENTRAL/loop/"
-    git -C "$CENTRAL/loop" init -q -b main
-    git -C "$CENTRAL/loop" add -A
-    git "${git_id[@]}" -C "$CENTRAL/loop" commit -q -m "Initial loop"
-  fi
-  git -C "$CENTRAL/loop" checkout -q -B main
-fi
-
-for spec in ${PROJECT_REPOS:-}; do
-  name=${spec%%=*}
-  url=${spec#*=}
-  dest="$CENTRAL/$name"
-  [ -d "$dest/.git" ] && continue
-  if [ "$url" != "$spec" ]; then
-    git clone -q "$url" "$dest"
-    git -C "$dest" checkout -q -B main
-  else
-    git init -q -b main "$dest"
-    git "${git_id[@]}" -C "$dest" commit -q --allow-empty -m "Initial commit"
-  fi
-done
-
-for repo in loop ${PROJECT_REPOS:-}; do
-  git -C "$CENTRAL/${repo%%=*}" config core.hooksPath "$CENTRAL/loop/hooks"
-done
-echo "Initialised loop in $LOOP_ROOT. Next: kickoff (see prompts/kickoff.md)."
+sys.exit(main(["init"]))

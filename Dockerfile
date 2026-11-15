@@ -4,7 +4,7 @@ FROM debian:bookworm-slim
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      bash ca-certificates git jq procps python3 sqlite3 tini util-linux \
+      bash ca-certificates git jq procps python3 sqlite3 tini tzdata util-linux \
  && rm -rf /var/lib/apt/lists/*
 
 # Install the agent harnesses you use, for example:

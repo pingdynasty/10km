@@ -1,13 +1,9 @@
-#!/usr/bin/env bash
-# Notify the operator. Runs NOTIFY_CMD with the message as $1 if configured;
-# otherwise appends to NOTIFICATIONS.md in the caller's loop worktree, to be
-# committed and merged with the rest of the session's work.
-. "$(dirname "$0")/lib.sh"
+#!/usr/bin/env python3
+"""Notify the operator: `notify <title> [body] [--priority P] [--key K]`."""
+import os
+import sys
 
-message=${1:?usage: notify <message>}
-if [ -n "${NOTIFY_CMD:-}" ]; then
-  bash -c "$NOTIFY_CMD" notify "$message"
-else
-  file="$LOOP_ROOT/${LOOP_SESSION:?LOOP_SESSION is not set}/loop/NOTIFICATIONS.md"
-  printf -- '- %s %s: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$LOOP_SESSION" "$message" >>"$file"
-fi
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+from tenkm.cli import main  # noqa: E402
+
+sys.exit(main(["notify", *sys.argv[1:]]))

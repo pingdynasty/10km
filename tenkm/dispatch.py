@@ -1,0 +1,225 @@
+"""tenkm.dispatch: one Dispatcher pass.
+
+    expire timed-out and dead sessions
+    notify once when the loop stops
+    if stopped: exit
+    launch a Curator if operator or Auditor work is waiting (any phase)
+    launch by phase: Planner, Workers (up to MAX_WORKERS), or Curator
+    launch an Auditor if one is due
+
+Notifications are sent after the pass, outside the dispatch lock.
+"""
+import os
+import sqlite3
+import sys
+from datetime import datetime, timedelta, timezone
+
+from . import config, launchers, notify, sessions, state
+from .config import BIN, CODE_ROOT
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:  # Python < 3.9
+    ZoneInfo = None
+
+
+def parse_time(text):
+    return datetime.strptime(text, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+
+
+def log(message):
+    print(message, flush=True)
+
+
+class Pass:
+    def __init__(self, cfg, now=None):
+        self.cfg = cfg
+        self.now = now or datetime.now(timezone.utc)
+        self.launcher = launchers.get(cfg)
+        self.notices = []
+
+    def notice(self, title, body="", priority="default", key=None):
+        self.notices.append((title, body, priority, key))
+
+    # --- expiry ------------------------------------------------------------
+    def expire_sessions(self):
+        with state.transaction(self.cfg.db) as m:
+            active = m.list("session", '{"status": "active"}')
+        for s in active:
+            if s["role"] == "operator":
+                continue
+            age = (self.now - parse_time(s["created_at"])).total_seconds()
+            handle = s.get("handle")
+            if not handle:
+                if age > self.cfg.int("ORPHAN_GRACE", 300):
+                    self.expire(s["name"], "no handle")
+                continue
+            launcher = launchers.for_handle(handle)
+            if age > self.cfg.timeout(s["role"]):
+                if launcher.stop(self.cfg, handle):
+                    self.expire(s["name"], "timed out")
+                else:
+                    self.notice(f"Can't stop timed-out session {s['name']}",
+                                "The launcher cannot stop it. It stays active; stop it by hand,"
+                                f" then run: msm session expired {s['name']}",
+                                "critical", key=f"stuck:{s['name']}")
+            elif age > self.cfg.int("START_GRACE", 180) \
+                    and launcher.alive(self.cfg, handle) is False:
+                self.expire(s["name"], "not running")
+
+    def expire(self, name, why):
+        with state.transaction(self.cfg.db) as m:
+            m.session_status(name, "expired")
+        log(f"expired {name} ({why})")
+
+    # --- launching ---------------------------------------------------------
+    def launch(self, role):
+        """Create a session and start its agent. Returns True if launched."""
+        session = None
+        for _ in range(3):
+            try:
+                session = sessions.create(self.cfg, role)
+                break
+            except sessions.SessionError as e:
+                if e.code == sessions.EAGAIN:
+                    continue
+                if e.code != state.EPERM:
+                    log(f"launch {role} failed: {e.code} {e.message}")
+                return False
+        if session is None:
+            return False
+        name, directory = session["name"], session["working_directory"]
+        prompt_file = os.path.join(directory, "prompt.txt")
+        with open(prompt_file, "w") as f:
+            f.write(self.prompt(role, session))
+        first_message = (f"You are the 10km {role} session {name}. Your worktrees are in "
+                         f"{directory}. Read your instructions in {prompt_file} and follow them.")
+        env = self.agent_env(name, prompt_file, first_message)
+        try:
+            handle = self.launcher.launch(self.cfg, session, role, env,
+                                          os.path.join(directory, "agent.log"))
+        except Exception as e:  # a launcher failure must not stop the pass
+            log(f"launch {role} failed: {e}")
+            sessions.remove(self.cfg, name)
+            return False
+        with state.transaction(self.cfg.db) as m:
+            m.session_update(name, {"handle": handle})
+        log(f"launched {name} ({handle})")
+        return True
+
+    def prompt(self, role, session):
+        parts = [f"Session: {session['name']}\nWorktrees: {session['working_directory']}\n"
+                 f"Repos: {', '.join(self.cfg.repos())}\n"]
+        prompts = os.path.join(self.cfg.central, "loop", "prompts")
+        for name in ("common.md", f"{role}.md"):
+            path = os.path.join(prompts, name)
+            if os.path.exists(path):
+                with open(path) as f:
+                    parts.append(f.read())
+        return "\n".join(parts)
+
+    def agent_env(self, name, prompt_file, first_message):
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("LOOP_SESSION", "TENKM_"))}
+        loop_code = os.path.join(self.cfg.central, "loop")
+        code = loop_code if os.path.isdir(os.path.join(loop_code, "tenkm")) else CODE_ROOT
+        env.update(self.cfg.git_env())
+        env.update(SESSION=name, LOOP_SESSION=name, PROMPT_FILE=prompt_file,
+                   FIRST_MESSAGE=first_message, LOOP_ROOT=self.cfg.root, MSM_DB=self.cfg.db,
+                   PATH=os.pathsep.join([os.path.join(code, "bin"), BIN, env.get("PATH", "")]),
+                   PYTHONPATH=os.pathsep.join(p for p in (code, env.get("PYTHONPATH")) if p))
+        return env
+
+    # --- auditor -----------------------------------------------------------
+    def auditor_due(self, m):
+        closed = m.list("cycle", '{"status": "closed"}')
+        if not closed:
+            return False
+        audits = m.list("audit")
+        last = max((parse_time(a["created_at"]) for a in audits), default=None)
+        since = [c for c in closed if c.get("curated_at")
+                 and (last is None or parse_time(c["curated_at"]) > last)]
+        limit = self.cfg.int("AUDIT_CYCLES_LIMIT", 0)
+        if limit > 0 and len(since) >= limit:
+            return True
+        at = self.cfg.get("AUDIT_TIME", "")
+        if at:
+            trigger = self.daily_trigger(at, self.cfg.get("AUDIT_TIMEZONE") or "UTC")
+            if trigger is not None and self.now >= trigger and (last is None or last < trigger):
+                return True
+        return False
+
+    def daily_trigger(self, at, zone):
+        """Today's AUDIT_TIME in AUDIT_TIMEZONE, as a UTC datetime."""
+        try:
+            hour, minute = (int(x) for x in at.split(":"))
+            tz = ZoneInfo(zone) if ZoneInfo else timezone.utc
+        except Exception:
+            self.notice("Bad AUDIT_TIME or AUDIT_TIMEZONE", f"{at!r} {zone!r}", key="bad-audit-time")
+            return None
+        local = self.now.astimezone(tz)
+        trigger = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        return trigger.astimezone(timezone.utc)
+
+    # --- the pass ----------------------------------------------------------
+    def run(self):
+        self.expire_sessions()
+        with state.transaction(self.cfg.db) as m:
+            loop = m.loop_get()
+            blocking = [i for i in m.list("issue", '{"status": "open"}')
+                        if i["type"] == "escalation" and i["severity"] == "blocking"]
+            pending = m.pending_contributions()
+            auditor = not loop["stopped"] and self.auditor_due(m)
+        if loop["stopped"]:
+            body = "\n".join(f"- {i['title']}" for i in blocking)
+            self.notice(f"Loop stopped: {loop['reason'] or 'stopped'}", body, "critical",
+                        key=f"stop:{loop['reason']}:{loop['updated_at']}")
+            return
+        if pending:
+            self.launch("curator")
+        phase = loop["phase"]
+        if phase == "plan":
+            self.launch("planner")
+        elif phase == "curate":
+            self.launch("curator")
+        elif phase == "execute":
+            with state.transaction(self.cfg.db) as m:
+                active = len(m.list("session", '{"role": "worker", "status": "active"}'))
+            while active < self.cfg.int("MAX_WORKERS", 4) and self.launch("worker"):
+                active += 1
+        if auditor:
+            self.launch("auditor")
+
+    def flush(self):
+        for title, body, priority, key in self.notices:
+            notify.send(self.cfg, title, body, priority, key)
+
+
+def run_pass(cfg=None, now=None):
+    """One Dispatcher pass. Returns an exit status."""
+    cfg = cfg or config.load()
+    if cfg.get("TENKM_CONFIG_ERROR"):
+        log(f"config error: {cfg['TENKM_CONFIG_ERROR']}")
+    p = Pass(cfg, now)
+    with sessions.lock(cfg, "dispatch", blocking=False) as locked:
+        if not locked:
+            return 0
+        if not os.path.exists(cfg.db):
+            return 0
+        try:
+            p.run()
+            notify.forget(cfg, "db-unreadable")
+        except (sqlite3.DatabaseError, state.MsmError) as e:
+            if isinstance(e, state.MsmError) and e.code in (1, 2, 3):
+                raise
+            p.notice("Loop database unreadable", f"{cfg.db}: {e}. The Dispatcher starts "
+                     "nothing until it can read the database.", "critical", key="db-unreadable")
+    p.flush()
+    return 0
+
+
+def main(argv=None):
+    return run_pass()
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

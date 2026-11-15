@@ -7,7 +7,7 @@ CENTRAL="$LOOP_ROOT/central"
 CONFIG="${LOOP_CONFIG:-$CENTRAL/loop/config.env}"
 # shellcheck source=/dev/null
 [ -f "$CONFIG" ] && . "$CONFIG"
-export LOOP_ROOT MSM_DB="${MSM_DB:-/data/loop.db}"
+export LOOP_ROOT MSM_DB="${MSM_DB:-$LOOP_ROOT/.10km/loop.db}"
 MSM="$BIN/msm"
 EAGAIN=4
 EGIT=5
