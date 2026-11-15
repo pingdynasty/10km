@@ -19,7 +19,7 @@ class TestIdleStop(ScenarioCase):
     def test_idle_limit_of_empty_cycles_stops_the_loop(self):
         """Planners plan empty cycles: each goes straight to curate and counts as
         empty. When `empty_cycles` reaches IDLE_CYCLE_LIMIT, the Curator raises a
-        blocking `idle` operator escalation and stops the loop as blocked; nothing
+        blocking `idle` operator escalation and stops the loop as idle; nothing
         is launched after that.
 
         R72, R109, R111, R247, R258, R76, R139.
@@ -29,7 +29,7 @@ class TestIdleStop(ScenarioCase):
         self.drive(lambda: self.loop.msm("loop", "get")["stopped"], **settings)
         loop = self.loop.msm("loop", "get")
         self.assertEqual((loop["reason"], loop["empty_cycles"], loop["current_cycle"]),
-                         ("blocked", 2, 2))
+                         ("idle", 2, 2))
         self.assertEqual([c["status"] for c in self.cycles()], ["closed", "closed"])
         self.assertEqual(self.loop.msm("task", "list"), [])
         escalations = self.loop.msm("issue", "list", '{"type": "escalation"}')
