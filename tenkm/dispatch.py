@@ -1,6 +1,7 @@
 """tenkm.dispatch: one Dispatcher pass.
 
     expire timed-out and dead sessions
+    record the usage of agents that have exited
     if stopped: exit
     launch a Curator if operator or Auditor work is waiting (any phase)
     launch by phase: Planner, Workers (up to MAX_WORKERS), or Curator
@@ -15,7 +16,7 @@ import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
 
-from . import config, launchers, msm, notify, sessions
+from . import config, launchers, msm, notify, sessions, usage
 from .config import BIN, CODE_ROOT
 from .locks import lock
 
@@ -82,6 +83,29 @@ class Pass:
                 return
             m.session_status(name, "expired")
         log(f"expired {name} ({why})")
+
+    # --- usage -------------------------------------------------------------
+    def record_usage(self):
+        """Record each finished session whose agent has exited, once. Never raises."""
+        try:
+            with msm.transaction(self.cfg.db) as m:
+                done = [s for s in m.list("session")
+                        if s["status"] != "active" and s["role"] != "operator"]
+            seen = usage.recorded(self.cfg)
+        except Exception as e:
+            log(f"usage not recorded: {e}")
+            return
+        for s in done:
+            if s["name"] in seen:
+                continue
+            handle = s.get("handle") or ""
+            launcher = launchers.for_handle(handle) if handle else None
+            try:
+                if launcher is not None and launcher.alive(self.cfg, handle) is not False:
+                    continue  # still writing its log, or can't tell: removal records it
+            except Exception:
+                continue
+            usage.safe_record(self.cfg, s, log)
 
     # --- launching ---------------------------------------------------------
     def launch(self, role):
@@ -181,6 +205,7 @@ class Pass:
     # --- the pass ----------------------------------------------------------
     def run(self):
         self.expire_sessions()
+        self.record_usage()
         with msm.transaction(self.cfg.db) as m:
             loop = m.loop_get()
             pending = m.pending_contributions()

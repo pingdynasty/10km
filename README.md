@@ -70,7 +70,7 @@ Settings are in `config.env` in the central loop worktree, sourced as shell. Rep
 | `PLANNER_AGENT`, `WORKER_AGENT`, `CURATOR_AGENT`, `AUDITOR_AGENT` | Per-role overrides of `LOOP_AGENT`, e.g. to choose a model. |
 | `OPERATOR_AGENT` | The operator's agent, for kickoff and operator sessions; run with `FIRST_MESSAGE` and, for one-shot instructions, `ONE_SHOT=1`. It doesn't fall back to `LOOP_AGENT`. |
 
-Also in `config.env`: `SESSION_TIMEOUT` (and per-role `PLANNER_TIMEOUT` etc.), `MAX_WORKERS`, `BACKLOG_SIZE`, `AUDIT_TIME`, `AUDIT_TIMEZONE`, `AUDIT_CYCLES_LIMIT` and `IDLE_CYCLE_LIMIT`.
+Also in `config.env`: `MSM_DB`, `MSM_LOG`, `USAGE_LOG`, `SESSION_TIMEOUT` (and per-role `PLANNER_TIMEOUT` etc.), `MAX_WORKERS`, `BACKLOG_SIZE`, `AUDIT_TIME`, `AUDIT_TIMEZONE`, `AUDIT_CYCLES_LIMIT` and `IDLE_CYCLE_LIMIT`.
 
 ## Operating the loop
 
@@ -105,7 +105,17 @@ msm session list '{"status": "expired"}'
 msm task list '{"status": "rejected"}'
 ```
 
-Each session directory holds the agent's `agent.log` and its `prompt.txt`. To resume:
+Each session directory holds the agent's `agent.log` and its `prompt.txt`. The
+directory goes when the session is removed, but its usage stays in `usage.jsonl`
+next to the database (`USAGE_LOG`): one JSON line per agent run with `session`,
+`role`, `cycle`, `recorded_at` and `harness`, plus, when the harness reports them
+(Claude Code with `--output-format json`, the default `LOOP_AGENT`),
+`harness_session_id`, `duration_ms`, `num_turns`, `input_tokens`, `output_tokens`,
+`cache_read_input_tokens`, `cache_creation_input_tokens` and `total_cost_usd`.
+The Dispatcher records a run once its agent has exited; removing a session records
+it first if it wasn't yet.
+
+To resume:
 
 1. Start an operator session: `10km session start <username>`.
 2. Resolve the blocking escalations, or update the goals and plan; commit.
