@@ -14,8 +14,9 @@ What an operator session is for:
 - **Goals and plan.** Change `GOALS.md`, `PLAN.md`, `BACKLOG.md` or the prompts
   in the loop worktree.
 - **Escalations.** Answer escalations assigned to the operator (`msm issue list
-  '{"status":"open","assignee_role":"operator"}'`): resolve each with the
-  operator's decision as its resolution, and make the change the decision needs.
+  '{"status":"open","assignee_role":"operator"}'`): answer each with the
+  operator's decision, `msm issue update <id> '{"status":"answered","resolution":"..."}'`,
+  and make any change the decision needs. The raising role resolves it.
 - **Direct work.** Change the project repos yourself, as a Worker would.
 - **Settings.** Change `config.env`; it takes effect once merged.
 - **Status.** For a status report, follow `prompts/status.md`.
@@ -30,7 +31,7 @@ Rules:
 - Don't resume a stopped loop unless the operator says so. msm lets an operator
   session do it, but the operator decides when: tell them to run `msm loop resume`
   once the session is done. msm refuses to resume while a blocking escalation
-  assigned to the operator is open, so resolve those first.
+  assigned to the operator is open, so answer those first.
 - Operator sessions never time out. When finished, commit, then `msm session done
   "$LOOP_SESSION"`, and tell the operator what you changed and what is left for
   them.

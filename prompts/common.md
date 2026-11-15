@@ -33,17 +33,24 @@ Issues are escalations (a request for help or a decision) or backlog items (work
 for later). Before creating one, search for a similar open issue
 (`msm issue list '{"status":"open"}'`) and update it instead if one exists.
 
-For escalations, when to raise them, how to write them, severity and resolving,
+For escalations, when to raise them, how to write them, severity and answering,
 read `prompts/escalation.md` before you create or answer one.
 
 Create a backlog item with `msm issue create '<json>'`. Fields:
 
 - `type`: `backlog`; `title`: one line; `description`: the details.
-- `owner_session`: your session name.
+- `assigner_session`: your session name. msm sets `assigner_role` from it.
 - `assignee_role`: `planner`, `curator`, `auditor` or `operator`.
 - `severity`: `low`, `high` or `blocking`.
 - `urgent_if`: for backlog items, the condition under which the item becomes urgent.
 - `branch`: the branch holding unmerged work (expired, incomplete or rejected), if any.
 
-Resolve an issue with
-`msm issue update <id> '{"status":"resolved","resolution":"..."}'`.
+An issue goes open, then answered, then resolved. The assignee answers it with
+`msm issue update <id> '{"status":"answered","resolution":"..."}'`: the answer or
+decision. The role that raised it (`assigner_role`) follows up: it reads the
+answered issues its role raised
+(`msm issue list '{"status":"answered","assigner_role":"<role>"}'`), acts on the
+answer (a plan change, a backlog item, a task), then resolves it with
+`msm issue update <id> '{"status":"resolved","resolution":"..."}'`: the answer,
+kept, and what was done. Resolve directly, without answering, when nothing is left for another role: a backlog item
+you have done, or an issue your own role raised or with no `assigner_session`.

@@ -3,7 +3,7 @@
 You validate session work and merge accepted work into main. Run these steps in
 order. `curate-*` exit status: 0 done, 1 error, 2 refused (stop at once), 3
 conflict (it prints what to do next). Backlogged unmerged work is an issue with
-`branch` set to its session: scripts keep branches open issues reference.
+`branch` set to its session: scripts keep branches unresolved issues reference.
 
 1. Prepare: `curate-prepare`.
 2. Select: `curate-select`. It prints the sessions to curate: inactive operator and
@@ -18,6 +18,8 @@ conflict (it prints what to do next). Backlogged unmerged work is an issue with
    work (unless its conflicts aren't worth it); backlog or discard the rest.
 5. Read the plan, goals, open escalations (`msm issue list '{"status":"open"}'`),
    the cycle (`msm cycle get`) and audits since it was planned (`msm audit list`).
+   Read answered issues raised by Curators
+   (`msm issue list '{"status":"answered","assigner_role":"curator"}'`).
 6. Evaluate each included Worker session's commits and diffs against its task and
    the goals; accept or reject it, in whole or in part. Rerun `curate-merge` with
    only the accepted sessions and commits.
@@ -25,17 +27,18 @@ conflict (it prints what to do next). Backlogged unmerged work is an issue with
    If a gate fails, find the responsible work; commit small fixes, or rerun
    `curate-merge` without it; validate again. Escalate rejected operator work to
    the operator; backlog or discard other rejected work.
-8. Assess milestones, goals and deliverables; update the plan and backlog; resolve
-   escalations you can. If the project is done, or `msm loop get` shows
+8. Assess milestones, goals and deliverables; update the plan and backlog; answer
+   or resolve escalations you can (`prompts/escalation.md`); act on the answered
+   issues you read and resolve them. If the project is done, or `msm loop get` shows
    `empty_cycles` at `IDLE_CYCLE_LIMIT`, create a blocking operator escalation
-   whose title starts with its reason, `done` or `idle`. If there are blocking
+   whose title starts with its reason, `done` or `idle`. If there are open blocking
    operator escalations, `notify "<title>" "<body>"`. Commit.
 9. Publish: write the report with shortnames spelled out on first use
    (`prompts/common.md`), then `curate-publish --report-file <file> --accepted <worker>... --rejected <worker>...`.
    It fast-forwards main and, if a Planner session was selected, closes the cycle
    with your verdicts. Every done Worker needs a verdict.
 10. Clean up: `curate-cleanup`. Its `unpublished_removed` must be work you dropped.
-11. Exit: if there are blocking operator escalations, `msm loop stop <reason>`
+11. Exit: if there are open blocking operator escalations, `msm loop stop <reason>`
     with the escalation's reason (the first word of its title). If there are
     several, use the `done` or `idle` one you raised this run, else `blocked`; use
     `blocked` too if the title names no reason. Then `msm session done $LOOP_SESSION`.

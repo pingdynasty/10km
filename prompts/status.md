@@ -6,7 +6,8 @@ it with `msm session done "$LOOP_SESSION"` is the one change you make.
 
 1. **Facts.** Run `10km status` and `10km metrics`. Read `GOALS.md` and
    `PLAN.md` in the central loop worktree (`$LOOP_ROOT/central/loop`), the open
-   escalations in full (`msm issue list '{"status":"open","type":"escalation"}'`),
+   escalations in full (`msm issue list '{"status":"open","type":"escalation"}'`)
+   and answered ones still awaiting follow-up (`"status":"answered"`),
    the last cycle report (`msm cycle list`, then `msm cycle get <id>`) and the
    last audit (`msm audit list`, highest id). Read what you need to assess them,
    and no more. Trust the database and git, not memory; state only what you

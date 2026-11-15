@@ -106,11 +106,11 @@ MAP = {
     "R243": (P, "Assess milestones, goals and deliverables"),
     "R244": (P, "Assess milestones, goals and deliverables"),
     "R245": (P, "update the plan and backlog"),
-    "R246": (P, "resolve escalations you can"),
+    "R246": (P, "answer or resolve escalations you can"),
     "R247": [(P, "create a blocking operator escalation whose title starts with its reason"),
              RC + "TestIdleLimit.test_the_idle_limit_and_empty_cycle_count_the_prompt_names_exist",
              IDLE],
-    "R248": (P, "If there are blocking operator escalations, `notify"),
+    "R248": (P, "If there are open blocking operator escalations, `notify"),
     # Step 9: Publish
     "R249": [STEPS, PUBLISH],
     "R250": [PUBLISH, CS + "TestPublish.test_rerun_after_a_crash_before_closing_the_cycle",
@@ -125,10 +125,10 @@ MAP = {
     "R256": [CLEANUP, CS + "TestCleanup.test_rerun_after_a_crash_mid_cleanup_finishes",
              OFF_OPERATOR, OFF_AUDITOR, TWO_REPOS],
     # Step 11: Exit
-    "R257": (P, "Exit: if there are blocking operator escalations"),
-    "R258": [(P, "if there are blocking operator escalations, `msm loop stop <reason>` with the escalation's reason"), IDLE],
+    "R257": (P, "Exit: if there are open blocking operator escalations"),
+    "R258": [(P, "if there are open blocking operator escalations, `msm loop stop <reason>` with the escalation's reason"), IDLE],
     "R259": [(P, "`msm session done $LOOP_SESSION`"), CLEANUP],
-    "R321": "prompts/curator.md",  # placeholder: task issue-prompts replaces it
+    "R321": (P, "Read answered issues raised by Curators (`msm issue list '{\"status\":\"answered\",\"assigner_role\":\"curator\"}'`)"),
 }
 
 PENDING = set()

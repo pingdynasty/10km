@@ -81,8 +81,8 @@ MAP = {
     "R171": [RM + "TestLoopRecord."
              "test_resume_is_refused_while_a_blocking_operator_escalation_is_open",
              RM + "TestLoopRecord.test_resume_is_allowed_once_the_blocking_escalation_is_resolved",
-             ("prompts/session.md", "resolve each with the operator's decision as its "
-              "resolution")],
+             ("prompts/session.md", "answer each with the operator's decision, "
+              "`msm issue update <id> '{\"status\":\"answered\",\"resolution\":\"...\"}'`")],
     "R172": STOP_RESUME,
     "R173": [STOP_RESUME, "tests/test_msm.py:MsmTest.test_stop_and_resume"],
     "R312": ("prompts/session.md", "**Goals and plan.** Change `GOALS.md`, `PLAN.md`"),

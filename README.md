@@ -113,14 +113,17 @@ Agents raise escalations as issues for the Planner, Curator, Auditor or you. The
 
 ```sh
 msm issue list '{"status": "open", "assignee_role": "operator"}'
-msm issue update <id> '{"status": "resolved", "resolution": "..."}'
+msm issue update <id> '{"status": "answered", "resolution": "..."}'
 ```
+
+An issue goes open, answered, resolved: you answer with your decision, and the
+role that raised it (its `assigner_role`) acts on the answer and resolves it.
 
 `10km metrics` lists every session the loop still knows of, by cycle and role: its task and outcome, start and duration, commits on main by `Loop-Session:` trailer, and harness usage (agent time, turns, tokens, cost) from `usage.jsonl` next to the database; then totals per cycle and role. The outcome is a Worker's task status, `planned` or `curated` for the Planner or Curator a cycle names, else the session status; it stays the same once the session is removed. The Curator removes sessions once curated, so times come from what survives: the session row, the Worker's task, the session's create and done or expired lines in the action log, usage records, or failing those (action logs from before msm logged sessions) the session's first and last state change in the action log or first and last commit, marked `~` as an activity window rather than the whole session. `--json` gives the same data for agents.
 
 ## Recovering from a stop
 
-The Curator stops the loop with reason `blocked` when there is a blocking operator escalation: a decision only you can make, the project is done, or the loop has been idle for `IDLE_CYCLE_LIMIT` empty cycles. A stopped loop launches nothing, but its state and worktrees stay as they were. Inspect it:
+The Curator stops the loop with reason `blocked` when there is an open blocking operator escalation: a decision only you can make, the project is done, or the loop has been idle for `IDLE_CYCLE_LIMIT` empty cycles. A stopped loop launches nothing, but its state and worktrees stay as they were. Inspect it:
 
 ```sh
 10km status
@@ -143,11 +146,11 @@ it first if it wasn't yet.
 To resume:
 
 1. Start an operator session: `10km session start <username>`.
-2. Resolve the blocking escalations (`msm issue update <id> '{"status": "resolved",
+2. Answer the blocking escalations (`msm issue update <id> '{"status": "answered",
    "resolution": "..."}'`); you may also update the goals and plan. Commit.
 3. `10km session done <name>`.
 4. `msm loop resume`. msm refuses it (EPERM) while a blocking escalation assigned
-   to the operator is still open.
+   to the operator is still open; answered ones don't count.
 
 The next Curator merges your session, then the loop carries on from its phase.
 

@@ -29,15 +29,15 @@ MAP = {
     "R275": (A, "the Curator to relax or tighten validation"),
     "R276": (A, "clarify definitions of done for deliverables, milestones and goals"),
     "R277": (A, "add scripts to bin/ that automate common agent tasks"),
-    "R278": (A, "Resolve open escalations you can answer"),
+    "R278": (A, "Answer or resolve open escalations you can"),
     "R279": [(A, "Fix what you can and commit to your session branch"),
              (A, "For what you can't fix, create backlog items or escalations.")],
     "R280": (A, "Add to LEARNINGS.md only learnings that are general"),
     "R281": ["tests/test_msm.py:MsmTest.test_audits_and_auditor_naming",
              (A, "Store your report: `msm audit create")],
     "R282": f"{T}:TestAuditorLaunch.test_no_auditor_until_the_previous_audit_is_curated",
-    "R322": "prompts/auditor.md",  # placeholder: task issue-prompts replaces it
-    "R323": "prompts/auditor.md",  # placeholder: task issue-prompts replaces it
+    "R322": (A, "answered issues raised by Auditors (`msm issue list '{\"status\":\"answered\",\"assigner_role\":\"auditor\"}'`)"),
+    "R323": (A, "Issues left answered for long"),
 }
 
 PENDING = set()
