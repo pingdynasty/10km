@@ -265,6 +265,7 @@ class MSM:
         return to_dict(self.loop())
 
     def loop_resume(self):
+        """Resume a stopped loop (R75, R313); the idle count starts again (R324)."""
         self.check_caller()
         self.check_loop_record()
         loop = self.loop()
@@ -272,7 +273,7 @@ class MSM:
             raise MSMError(EPERM, "loop is not stopped")
         self.check_no_blocking_escalation()
         phase = "curate" if loop["phase"] == "plan" else loop["phase"]
-        self.set_loop(stopped=0, reason=None, phase=phase)
+        self.set_loop(stopped=0, reason=None, phase=phase, empty_cycles=0)
         return to_dict(self.loop())
 
     def check_no_blocking_escalation(self):

@@ -110,7 +110,7 @@ The state machine returns exit status:
 4. **R69** `cycle create` requires phase = plan and not stopped. **R70** It increments the cycle and creates the tasks. **R71** If phase = plan and the current cycle is open, it replaces that cycle and its tasks instead. **R72** It sets `empty_cycles` to the previous value + 1 if tasks is empty, or 0 otherwise.
 5. **R73** `cycle curate` closes the cycle and its tasks.
 6. **R74** `loop start` sets stopped = false, reason = null.
-7. **R75** `loop resume` sets stopped = false, reason = null.
+7. **R75** `loop resume` sets stopped = false, reason = null. **R324** It sets `empty_cycles` to 0, so a loop stopped as idle runs again.
 8. **R76** `loop stop <reason>`: stopped = true, reason = <reason>.
 
 **R77** Changing loop or session status updates `updated_at`.
