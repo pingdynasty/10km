@@ -16,7 +16,8 @@ Status: Get a project status report
 
 ## Git Repositories and File System
 There is one loop repo, and one or more project repos configured at kickoff.
-The loop repo contains its scripts and prompts, the plan, goals, deliverables, BACKLOG.md, LEARNINGS.md. The database is a file at a configured path, outside the repos.
+The loop repo contains its scripts and prompts, the plan, goals, deliverables, BACKLOG.md, LEARNINGS.md.
+The database and action log are at a configured path, outside the repos.
 Configuration is in `config.env` in the loop repo (see Configuration below). Scripts read it from the central loop worktree.
 The operator may provide one or more pre-existing project repos for the loop to work on.
 If not, a new project repo is created during kickoff.
@@ -52,7 +53,7 @@ root/central/project-repo2/
 
 ### Configuration
 - Project repos
-- Database path
+- Database and action log path
 - Main branch
 - Commit identity
 - Launcher and agent commands
@@ -119,6 +120,11 @@ Creating a Task sets `cycle`, `status: waiting`, and `created_at`.
 Updating a Task to `status: accepted|rejected` sets `curated_at`.
 Creating an Audit sets `id: (Loop.last_audit + 1)`, `created_at`, and `Loop.last_audit = id`.
 `msm init` sets `current_cycle = 0`, `last_audit = 0`, `empty_cycles = 0`, phase = curate, stopped = true.
+
+### Callers
+Agents call msm with their session name in `LOOP_SESSION`, set by the Dispatcher. If that session is expired or no longer exists, msm refuses any change with EPERM.
+While the loop is stopped, msm refuses agents' changes to the loop record (`loop start`, `loop resume`, `loop update`) with EPERM.
+msm appends every change to a cycle, task, audit or issue to an action log: a text file, one line per change with the time, the caller's session and the command.
 
 ### Role Preconditions
 - Planner: phase = plan, not stopped, no active Planner.
