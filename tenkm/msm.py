@@ -609,9 +609,9 @@ class MSM:
 
 
 def db_path():
-    """The database path: MSM_DB, or <LOOP_ROOT>/.10km/loop.db."""
+    """The database path: MSM_DB (relative to LOOP_ROOT), or <LOOP_ROOT>/.10km/loop.db."""
     root = os.environ.get("LOOP_ROOT", "/loop")
-    return os.environ.get("MSM_DB") or os.path.join(root, ".10km", "loop.db")
+    return os.path.join(root, os.environ.get("MSM_DB") or os.path.join(".10km", "loop.db"))
 
 
 def migrate(db):
@@ -677,9 +677,10 @@ def transaction(path=None, create=False, caller=None):
 
 
 def action_log_path(db=None):
-    """The action log: MSM_LOG, or actions.log next to the database."""
-    return os.environ.get("MSM_LOG") or os.path.join(os.path.dirname(
-        os.path.abspath(db or db_path())), "actions.log")
+    """The action log: MSM_LOG (relative to LOOP_ROOT), or actions.log next to the database."""
+    if os.environ.get("MSM_LOG"):
+        return os.path.join(os.environ.get("LOOP_ROOT", "/loop"), os.environ["MSM_LOG"])
+    return os.path.join(os.path.dirname(os.path.abspath(db or db_path())), "actions.log")
 
 
 USAGE = """usage: msm <command>

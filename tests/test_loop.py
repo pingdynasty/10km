@@ -110,6 +110,17 @@ class TestConfig(LoopCase):
         self.assertEqual(self.cfg.timeout("planner"), 3600)
 
 
+class TestStatePaths(LoopCase):
+    def test_relative_state_paths_are_under_the_loop_root(self):
+        names = ("MSM_DB", "MSM_LOG", "USAGE_LOG")
+        with mock.patch.dict(os.environ, dict(zip(names, ("s/db", "s/log", "s/usage")))):
+            cfg = config.load()
+            for name, path in zip(names, ("s/db", "s/log", "s/usage")):
+                self.assertEqual(cfg[name], os.path.join(self.root, path))
+                self.assertEqual(os.environ[name], cfg[name])
+            self.assertEqual((cfg.db, cfg.action_log), (cfg["MSM_DB"], cfg["MSM_LOG"]))
+
+
 class TestBrokenConfig(LoopCase):
     def test_syntax_error_and_exit_are_reported(self):
         for text in ("MAX_WORKERS=2\nif then\n", "exit 0\n"):

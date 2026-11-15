@@ -182,6 +182,15 @@ class MsmTest(unittest.TestCase):
             line = json.loads(f.read().splitlines()[-1])
         self.assertEqual((line["command"], line["session"]), ("issue create", None))
 
+    def test_relative_state_paths_are_under_the_loop_root(self):
+        self.env.update(MSM_DB="state/loop.db", MSM_LOG="state/actions.log")
+        cwd = os.getcwd()
+        self.ok("init")
+        self.ok("issue", "create", '{"type": "backlog", "title": "t"}')
+        self.assertTrue(os.path.exists(os.path.join(self.tmp.name, "state", "loop.db")))
+        self.assertTrue(os.path.exists(os.path.join(self.tmp.name, "state", "actions.log")))
+        self.assertFalse(os.path.exists(os.path.join(cwd, "state")))
+
     def test_session_create_end_and_remove_are_logged(self):
         self.ok("loop", "start")
         a = self.ok("session", "create", "auditor")["name"]

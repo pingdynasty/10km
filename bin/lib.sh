@@ -7,8 +7,14 @@ CENTRAL="$LOOP_ROOT/central"
 CONFIG="${LOOP_CONFIG:-$CENTRAL/loop/config.env}"
 # shellcheck source=/dev/null
 [ -f "$CONFIG" ] && . "$CONFIG"
-export LOOP_ROOT MSM_DB="${MSM_DB:-$LOOP_ROOT/.10km/loop.db}"
-if [ -n "${MSM_LOG-}" ]; then export MSM_LOG; fi
+# State paths are relative to the loop root.
+MSM_DB="${MSM_DB:-.10km/loop.db}"
+case $MSM_DB in /*) ;; *) MSM_DB="$LOOP_ROOT/$MSM_DB" ;; esac
+export LOOP_ROOT MSM_DB
+if [ -n "${MSM_LOG-}" ]; then
+  case $MSM_LOG in /*) ;; *) MSM_LOG="$LOOP_ROOT/$MSM_LOG" ;; esac
+  export MSM_LOG
+fi
 MSM="$BIN/msm"
 
 # Repos that get a worktree per session: the loop repo, then every other git

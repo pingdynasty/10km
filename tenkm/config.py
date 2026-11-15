@@ -13,7 +13,7 @@ import subprocess
 
 CODE_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 BIN = os.path.join(CODE_ROOT, "bin")
-STATE_PATHS = ("MSM_DB", "MSM_LOG")  # settings msm itself reads from the environment
+STATE_PATHS = ("MSM_DB", "MSM_LOG", "USAGE_LOG")  # relative to the loop root
 
 
 class Config(dict):
@@ -128,9 +128,9 @@ def load(root=None):
             env["TENKM_CONFIG_ERROR"] = out.stderr.decode().strip() or "config.env failed"
     cfg = Config(env)
     cfg["LOOP_CONFIG_PATH"] = path
-    # msm reads its paths from the environment: apply those set in config.env, so
-    # msm calls in this process and its children use them too.
+    # Exported, so msm calls in this process and its children use the same files.
     for name in STATE_PATHS:
         if cfg.get(name):
+            cfg[name] = os.path.join(os.path.abspath(cfg.root), cfg[name])
             os.environ[name] = cfg[name]
     return cfg
