@@ -1,12 +1,18 @@
 # Tests for 10km. See the Testing section of AGENTS.md.
 IMAGE ?= 10km
 
-.PHONY: test scenarios smoke smoke-host
+.PHONY: test agent-test scenarios smoke smoke-host
 
 # Unit and script tests, in parallel (JOBS=N to set the jobs; default: CPU count).
+# Deterministic only: no test here can launch a real agent harness.
 JOBS ?=
 test:
 	python3 tests/run.py $(if $(JOBS),-j $(JOBS))
+
+# Opt-in tests that run a real agent harness and may spend credits (tests/agent/).
+# Never run by `make test` or the gates.
+agent-test:
+	python3 tests/run.py --agent $(if $(JOBS),-j $(JOBS))
 
 # End-to-end scenarios with the fake agent, on this host (part of `make test`).
 scenarios:

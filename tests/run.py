@@ -7,14 +7,18 @@ setUpClass (or a module with setUpModule) runs as one unit, so shared setup
 still runs once. Prints each failure with its output, the ten slowest units and
 a summary; exits 1 if any unit fails.
 
-Usage: python3 tests/run.py [-j N] [-v] [pattern ...]
+Usage: python3 tests/run.py [-j N] [-v] [--agent] [pattern ...]
   -j N      parallel jobs (default: the CPU count)
   -v        print every unit as it finishes
+  --agent   run the opt-in agent tests in tests/agent/ instead (they may launch
+            a real agent harness and spend credits; see tests/agent/README.md)
   pattern   run only tests whose id contains one of the patterns
             (e.g. test_msm, TestDispatch)
 
 Tests must be safe to run in parallel: temporary roots, no fixed ports or
-shared paths.
+shared paths. Each test process imports tests/testenv.py first: the test config,
+in which agent commands fail unless the test sets a fake, and none of the
+caller's loop settings. The default run never includes tests/agent/.
 """
 import argparse
 import os
@@ -26,13 +30,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 TESTS = os.path.dirname(os.path.abspath(__file__))
 CODE = os.path.dirname(TESTS)
+AGENT_TESTS = os.path.join(TESTS, "agent")  # opt-in: tests that run real agents
 
 # Modules with slow tests (whole loops with the fake agent, or scripts run as
 # subprocesses), slowest first: started first, to keep them off the critical path.
 SLOW = ("test_scenarios", "test_curate_scripts", "test_scripts", "test_init")
 
-# A child process: `python3 -m unittest <id>` with tests/ on the path.
-CHILD = ("import sys, unittest; sys.path.insert(0, sys.argv[1]); "
+# A child process: `python3 -m unittest <id>` with the test directory and tests/
+# on the path, in the test environment (tests/testenv.py).
+CHILD = ("import sys, unittest; sys.path[:0] = [sys.argv[3], sys.argv[1]]; import testenv; "
          "unittest.main(module=None, argv=['unittest', sys.argv[2]])")
 
 
@@ -52,13 +58,17 @@ def shared_setup(cls):
             or hasattr(module, "setUpModule"))
 
 
-def discover(patterns=()):
+def discover(patterns=(), start=TESTS):
     """The units to run, as unittest ids: a test ("test_msm.MsmTest.test_x"), a
-    class with shared setup ("test_x.TestY") or a module that failed to import."""
-    sys.path.insert(0, TESTS)
-    suite = unittest.defaultTestLoader.discover(TESTS, top_level_dir=TESTS)
+    class with shared setup ("test_x.TestY") or a module that failed to import.
+    start is tests/ (the default suite, never tests/agent/) or AGENT_TESTS."""
+    sys.path[:0] = [start, TESTS]
+    import testenv  # noqa: F401  (the test environment, before any test module)
+    suite = unittest.defaultTestLoader.discover(start, top_level_dir=start)
     units = []
     for test in iter_tests(suite):
+        if start == TESTS and test.id().startswith("agent."):
+            continue  # opt-in only, even if tests/agent/ becomes a package
         cls = type(test)
         if cls.__name__ == "_FailedTest":  # an import error: run the module to show it
             unit = test.id().split(".")[-1]
@@ -82,12 +92,12 @@ def order(units):
     return [unit for _, unit in sorted(enumerate(units), key=rank)]
 
 
-def run_unit(unit):
+def run_unit(unit, top=TESTS):
     """Run one unit in its own process: (unit, exit code, output, seconds).
-    As with `discover tests`, the working directory is the repo root and tests/
-    is the top-level directory."""
+    As with `discover tests`, the working directory is the repo root and top
+    (tests/, or tests/agent/) is the top-level directory."""
     start = time.time()
-    p = subprocess.run([sys.executable, "-c", CHILD, TESTS, unit], cwd=CODE,
+    p = subprocess.run([sys.executable, "-c", CHILD, TESTS, unit, top], cwd=CODE,
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                        universal_newlines=True, stdin=subprocess.DEVNULL)
     return unit, p.returncode, p.stdout, time.time() - start
@@ -108,20 +118,26 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Run the unit tests in parallel.")
     parser.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1)
     parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("--agent", action="store_true",
+                        help="run the opt-in agent tests (tests/agent/) instead")
     parser.add_argument("patterns", nargs="*")
     args = parser.parse_args(argv)
     if args.jobs < 1:
         parser.error("-j must be at least 1")
 
-    units = discover(args.patterns)
+    top = AGENT_TESTS if args.agent else TESTS
+    units = discover(args.patterns, top) if os.path.isdir(top) else []
     if not units:
+        if args.agent and not args.patterns:
+            print("no agent tests in tests/agent/")
+            return 0
         print("no tests found", file=sys.stderr)
         return 1
 
     start = time.time()
     results = []
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        futures = [pool.submit(run_unit, unit) for unit in order(units)]
+        futures = [pool.submit(run_unit, unit, top) for unit in order(units)]
         for future in as_completed(futures):
             unit, rc, output, seconds = future.result()
             results.append((unit, rc, output, seconds))
