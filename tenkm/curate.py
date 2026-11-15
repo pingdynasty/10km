@@ -79,30 +79,26 @@ class Curation:
         return sel
 
 
-def git(cfg, path, *args, check=True):
-    return gitutil.git(cfg, path, *args, check=check)
-
-
 def branch_repos(cfg, name):
     """The repos in which a session has a branch."""
     return [r for r in cfg.repos() if gitutil.branch_exists(cfg, r, name)]
 
 
 def is_merged(cfg, path, name):
-    return gitutil.ok(cfg, path, "merge-base", "--is-ancestor", name, "HEAD")
+    return gitutil.ok(path, "merge-base", "--is-ancestor", name, "HEAD")
 
 
 def mid_merge(cfg, path):
-    return gitutil.ok(cfg, path, "rev-parse", "-q", "--verify", "MERGE_HEAD")
+    return gitutil.ok(path, "rev-parse", "-q", "--verify", "MERGE_HEAD")
 
 
 def dirty(cfg, path, untracked=False):
     flag = "--untracked-files=normal" if untracked else "--untracked-files=no"
-    return bool(git(cfg, path, "status", "--porcelain", flag))
+    return bool(gitutil.git(path, "status", "--porcelain", flag))
 
 
 def conflicts(cfg, path):
-    out = git(cfg, path, "diff", "--name-only", "--diff-filter=U", check=False)
+    out = gitutil.git(path, "diff", "--name-only", "--diff-filter=U", check=False)
     return [line for line in out.splitlines() if line]
 
 
@@ -255,7 +251,7 @@ def merge(cfg, words):
 
 def behind_main(cfg, c):
     """True if main has moved past the Curator branch in some repo."""
-    return any(not gitutil.ok(cfg, c.worktree(r), "merge-base", "--is-ancestor",
+    return any(not gitutil.ok(c.worktree(r), "merge-base", "--is-ancestor",
                               gitutil.main_branch(cfg, r), "HEAD") for r in c.repos())
 
 
@@ -270,7 +266,7 @@ def _apply(cfg, c, state, item, words):
         path = c.worktree(repo)
         if is_merged(cfg, path, item.name):
             continue
-        before = git(cfg, path, "rev-parse", "HEAD")
+        before = gitutil.git(path, "rev-parse", "HEAD")
         rc, _, err = gitutil.run(cfg, path, *RERERE, "merge", "--no-ff", "--no-edit",
                                  "-m", f"Merge {item.name}", item.name)
         if rc == 0:
@@ -278,7 +274,7 @@ def _apply(cfg, c, state, item, words):
         if not mid_merge(cfg, path):
             raise CurateError(f"{repo}: merging {item.name} failed: {err}")
         if not conflicts(cfg, path):  # rerere replayed every resolution
-            git(cfg, path, "commit", "--no-edit")
+            gitutil.git(path, "commit", "--no-edit")
             continue
         return _stop(cfg, c, state, item, repo, before, words)
     return None
@@ -286,20 +282,20 @@ def _apply(cfg, c, state, item, words):
 
 def _cherry_pick(cfg, c, state, item, words):
     path = c.worktree(item.repo)
-    before = git(cfg, path, "rev-parse", "HEAD")
+    before = gitutil.git(path, "rev-parse", "HEAD")
     rc, out, err = gitutil.run(cfg, path, *RERERE, "cherry-pick", "-x", item.name)
     own = item.kind == "own"  # replayed own commits stay "own", so later rebuilds keep them
     if rc == 0:
         if not own:
-            _record_pick(c, state, git(cfg, path, "rev-parse", "HEAD"))
+            _record_pick(c, state, gitutil.git(path, "rev-parse", "HEAD"))
         return None
     if picking(cfg, path) and not conflicts(cfg, path):
-        if "empty" in (out + err).lower() or not git(cfg, path, "diff", "--cached", "--name-only"):
+        if "empty" in (out + err).lower() or not gitutil.git(path, "diff", "--cached", "--name-only"):
             gitutil.run(cfg, path, "cherry-pick", "--skip")  # already applied
             return None
         _continue(cfg, path)
         if not own:
-            _record_pick(c, state, git(cfg, path, "rev-parse", "HEAD"))
+            _record_pick(c, state, gitutil.git(path, "rev-parse", "HEAD"))
         return None
     if not picking(cfg, path):
         raise CurateError(f"{item.repo}: cherry-picking {item.name[:12]} failed: {err}")
@@ -307,7 +303,7 @@ def _cherry_pick(cfg, c, state, item, words):
 
 
 def picking(cfg, path):
-    return gitutil.ok(cfg, path, "rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD")
+    return gitutil.ok(path, "rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD")
 
 
 def _continue(cfg, path):
@@ -356,11 +352,11 @@ def _finish_pending(cfg, c, state, pending, keys):
     item = _pending_item(pending)
     if pending["item"] not in keys and pending["kind"] != "own":
         if in_progress:  # the agent dropped the item: abandon its merge
-            gitutil.ok(cfg, path, "merge", "--abort")
-            gitutil.ok(cfg, path, "cherry-pick", "--abort")
+            gitutil.ok(path, "merge", "--abort")
+            gitutil.ok(path, "cherry-pick", "--abort")
         elif pending["kind"] == "commit" and \
-                git(cfg, path, "rev-parse", "HEAD") != pending["before"]:
-            _record_pick(c, state, git(cfg, path, "rev-parse", "HEAD"))  # not an own commit
+                gitutil.git(path, "rev-parse", "HEAD") != pending["before"]:
+            _record_pick(c, state, gitutil.git(path, "rev-parse", "HEAD"))  # not an own commit
             state = c.load()
         state["pending"] = None
         c.save(state)
@@ -372,15 +368,15 @@ def _finish_pending(cfg, c, state, pending, keys):
             return {"applied": [], "no_branches": [],
                     "conflict": _instructions(cfg, c, item, pending["repo"], words)}
         for f in conflicts(cfg, path):
-            git(cfg, path, "add", "--", f)
+            gitutil.git(path, "add", "--", f)
         if mid_merge(cfg, path):
-            git(cfg, path, *RERERE, "commit", "--no-edit")
+            gitutil.git(path, *RERERE, "commit", "--no-edit")
         else:
             _continue(cfg, path)
             if pending["kind"] == "commit":
-                _record_pick(c, state, git(cfg, path, "rev-parse", "HEAD"))
-    elif git(cfg, path, "rev-parse", "HEAD") != pending["before"] and pending["kind"] == "commit":
-        _record_pick(c, state, git(cfg, path, "rev-parse", "HEAD"))  # the agent finished it
+                _record_pick(c, state, gitutil.git(path, "rev-parse", "HEAD"))
+    elif gitutil.git(path, "rev-parse", "HEAD") != pending["before"] and pending["kind"] == "commit":
+        _record_pick(c, state, gitutil.git(path, "rev-parse", "HEAD"))  # the agent finished it
     state = c.load()
     state["pending"] = None
     c.save(state)
@@ -406,7 +402,7 @@ def own_commits(cfg, c, state, repo, items):
     path = c.worktree(repo)
     exclude = [gitutil.main_branch(cfg, repo)] + [
         i.name for i in items if i.kind == "session" and gitutil.branch_exists(cfg, repo, i.name)]
-    out = git(cfg, path, "rev-list", "--reverse", "--no-merges", "HEAD",
+    out = gitutil.git(path, "rev-list", "--reverse", "--no-merges", "HEAD",
               *[f"^{e}" for e in exclude])
     picked = set(state.get("picked", []))
     return [sha for sha in out.splitlines() if sha and sha not in picked]
@@ -428,9 +424,9 @@ def _rebuild(cfg, c, state, dropped=()):
     own = [[r, sha] for r in repos for sha in own_commits(cfg, c, state, r, previous)]
     for repo in repos:
         path = c.worktree(repo)
-        gitutil.ok(cfg, path, "merge", "--abort")
-        gitutil.ok(cfg, path, "cherry-pick", "--abort")
-        git(cfg, path, "reset", "-q", "--hard", gitutil.main_branch(cfg, repo))
+        gitutil.ok(path, "merge", "--abort")
+        gitutil.ok(path, "cherry-pick", "--abort")
+        gitutil.git(path, "reset", "-q", "--hard", gitutil.main_branch(cfg, repo))
     state = c.load()
     state.update(applied=[], picked=[], pending=None,
                  own_to_replay=state.get("own_to_replay", []) + own)
@@ -462,7 +458,7 @@ def publish(cfg, report="", accepted=(), rejected=()):
         central = cfg.repo_path(repo)
         if is_merged(cfg, central, c.name):
             continue  # already published
-        if not gitutil.ok(cfg, central, "merge", "--ff-only", "-q", c.name):
+        if not gitutil.ok(central, "merge", "--ff-only", "-q", c.name):
             raise CurateError(f"{repo}: main has moved; rerun curate-merge, validate, "
                               "then publish")
         faults.point(f"publish:after-ff:{repo}")
@@ -517,7 +513,7 @@ def cleanup(cfg):
     for s in selection:
         for repo in branch_repos(cfg, s["name"]):
             main = gitutil.main_branch(cfg, repo)
-            count = git(cfg, cfg.repo_path(repo), "rev-list", "--count", f"{main}..{s['name']}")
+            count = gitutil.git(cfg.repo_path(repo), "rev-list", "--count", f"{main}..{s['name']}")
             if count != "0" and s["name"] not in protected:
                 unpublished.append({"session": s["name"], "repo": repo, "commits": int(count)})
         sessions.remove(cfg, s["name"], protected)
