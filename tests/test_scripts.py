@@ -29,6 +29,9 @@ from tenkm import init  # noqa: E402
 GIT_ID = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
           "GIT_COMMITTER_EMAIL": "t@t"}
 SUFFIX = r"[a-z0-9]{8}"
+# Keep the host's system and global git config (hooks, for one, which slow every
+# commit) out of test loops; tests of inherited config set their own.
+HOST_GIT_OFF = {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
 
 
 def _settings():
@@ -48,7 +51,7 @@ def clean_env():
     return {k: v for k, v in os.environ.items() if not LEAKY.search(k) and k not in drop}
 
 
-def wait_for(predicate, timeout=15, interval=0.1):
+def wait_for(predicate, timeout=30, interval=0.1):
     deadline = time.time() + timeout
     while time.time() < deadline:
         if predicate():
@@ -68,7 +71,7 @@ class ScriptLoop:
         os.makedirs(os.path.dirname(self.db))
         self.env = dict(clean_env(), **GIT_ID)
         self.env.update(LOOP_ROOT=self.root, MSM_DB=self.db, NOTIFY_CMD="",
-                        LOOP_AGENT="sleep 30", KILL_GRACE="2")
+                        LOOP_AGENT="sleep 30", KILL_GRACE="2", **HOST_GIT_OFF)
         self.env.update(settings)
         self.central = os.path.join(self.root, "central")
         old = dict(os.environ)
