@@ -38,7 +38,9 @@ MAP = {
     "R26": ["tests/test_requirements_roles.py:TestHarnessSessionName."
             "test_agent_sessions_are_named_after_the_loop_session",
             "tests/test_requirements_roles.py:TestHarnessSessionName."
-            "test_operator_sessions_are_named_and_kickoff_is_not"],
+            "test_operator_sessions_are_named_and_kickoff_is_not",
+            "tests/test_metrics_e2e.py:TestMetricsOfACuratedLoop."
+            "test_metrics_report_every_session_of_a_curated_cycle"],
     # Configuration
     "R27": [RL + "TestStatePaths.test_database_and_action_log_are_at_the_configured_paths",
             "tests/test_requirements_roles.py:TestStatePathSettings.test_defaults_are_unchanged",
