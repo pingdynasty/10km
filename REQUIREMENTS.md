@@ -261,10 +261,6 @@ Then, by phase:
 **R151** It writes the role prompt to a file in the session directory, launches the agent through the configured launcher with the session name and prompt file path in its first message, and records the launcher's handle in the session.
 **R152** The launcher is configured for the loop. **R153** The default process launcher runs an agent command, configured for the loop or specialised for each role:
 **R154** `LOOP|PLANNER|WORKER|CURATOR|AUDITOR_AGENT=...`
-`LOOP_AGENT="pi --no-session --name $SESSION -p $PROMPT"`
-`LOOP_AGENT="claude --no-session-persistence --dangerously-skip-permissions -n $SESSION -p $PROMPT"`
-`LOOP_AGENT="kiro-cli chat --trust-tools --no-interactive $PROMPT"`
-`LOOP_AGENT="codex exec --ephemeral --sandbox $PROMPT"`
 
 ### Session Time-out
 **R155** The Dispatcher times out sessions that have run longer than the configured limit. **R156** Operator sessions are never timed out.
