@@ -447,12 +447,14 @@ class TestGitCalls(CurateCase):
             self.assertEqual(result["applied"], [planner, workers[0], workers[2]])
             self.assertEqual(self.count(calls, "show-ref"), 0)
             self.assertEqual(self.count(calls, "for-each-ref"), repos)
+            self.assertEqual(self.count(calls, "tenkm.mainBranch"), repos)
             curate.publish(self.cfg, "r", accepted=[workers[0], workers[2]],
                            rejected=[workers[1]])
             calls, patcher = self.git_calls()
             with patcher:
                 out = curate.cleanup(self.cfg)
         self.assertEqual(self.count(calls, "for-each-ref"), repos)
+        self.assertEqual(self.count(calls, "tenkm.mainBranch"), repos)
         self.assertEqual(out["unpublished_removed"],
                          [{"session": workers[1], "repo": "project", "commits": 1}])
         self.assertEqual(sorted(out["removed"]), sorted([planner] + workers))

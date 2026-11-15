@@ -36,6 +36,12 @@ def main_branch(cfg, repo):
     return out if rc == 0 and out else "main"
 
 
+def main_branches(cfg, repos):
+    """main_branch for each repo, as {repo: branch}. A step reads it once: the
+    config and the central checkout don't change while it runs."""
+    return {repo: main_branch(cfg, repo) for repo in repos}
+
+
 def branch_exists(cfg, repo, branch):
     return ok(cfg.repo_path(repo), "show-ref", "--verify", "--quiet", f"refs/heads/{branch}")
 

@@ -218,6 +218,7 @@ def merge(cfg, words):
     c = Curation(cfg)
     selected = {s["name"] for s in c.load()["selection"] or []}
     known = heads(cfg)  # merging creates and deletes no branches
+    mains = gitutil.main_branches(cfg, c.repos())
     empty = [w for w in words if w in selected and not branch_repos(cfg, w, known)]
     words = [w for w in words if w not in empty]  # selected sessions with nothing to merge
     items = resolve_items(cfg, words, known)
@@ -233,8 +234,8 @@ def merge(cfg, words):
             return done
         state = c.load()
     applied = state.get("applied", [])
-    if keys[:len(applied)] != applied or dropped or behind_main(cfg, c):
-        _rebuild(cfg, c, state, dropped, known)
+    if keys[:len(applied)] != applied or dropped or behind_main(c, mains):
+        _rebuild(c, state, dropped, known, mains)
         state = c.load()
         applied = []
     report = {"applied": [], "no_branches": empty, "conflict": None}
@@ -259,10 +260,11 @@ def merge(cfg, words):
     return report
 
 
-def behind_main(cfg, c):
-    """True if main has moved past the Curator branch in some repo."""
-    return any(not gitutil.ok(c.worktree(r), "merge-base", "--is-ancestor",
-                              gitutil.main_branch(cfg, r), "HEAD") for r in c.repos())
+def behind_main(c, mains):
+    """True if main (mains: gitutil.main_branches) has moved past the Curator
+    branch in some repo."""
+    return any(not gitutil.ok(c.worktree(r), "merge-base", "--is-ancestor", mains[r], "HEAD")
+               for r in c.repos())
 
 
 def _repos_for(cfg, item, known):
@@ -406,12 +408,12 @@ def _has_markers(path):
         return False
 
 
-def own_commits(cfg, c, state, repo, items, known):
+def own_commits(c, state, repo, items, known, main):
     """The Curator's own commits in a repo: not merges, not on main, not on an
     included session branch, and not cherry-picked by curate-merge. known: a
     heads() snapshot."""
     path = c.worktree(repo)
-    exclude = [gitutil.main_branch(cfg, repo)] + [
+    exclude = [main] + [
         i.name for i in items if i.kind == "session" and i.name in known.get(repo, ())]
     out = gitutil.git(path, "rev-list", "--reverse", "--no-merges", "HEAD",
               *[f"^{e}" for e in exclude])
@@ -419,7 +421,7 @@ def own_commits(cfg, c, state, repo, items, known):
     return [sha for sha in out.splitlines() if sha and sha not in picked]
 
 
-def _rebuild(cfg, c, state, dropped, known):
+def _rebuild(c, state, dropped, known, mains):
     """Reset every repo to main, keeping the Curator's own commits for replay.
     Commits of the applied items and of the dropped ones are not own commits."""
     repos = c.repos()
@@ -432,12 +434,12 @@ def _rebuild(cfg, c, state, dropped, known):
     for key in state.get("applied", []):
         kind, repo, name = key.split(":", 2)
         previous.append(Item(kind, name, repo or None))
-    own = [[r, sha] for r in repos for sha in own_commits(cfg, c, state, r, previous, known)]
+    own = [[r, sha] for r in repos for sha in own_commits(c, state, r, previous, known, mains[r])]
     for repo in repos:
         path = c.worktree(repo)
         gitutil.ok(path, "merge", "--abort")
         gitutil.ok(path, "cherry-pick", "--abort")
-        gitutil.git(path, "reset", "-q", "--hard", gitutil.main_branch(cfg, repo))
+        gitutil.git(path, "reset", "-q", "--hard", mains[repo])
     state = c.load()
     state.update(applied=[], picked=[], pending=None,
                  own_to_replay=state.get("own_to_replay", []) + own)
@@ -522,10 +524,11 @@ def cleanup(cfg):
         protected = sessions.protected_branches(m)
     removed, unpublished = [], []
     known = heads(cfg)  # each removal deletes only that session's branches
+    mains = gitutil.main_branches(cfg, cfg.repos())
     for s in selection:
         for repo in branch_repos(cfg, s["name"], known):
-            main = gitutil.main_branch(cfg, repo)
-            count = gitutil.git(cfg.repo_path(repo), "rev-list", "--count", f"{main}..{s['name']}")
+            count = gitutil.git(cfg.repo_path(repo), "rev-list", "--count",
+                                f"{mains[repo]}..{s['name']}")
             if count != "0" and s["name"] not in protected:
                 unpublished.append({"session": s["name"], "repo": repo, "commits": int(count)})
         sessions.remove(cfg, s["name"], protected)
