@@ -114,6 +114,18 @@ Each session directory holds the agent's `agent.log` and its `prompt.txt`. To re
 
 The next Curator merges your session, then the loop carries on from its phase.
 
+## Testing
+
+```sh
+make test         # unit and script tests: python3 -m unittest discover tests
+make smoke        # end to end with a fake agent, in the container (needs Docker)
+make smoke-host   # the same end-to-end test on this host (Linux or macOS)
+```
+
+The end-to-end test, `tests/smoke.sh`, needs Bash, git, jq and Python 3.9+. It
+runs in a temporary directory, removed on exit, and uses neither a live loop's
+settings nor your git config, so you can run it from inside a loop session.
+
 
 Jorge Luis Borges explored the Infinite Monkey Theorem in his 1939 essay "The Total Library" (La biblioteca total). Borges referenced the idea—often attributed to Thomas Huxley—that "a half-dozen monkeys provided with typewriters would, in a few eternities, produce all the books in the British Museum".
 "Strictly speaking, one immortal monkey would suffice".
