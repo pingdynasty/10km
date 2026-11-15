@@ -16,7 +16,7 @@ Status: Get a project status report
 
 ## Git Repositories and File System
 There is one loop repo, and one or more project repos configured at kickoff.
-The loop repo contains its scripts and prompts, the plan, goals, deliverables, BACKLOG.md, LEARNINGS.md, NOTIFICATIONS.md. The database is a file at a configured path, outside the repos.
+The loop repo contains its scripts and prompts, the plan, goals, deliverables, BACKLOG.md, LEARNINGS.md. The database is a file at a configured path, outside the repos.
 Configuration (project repos, main branch, launcher, agent commands, time-outs, auditor time, timezone and cycles, notification action, backlog size, max workers, validation gates, idle cycle limit) is in `config.env` in the loop repo. Scripts read it from the central loop worktree.
 The operator may provide one or more pre-existing project repos for the loop to work on.
 If not, a new project repo is created during kickoff.
@@ -341,7 +341,7 @@ If there are blocking operator escalations, notify the operator.
 
 Step 8: Publish (script `curate-publish`)
 The script fast-forwards main onto the Curator branch in each project repo, then in the loop repo. It then runs the task status updates and, if a Planner session was selected, `cycle curate`, in one msm transaction. It is safe to rerun.
-The agent passes any task verdicts and the cycle report as arguments. It publishes even if nothing was selected, so that notifications and its own plan and backlog updates reach main.
+The agent passes any task verdicts and the cycle report as arguments. It publishes even if nothing was selected, so that its own plan and backlog updates reach main.
 
 Step 9: Cleanup (script `curate-cleanup`)
 It updates central worktrees.
@@ -391,7 +391,7 @@ When done, kickoff sets its session to done and calls `loop start`. The Curator 
 
 ## Notification
 The operator notification mechanism should be a deterministic action configured during Kickoff.
-The default notification is to append to the file NOTIFICATIONS.md.
+The default notification is to append to NOTIFICATIONS.md in the central loop worktree. The file is gitignored, so notifications are immediate and don't depend on a merge.
 Unless given other instructions, the loop only notifies the operator when it stops.
 
 # Test Scripts
