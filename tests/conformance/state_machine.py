@@ -66,6 +66,7 @@ MAP = {
     "R73": M + "test_cycle_curate_sets_verdicts_and_closed_cycle_is_frozen",
     "R74": RM + "TestLoopRecord.test_start_clears_reason_and_goes_to_plan",
     "R75": [M + "test_stop_and_resume", RM + "TestLoopRecord.test_resume_outside_plan_keeps_the_phase"],
+    "R324": RM + "TestLoopRecord.test_resume_resets_the_empty_cycle_count",
     "R76": [M + "test_stop_and_resume", RM + "TestLoopRecord.test_stop_sets_stopped_and_reason",
             RM + "TestLoopRecord.test_stop_without_a_reason_is_refused",
             IDLE],

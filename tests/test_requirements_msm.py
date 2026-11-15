@@ -129,6 +129,17 @@ class TestLoopRecord(MsmCase):
         self.assertEqual((loop["stopped"], loop["reason"], loop["phase"]),
                          (False, None, "execute"))
 
+    def test_resume_resets_the_empty_cycle_count(self):  # R75 R324
+        self.ok("loop", "start")
+        self.plan()
+        self.curate()
+        self.plan()
+        self.assertEqual(self.loop()["empty_cycles"], 2)
+        self.ok("loop", "stop", "idle")
+        loop = self.ok("loop", "resume")
+        self.assertEqual((loop["stopped"], loop["reason"], loop["empty_cycles"]),
+                         (False, None, 0))
+
     def blocking_escalation(self):
         return self.ok("issue", "create", json.dumps(
             {"type": "escalation", "title": "decide", "severity": "blocking",
