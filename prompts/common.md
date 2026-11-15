@@ -52,5 +52,6 @@ answered issues its role raised
 (`msm issue list '{"status":"answered","assigner_role":"<role>"}'`), acts on the
 answer (a plan change, a backlog item, a task), then resolves it with
 `msm issue update <id> '{"status":"resolved","resolution":"..."}'`: the answer,
-kept, and what was done. Resolve directly, without answering, when nothing is left for another role: a backlog item
-you have done, or an issue your own role raised or with no `assigner_session`.
+kept, and what was done. Resolve directly, without answering, when nothing is
+left for another role: a backlog item you have done, or an issue your own role
+raised or with no `assigner_session`.
