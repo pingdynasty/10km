@@ -8,6 +8,7 @@ CONFIG="${LOOP_CONFIG:-$CENTRAL/loop/config.env}"
 # shellcheck source=/dev/null
 [ -f "$CONFIG" ] && . "$CONFIG"
 export LOOP_ROOT MSM_DB="${MSM_DB:-$LOOP_ROOT/.10km/loop.db}"
+if [ -n "${MSM_LOG-}" ]; then export MSM_LOG; fi
 MSM="$BIN/msm"
 
 # Repos that get a worktree per session: the loop repo, then every other git

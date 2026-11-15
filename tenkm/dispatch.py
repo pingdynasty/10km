@@ -139,6 +139,7 @@ class Pass:
         code = loop_code if os.path.isdir(os.path.join(loop_code, "tenkm")) else CODE_ROOT
         env.update(SESSION=name, LOOP_SESSION=name, PROMPT_FILE=prompt_file,
                    FIRST_MESSAGE=first_message, LOOP_ROOT=self.cfg.root, MSM_DB=self.cfg.db,
+                   MSM_LOG=self.cfg.action_log,
                    PATH=os.pathsep.join([os.path.join(code, "bin"), BIN, env.get("PATH", "")]),
                    PYTHONPATH=os.pathsep.join(p for p in (code, env.get("PYTHONPATH")) if p))
         return env

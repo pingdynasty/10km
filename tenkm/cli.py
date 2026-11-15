@@ -71,7 +71,7 @@ def run_operator_agent(cfg, cwd, message="", session=None, one_shot=False):
     env = {k: v for k, v in os.environ.items()
            if k not in ("LOOP_SESSION", "SESSION", "FIRST_MESSAGE", "ONE_SHOT")}
     loop = cfg.repo_path("loop")
-    env.update(LOOP_ROOT=cfg.root, MSM_DB=cfg.db,
+    env.update(LOOP_ROOT=cfg.root, MSM_DB=cfg.db, MSM_LOG=cfg.action_log,
                PATH=os.pathsep.join([os.path.join(loop, "bin"), env.get("PATH", "")]),
                PYTHONPATH=os.pathsep.join(p for p in (loop, env.get("PYTHONPATH")) if p))
     if session:

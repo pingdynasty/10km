@@ -13,6 +13,7 @@ import subprocess
 
 CODE_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 BIN = os.path.join(CODE_ROOT, "bin")
+STATE_PATHS = ("MSM_DB", "MSM_LOG")  # settings msm itself reads from the environment
 
 
 class Config(dict):
@@ -33,7 +34,14 @@ class Config(dict):
 
     @property
     def db(self):
+        """The state database: MSM_DB, else <root>/.10km/loop.db."""
         return self.get("MSM_DB") or os.path.join(self.state_dir, "loop.db")
+
+    @property
+    def action_log(self):
+        """The action log: MSM_LOG, else actions.log next to the database."""
+        return self.get("MSM_LOG") or os.path.join(os.path.dirname(os.path.abspath(self.db)),
+                                                   "actions.log")
 
     def int(self, name, default):
         value = self.get(name, "")
@@ -113,4 +121,9 @@ def load(root=None):
             env["TENKM_CONFIG_ERROR"] = out.stderr.decode().strip() or "config.env failed"
     cfg = Config(env)
     cfg["LOOP_CONFIG_PATH"] = path
+    # msm reads its paths from the environment: apply those set in config.env, so
+    # msm calls in this process and its children use them too.
+    for name in STATE_PATHS:
+        if cfg.get(name):
+            os.environ[name] = cfg[name]
     return cfg

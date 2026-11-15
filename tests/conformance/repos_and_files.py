@@ -31,8 +31,15 @@ MAP = {
     "R24": RL + "TestCommitTrailer.test_commits_carry_a_loop_session_trailer",
     "R25": [RL + "TestCommitTrailer.test_commits_carry_a_loop_session_trailer",
             ("prompts/common.md", "Commits get a `Loop-Session:` trailer from the commit hook")],
+    "R26": ["tests/test_requirements_roles.py:TestHarnessSessionName."
+            "test_agent_sessions_are_named_after_the_loop_session",
+            "tests/test_requirements_roles.py:TestHarnessSessionName."
+            "test_operator_sessions_are_named_and_kickoff_is_not"],
     # Configuration
-    "R27": RL + "TestStatePaths.test_database_and_action_log_are_at_the_configured_paths",
+    "R27": [RL + "TestStatePaths.test_database_and_action_log_are_at_the_configured_paths",
+            "tests/test_requirements_roles.py:TestStatePathSettings.test_defaults_are_unchanged",
+            "tests/test_requirements_roles.py:TestStatePathSettings."
+            "test_config_env_paths_reach_agents_and_this_process"],
     "R28": [RL + "TestCentralConfig.test_agent_command_per_role_falls_back_to_loop_agent",
             S + "TestDispatchScript.test_launches_agent_with_prompt_handle_and_environment"],
     "R29": L + "TestConfig.test_environment_overrides_config",
@@ -45,6 +52,4 @@ MAP = {
     "R35": L + "TestNotify.test_commands_get_variables_and_keys_send_once",
 }
 
-# R26: nothing names the harness session after the loop session yet (the default
-# LOOP_AGENT has no name option); see the conformance report.
-PENDING = {"R26"}
+PENDING = set()
