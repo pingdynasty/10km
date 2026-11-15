@@ -119,8 +119,7 @@ class TestIssueTypes(IssueCase):
         operator = self.ok("session", "create", "operator", "mars")["name"]
         for name in (worker, operator):
             rc, issue = self.as_session(name, "issue", "create", json.dumps(
-                {"type": "backlog", "title": f"from {name}", "assigner_session": name,
-                 "urgent_if": "later"}))
+                {"type": "backlog", "title": f"from {name}", "urgent_if": "later"}))
             self.assertEqual(rc, 0)
             self.assertEqual((issue["assigner_session"], issue["status"]), (name, "open"))
         self.ok("issue", "create", '{"type": "backlog", "title": "from the operator\'s shell"}')
@@ -185,9 +184,9 @@ class TestIssueLifecycle(IssueCase):
         own = self.as_ok(self.auditor, "issue", "create", '{"type": "backlog", "title": "a"}')
         self.assertEqual((own["assigner_session"], own["assigner_role"]),
                          (self.auditor, "auditor"))
-        named = self.as_ok(self.auditor, "issue", "create", json.dumps(
-            {"type": "backlog", "title": "b", "assigner_session": self.planner}))
-        self.assertEqual(named["assigner_role"], "planner")
+        planned = self.as_ok(self.planner, "issue", "create", '{"type": "backlog", "title": "b"}')
+        self.assertEqual((planned["assigner_session"], planned["assigner_role"]),
+                         (self.planner, "planner"))
         self.fails(1, "issue", "create", json.dumps(
             {"type": "backlog", "title": "c", "assigner_role": "planner"}))
         self.fails(1, "issue", "create", json.dumps(

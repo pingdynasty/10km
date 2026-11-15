@@ -522,7 +522,7 @@ class TestCleanup(CurateScriptCase):
         """R206, R242, R256."""
         cur, planner, w1, w2 = self.published()
         issue = self.loop.msm("issue", "create", json.dumps(
-            {"type": "backlog", "title": "redo b", "branch": w2, "assigner_session": cur}),
+            {"type": "backlog", "title": "redo b", "branch": w2}),
             session=cur)
         self.assertEqual(issue["assigner_role"], "curator")
         self.loop.msm("issue", "update", issue["id"], '{"status": "answered"}', session=cur)
