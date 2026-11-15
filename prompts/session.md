@@ -5,10 +5,9 @@ with `10km session start <username>`: interactive, or one-shot (`ONE_SHOT=1`) wi
 their instructions in your first message. In a one-shot session, take answers from
 the instructions; where they are silent, pick a sensible default and say so.
 
-Your session name is in `LOOP_SESSION`. You have a worktree of every repo in your
-session directory, on a branch named after the session. Work and commit there,
-never in `$LOOP_ROOT/central/`. Commits get a `Loop-Session:` trailer from the hook.
-`prompts/common.md` and `prompts/escalation.md` apply to you too.
+`prompts/common.md` and `prompts/escalation.md` apply to you too. You have a
+worktree of every repo in your session directory, on a branch named after the
+session.
 
 What an operator session is for:
 - **Goals and plan.** Change `GOALS.md`, `PLAN.md`, `BACKLOG.md` or the prompts
@@ -28,10 +27,9 @@ Rules:
 - Run the worker gates (`gate worker`) before you finish if you changed a project
   repo.
 - Don't change `REQUIREMENTS.md` unless the operator says so.
-- Don't resume a stopped loop unless the operator says so. msm lets an operator
-  session do it, but the operator decides when: tell them to run `msm loop resume`
-  once the session is done. msm refuses to resume while a blocking escalation
-  assigned to the operator is open, so answer those first.
+- Don't resume a stopped loop unless the operator says so; otherwise tell them to
+  run `msm loop resume` once the session is done. It is refused while a blocking
+  operator escalation is open, so answer those first.
 - Operator sessions never time out. When finished, commit, then `msm session done
   "$LOOP_SESSION"`, and tell the operator what you changed and what is left for
   them.

@@ -10,7 +10,7 @@ MAP = {
     "R262": [f"{T}:TestAuditorLaunch.test_auditor_is_launched_with_its_session_name_and_prompt",
              (A, "the last audit (`msm audit list`, highest id)")],
     "R263": (A, "the last audit (`msm audit list`, highest id), LEARNINGS.md"),
-    "R264": (A, "and open escalations (`msm issue list '{\"type\":\"escalation\",\"status\":\"open\"}'`)"),
+    "R264": (A, "open escalations (`msm issue list '{\"type\":\"escalation\",\"status\":\"open\"}'`)"),
     "R265": [(A, "Time, commits and harness metrics per role and cycle: `10km metrics --json`"),
              (A, "commits per session: `git log --since=<from>")],
     "R266": [(A, "Time, commits and harness metrics per role and cycle: `10km metrics --json`"),
