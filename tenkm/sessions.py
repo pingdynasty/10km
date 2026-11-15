@@ -7,7 +7,7 @@ and rolled back completely if any step fails.
 import os
 import shutil
 
-from . import gitutil, msm
+from . import faults, gitutil, msm
 from .locks import lock
 
 EAGAIN = 4  # the session's branch name is already taken
@@ -34,6 +34,7 @@ def create(cfg, role, username=None):
         except msm.MSMError as e:
             raise SessionError(e.code, e.message)
         name, directory = session["name"], session["working_directory"]
+        faults.point("session:after-record")
         created = []
         try:
             try:
@@ -45,6 +46,7 @@ def create(cfg, role, username=None):
                     gitutil.git(cfg, cfg.repo_path(repo), "worktree", "add", "-q", "-b", name,
                                 os.path.join(directory, repo), base)
                     created.append(repo)
+                    faults.point(f"session:after-worktree:{repo}")
             except (gitutil.GitError, OSError) as e:
                 raise SessionError(EGIT, str(e))
         except BaseException:

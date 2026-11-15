@@ -1,20 +1,9 @@
-#!/usr/bin/env bash
-# Curator Step 9: check the central worktrees, then remove the selected sessions.
-. "$(dirname "$0")/lib.sh"
+#!/usr/bin/env python3
+"""Curator step: see tenkm/curate.py."""
+import os
+import sys
 
-self=${LOOP_SESSION:?LOOP_SESSION is not set}
-selection="$LOOP_ROOT/$self/selection.json"
-[ -f "$selection" ] || die "no selection; run curate-select first"
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+from tenkm.curate import main  # noqa: E402
 
-for repo in $(repos); do
-  branch=$(git -C "$CENTRAL/$repo" symbolic-ref --short HEAD 2>/dev/null || echo detached)
-  [ "$branch" = "$(main_branch "$repo")" ] || echo "warning: central/$repo is on $branch" >&2
-  [ -z "$(git -C "$CENTRAL/$repo" status --porcelain)" ] ||
-    echo "warning: central/$repo has uncommitted changes" >&2
-done
-
-protected=$(protected_branches)
-jq -r '.[].name' "$selection" | while read -r name; do
-  remove_session "$name" "$protected"
-  echo "removed $name"
-done
+sys.exit(main("cleanup", sys.argv[1:]))

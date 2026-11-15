@@ -1,19 +1,9 @@
-#!/usr/bin/env bash
-# Curator Step 2: select the sessions to curate, record them, and print them.
-# Inactive operator and Auditor sessions if any; otherwise, in the curate phase,
-# the current cycle's inactive Planner and Worker sessions; otherwise nothing.
-# An empty selection means the agent skips to Step 7 (Assess).
-. "$(dirname "$0")/lib.sh"
+#!/usr/bin/env python3
+"""Curator step: see tenkm/curate.py."""
+import os
+import sys
 
-self=${LOOP_SESSION:?LOOP_SESSION is not set}
-sessions=$("$MSM" session list)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+from tenkm.curate import main  # noqa: E402
 
-selected=$(jq '[.[] | select(.status != "active" and (.role == "operator" or .role == "auditor"))]' \
-  <<<"$sessions")
-if [ "$(jq length <<<"$selected")" -eq 0 ] &&
-   [ "$("$MSM" loop get | jq -r .phase)" = curate ]; then
-  selected=$(jq --argjson cur "$(current_cycle)" '[.[]
-    | select($cur != null and $cur.status == "open" and .cycle == $cur.id)
-    | select(.status != "active" and (.role == "planner" or .role == "worker"))]' <<<"$sessions")
-fi
-echo "$selected" | tee "$LOOP_ROOT/$self/selection.json"
+sys.exit(main("select", sys.argv[1:]))

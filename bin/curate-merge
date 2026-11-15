@@ -1,24 +1,9 @@
-#!/usr/bin/env bash
-# Curator Step 3: merge given sessions into the Curator session, in every repo.
-# Usage: curate-merge <session>...
-# Exit: 0 clean. 1 at least one repo has unresolved conflicts; the files are
-# listed on stdout as "repo\tpath" and left in the worktree for the agent to fix.
-. "$(dirname "$0")/lib.sh"
+#!/usr/bin/env python3
+"""Curator step: see tenkm/curate.py."""
+import os
+import sys
 
-self=${LOOP_SESSION:?LOOP_SESSION is not set}
-dir="$LOOP_ROOT/$self"
-[ "$#" -gt 0 ] || die "usage: curate-merge <session>..."
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+from tenkm.curate import main  # noqa: E402
 
-rc=0
-for name in "$@"; do
-  for repo in $(repos); do
-    git -C "$CENTRAL/$repo" show-ref --verify --quiet "refs/heads/$name" || continue
-    if ! git -C "$dir/$repo" merge --no-edit --no-ff "$name" >/dev/null 2>&1; then
-      git -C "$dir/$repo" diff --name-only --diff-filter=U | while read -r f; do
-        printf '%s\t%s\n' "$repo" "$f"
-      done
-      rc=1
-    fi
-  done
-done
-exit "$rc"
+sys.exit(main("merge", sys.argv[1:]))

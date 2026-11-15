@@ -32,3 +32,10 @@ def main_branch(cfg, repo):
 
 def branch_exists(cfg, repo, branch):
     return ok(cfg, cfg.repo_path(repo), "show-ref", "--verify", "--quiet", f"refs/heads/{branch}")
+
+
+def run(cfg, repo_dir, *args):
+    """Run git; return (exit status, stdout, stderr) without raising."""
+    env = dict(os.environ, **cfg.git_env())
+    p = subprocess.run(["git", "-C", repo_dir, *args], env=env, capture_output=True, text=True)
+    return p.returncode, p.stdout.strip(), p.stderr.strip()

@@ -28,16 +28,12 @@ case $s in
     "$MSM" audit create '{"period": {"from": "start", "to": "now"}, "summary": "ok"}' >/dev/null
     "$MSM" session done "$s" >/dev/null ;;
   *-curator-*)
-    curate-clean
+    curate-prepare >/dev/null
     selected=$(curate-select)
     done_names=$(jq -r '.[] | select(.status == "done") | .name' <<<"$selected" | tr '\n' ' ')
-    [ -n "$done_names" ] && curate-merge $done_names
-    verdicts=$(jq -c '[.[] | select(.role == "worker") | {session: .name, status: "accepted"}]' <<<"$selected")
-    if jq -e 'any(.[]; .role == "planner")' <<<"$selected" >/dev/null; then
-      curate-publish "$verdicts" "{\"curator_session\": \"$s\", \"report\": \"smoke\"}"
-    else
-      curate-publish "$verdicts"
-    fi
-    curate-cleanup
+    [ -n "$done_names" ] && curate-merge $done_names >/dev/null
+    accepted=$(jq -r '.[] | select(.role == "worker" and .status == "done") | .name' <<<"$selected" | tr '\n' ' ')
+    curate-publish --report smoke --accepted $accepted >/dev/null
+    curate-cleanup >/dev/null
     "$MSM" session done "$s" >/dev/null ;;
 esac

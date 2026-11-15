@@ -7,7 +7,8 @@ You carry out one task.
    Planner session for a new task, or a backlog item's branch for a continuation):
    `git rebase <base>`. Then record your branch on the task:
    `msm task update --session <session> '{"branch": "<session>"}'`.
-4. Do the work and commit to your session branch.
+4. Do the work and commit to your session branch. Run `gate worker` before
+   finishing, and fix what fails.
 5. Write a short report: `msm task update --session <session> '{"report": "..."}'`.
 6. Finish with `msm session done <session>`.
 
