@@ -13,6 +13,12 @@ def _handle(handle):
     return handle or "no handle"
 
 
+def _printable(text):
+    """Text with "?" for each non-printable character but newlines (agent-written
+    text must not reach the terminal as escapes)."""
+    return "".join(c if c.isprintable() or c == "\n" else "?" for c in text)
+
+
 def _loop_line(loop):
     state = "stopped" + (f" ({loop['reason']})" if loop["reason"] else "") \
         if loop["stopped"] else "running"
@@ -92,4 +98,4 @@ def report(cfg, now=None, tz=None):
                  + (f", last {when(audits[-1]['created_at'])}" if audits else ""))
     lines.append("")
     lines += table(_repo_rows(cfg, now), indent="")
-    return "\n".join(lines)
+    return _printable("\n".join(lines))
