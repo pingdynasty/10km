@@ -1,8 +1,5 @@
-"""Runs the conformance check (tests/conformance.py) under `make test`, and tests
-the checker itself on small inputs.
-
-Run: python3 -m unittest discover tests
-"""
+"""Runs the conformance check (tests/conformance.py), and tests the checker on
+small inputs."""
 import os
 import sys
 import unittest

@@ -1,12 +1,6 @@
-"""Script tests: drive the bin/ entry points (session, gate, dispatch) as
-subprocesses against a temporary loop, never the live one.
-
-`ScriptLoop` builds a loop root with a loop repo, a project repo and a database
-outside the root, and runs scripts with an environment that points only at it.
-`ScriptCase` gives each test a fresh one. Script tests for curate-* and later
-cycles can reuse both.
-
-Run: python3 -m unittest discover tests
+"""Script tests: the bin/ entry points (session, gate, dispatch) run as
+subprocesses against a temporary loop (ScriptLoop), never the live one.
+ScriptCase gives each test a fresh one; other script and scenario tests reuse both.
 """
 import fcntl
 import glob
@@ -20,32 +14,9 @@ import tempfile
 import time
 import unittest
 
-CODE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BIN = os.path.join(CODE, "bin")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
-sys.path.insert(0, CODE)
-
-GIT_ID = testenv.GIT_ID
-SUFFIX = r"[a-z0-9]{8}"
-# Keep the host's system and global git config (hooks, for one, which slow every
-# commit) out of test loops; tests of inherited config set their own.
-HOST_GIT_OFF = {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
-
-
-def clean_env():
-    """os.environ without anything that could point a script at another loop or a
-    real agent, with LOOP_CONFIG set to the test config (tests/testenv.py)."""
-    return testenv.clean_env()
-
-
-def wait_for(predicate, timeout=testenv.DEADLINE, interval=0.1):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if predicate():
-            return True
-        time.sleep(interval)
-    return bool(predicate())
+from testenv import BIN, CODE, SUFFIX, read_env, wait_for  # noqa: E402
 
 
 class ScriptLoop:
@@ -57,18 +28,15 @@ class ScriptLoop:
         self.root = os.path.join(base, "root")
         self.db = os.path.join(base, "state", "loop.db")
         os.makedirs(os.path.dirname(self.db))
-        self.env = dict(clean_env(), **GIT_ID)
+        self.env = dict(testenv.clean_env(), **testenv.GIT_ID, **testenv.HOST_GIT_OFF)
         self.env.update(LOOP_ROOT=self.root, MSM_DB=self.db, NOTIFY_CMD="",
-                        LOOP_AGENT="sleep 30", KILL_GRACE="2", **HOST_GIT_OFF)
+                        LOOP_AGENT="sleep 30", KILL_GRACE="2")
         self.env.update(settings)
         self.central = os.path.join(self.root, "central")
         testenv.loop_repo(os.path.join(self.central, "loop"))
-        project = os.path.join(self.central, "project")
-        self.git(None, "init", "-q", "-b", "main", project)
-        self.git(project, "commit", "-q", "--allow-empty", "-m", "start")
+        testenv.project_repo(os.path.join(self.central, "project"))
         self.ok("init")
 
-    # --- running scripts ---------------------------------------------------
     def run(self, script, *args, session=None, env=None, timeout=testenv.DEADLINE):
         """Run bin/<script> with the loop's environment. session sets LOOP_SESSION."""
         e = dict(self.env, **(env or {}))
@@ -96,9 +64,11 @@ class ScriptLoop:
         return subprocess.run(command, env=self.env, check=True, capture_output=True,
                               text=True).stdout.strip()
 
-    # --- loop state --------------------------------------------------------
     def sessions(self, role=None):
         return [s for s in self.msm("session", "list") if role is None or s["role"] == role]
+
+    def active(self, role=None):
+        return [s for s in self.sessions(role) if s["status"] == "active"]
 
     def session(self, role, username=None, **kw):
         args = [role] + ([username] if username else [])
@@ -128,7 +98,6 @@ class ScriptLoop:
         self.done(name)
         return name
 
-    # --- files -------------------------------------------------------------
     def worktree(self, session, repo="project"):
         return os.path.join(self.root, session, repo)
 
@@ -181,6 +150,12 @@ class ScriptCase(unittest.TestCase):
         self.loop = ScriptLoop(tmp, **self.settings)
         self.addCleanup(self.loop.kill_all)
         self.tmp = tmp
+
+    def dispatch(self, **env):
+        """Run a Dispatcher pass that must succeed; its stdout."""
+        p = self.loop.run("dispatch", env=env)
+        self.assertExit(p, 0)
+        return p.stdout
 
     def assertExit(self, p, code):
         self.assertEqual(p.returncode, code, f"stdout:\n{p.stdout}\nstderr:\n{p.stderr}")
@@ -245,15 +220,10 @@ class TestSessionScript(ScriptCase):
         self.assertEqual(self.loop.sessions(), [])
 
     def test_branch_name_taken_is_eagain_and_rolls_back_other_repos(self):
-        # Make the random suffix predictable, then take the name in the second repo.
-        site = os.path.join(self.tmp, "site")
-        os.makedirs(site)
-        with open(os.path.join(site, "sitecustomize.py"), "w") as f:
-            f.write("import secrets\nsecrets.choice = lambda seq: seq[0]\n")
-        env = {"PYTHONPATH": site}
-        taken = "operator-mars-aaaaaaaa"
+        taken = "operator-mars-aaaaaaaa"  # in the second repo only
         self.loop.git(self.loop.repo("project"), "branch", taken)
-        p = self.loop.run("session", "operator", "mars", env=env)
+        p = self.loop.run("session", "operator", "mars",
+                          env=testenv.fixed_suffix(os.path.join(self.tmp, "site")))
         self.assertError(p, 4)
         self.assertEqual(self.loop.sessions(), [])
         self.assertFalse(os.path.exists(os.path.join(self.loop.root, taken)))
@@ -422,11 +392,6 @@ class TestGateScript(GateCase):
 # --- dispatch ----------------------------------------------------------------
 
 class TestDispatchScript(ScriptCase):
-    def dispatch(self, **env):
-        p = self.loop.run("dispatch", env=env)
-        self.assertExit(p, 0)
-        return p.stdout
-
     def test_stopped_loop_launches_nothing(self):
         self.loop.contribute()
         self.dispatch()
@@ -442,15 +407,13 @@ class TestDispatchScript(ScriptCase):
         self.assertTrue(planner["handle"].startswith("process:"))
         self.assertTrue(wait_for(lambda: self.loop.msm("session", "get", name)["status"]
                                  == "done"))
-        with open(os.path.join(directory, "env.txt")) as f:
-            env = dict(line.split("=", 1) for line in f.read().splitlines() if "=" in line)
+        env = read_env(os.path.join(directory, "env.txt"))
         prompt = os.path.join(directory, "prompt.txt")
         for key, value in (("SESSION", name), ("LOOP_SESSION", name), ("PROMPT_FILE", prompt),
                            ("LOOP_ROOT", self.loop.root), ("MSM_DB", self.loop.db)):
             self.assertEqual(env[key], value)
         self.assertIn(name, env["FIRST_MESSAGE"])
         self.assertIn(prompt, env["FIRST_MESSAGE"])
-        # Agents use the loop repo's own code.
         self.assertEqual(env["PATH"].split(os.pathsep)[0],
                          os.path.join(self.loop.central, "loop", "bin"))
         with open(prompt) as f:
@@ -493,10 +456,11 @@ class TestDispatchScript(ScriptCase):
 
     def test_time_out_sends_sigterm_first_and_relaunches_the_role(self):
         self.loop.start()
-        agent = "trap 'echo term > term.txt; exit 0' TERM; while :; do sleep 0.1; done"
+        agent = "trap 'echo term > term.txt; exit 0' TERM; touch ready; while :; do sleep 0.1; done"
         self.dispatch(LOOP_AGENT=agent)
         [first] = self.loop.sessions("planner")
-        time.sleep(0.5)  # let the trap be installed
+        self.assertTrue(wait_for(lambda: os.path.exists(
+            os.path.join(first["working_directory"], "ready"))))
         out = self.dispatch(LOOP_AGENT=agent, PLANNER_TIMEOUT="-1", KILL_GRACE="10")
         self.assertIn(f"expired {first['name']} (timed out)", out)
         self.assertTrue(os.path.exists(os.path.join(first["working_directory"], "term.txt")))
@@ -510,11 +474,12 @@ class TestDispatchScript(ScriptCase):
 
     def test_agent_ignoring_sigterm_is_killed(self):
         self.loop.start()
-        agent = "trap '' TERM; while :; do sleep 0.1; done"
+        agent = "trap '' TERM; touch ready; while :; do sleep 0.1; done"
         self.dispatch(LOOP_AGENT=agent)
         [first] = self.loop.sessions("planner")
         pgid = int(first["handle"].split(":")[1])
-        time.sleep(0.5)
+        self.assertTrue(wait_for(lambda: os.path.exists(
+            os.path.join(first["working_directory"], "ready"))))
         start = time.time()
         self.dispatch(LOOP_AGENT="sleep 30", PLANNER_TIMEOUT="-1", KILL_GRACE="1")
         self.assertGreaterEqual(time.time() - start, 1)
@@ -525,9 +490,10 @@ class TestDispatchScript(ScriptCase):
 
     def test_agent_that_died_is_expired_after_the_start_grace(self):
         self.loop.start()
-        self.dispatch(LOOP_AGENT="exit 1")
+        self.dispatch(LOOP_AGENT="touch exited; exit 1")
         [first] = self.loop.sessions("planner")
-        time.sleep(0.5)
+        self.assertTrue(wait_for(lambda: os.path.exists(
+            os.path.join(first["working_directory"], "exited"))))
         self.dispatch(LOOP_AGENT="sleep 30")  # within START_GRACE: left alone
         self.assertEqual(self.loop.msm("session", "get", first["name"])["status"], "active")
         out = self.dispatch(LOOP_AGENT="sleep 30", START_GRACE="0")
@@ -544,13 +510,9 @@ class TestDispatchScript(ScriptCase):
         self.assertEqual(len(self.loop.sessions("planner")), 1)
 
     def test_taken_branch_names_are_retried_then_given_up(self):
-        site = os.path.join(self.tmp, "site")
-        os.makedirs(site)
-        with open(os.path.join(site, "sitecustomize.py"), "w") as f:
-            f.write("import secrets\nsecrets.choice = lambda seq: seq[0]\n")
         self.loop.start()
         self.loop.git(self.loop.repo("loop"), "branch", "cycle1-planner-aaaaaaaa")
-        self.dispatch(PYTHONPATH=site)
+        self.dispatch(**testenv.fixed_suffix(os.path.join(self.tmp, "site")))
         self.assertEqual(self.loop.sessions(), [])
 
     def test_concurrent_pass_is_skipped(self):

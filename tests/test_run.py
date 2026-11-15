@@ -1,4 +1,4 @@
-"""Tests for tests/run.py, the parallel test runner. Run: python3 -m unittest discover tests"""
+"""Tests for tests/run.py, the parallel test runner."""
 import os
 import subprocess
 import sys

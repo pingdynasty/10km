@@ -1,19 +1,11 @@
 """End-to-end scenarios: the real bin/ scripts and the fake agent (tests/fake-agent)
-run a temporary loop through whole cycles, on the host or in the container.
+run a temporary loop through whole cycles.
 
-`ScenarioCase` drives Dispatcher passes until a condition holds. A scenario sets
-the fake agent's behaviour per session with FAKE_* settings (see tests/fake-agent),
-then checks the loop state, the repos and the issues. Add a scenario as a test
-method or a ScenarioCase subclass with its own `settings`.
-
-Scenarios wait on conditions, not on time: session time-outs are long and each
-drive() has a generous deadline, so a loaded host makes them slower, not failing.
-To time out a hanging Worker, drive until it has committed (`committed()`), then
-drive with a short WORKER_TIMEOUT.
-
-Each requirement checked is cited by ID in the test's docstring.
-
-Run: python3 -m unittest tests.test_scenarios   (needs bash, git and jq)
+A scenario sets the fake agent's behaviour per session with FAKE_* settings (see
+tests/fake-agent), drives Dispatcher passes until a condition holds, then checks
+the loop state, the repos and the issues. Scenarios wait on conditions, not on
+time: to time out a hanging Worker, drive until it has committed (`committed()`),
+then drive with a short WORKER_TIMEOUT.
 """
 import json
 import os
@@ -25,9 +17,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
-from test_scripts import CODE, ScriptCase  # noqa: E402
-
-FAKE_AGENT = os.path.join(CODE, "tests", "fake-agent")
+from test_scripts import ScriptCase  # noqa: E402
 
 
 @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
@@ -38,26 +28,18 @@ class ScenarioCase(ScriptCase):
     passes it runs (agents launched in those passes inherit them)."""
 
     settings = {
-        "LOOP_AGENT": FAKE_AGENT,
+        "LOOP_AGENT": testenv.FAKE_AGENT,
         "AUDIT_TIME": "", "AUDIT_CYCLES_LIMIT": "0",  # no Auditor unless a scenario asks
         "SESSION_TIMEOUT": "900", "START_GRACE": "300", "KILL_GRACE": "1",
         "GATE_WAIT": "30",
-        "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
     }
-    timeout = testenv.DEADLINE  # seconds per drive(): a loaded host only makes it slower
-
-    # --- driving -----------------------------------------------------------
-    def dispatch(self, **env):
-        p = self.loop.run("dispatch", env=env)
-        self.assertExit(p, 0)
-        return p.stdout
 
     def drive(self, until, timeout=None, interval=0.3, **env):
         """Run Dispatcher passes until `until()` is true; fail with the loop's state
         if it isn't within `timeout` seconds. A pass that did something (launched or
         expired a session) is followed by the next at once, an idle one after
         `interval` seconds, while agents work."""
-        deadline = time.time() + (timeout or self.timeout)
+        deadline = time.time() + (timeout or testenv.DEADLINE)
         while time.time() < deadline:
             busy = self.dispatch(**env).strip()
             if until():
@@ -80,7 +62,6 @@ class ScenarioCase(ScriptCase):
                     parts.append(f"{name}/agent.log:\n{f.read()[-2000:]}")
         return "\n".join(parts)
 
-    # --- state -------------------------------------------------------------
     def cycles(self):
         return self.loop.msm("cycle", "list")
 
@@ -100,14 +81,13 @@ class ScenarioCase(ScriptCase):
         return bool(task and task["session"] and task["branch"] == task["session"])
 
     def active(self, role=None):
-        return [s for s in self.loop.sessions(role) if s["status"] == "active"]
+        return self.loop.active(role)
 
     def backlog(self):
         """Open backlog issues by branch."""
         return {i["branch"]: i for i in self.loop.msm("issue", "list", '{"type": "backlog"}')
                 if i["status"] == "open"}
 
-    # --- repos -------------------------------------------------------------
     def on_main(self, path, repo="project"):
         return self.show("main", path, repo) is not None
 
@@ -130,46 +110,28 @@ class ScenarioCase(ScriptCase):
 
 
 class TestExpiry(ScenarioCase):
-    def test_hanging_worker_is_expired_its_work_backlogged_and_the_loop_goes_on(self):
-        """A Worker that hangs past WORKER_TIMEOUT is stopped and expired; its task
-        expires, the other Worker's work is merged, the expired work stays on its
-        branch with a backlog item, and the next cycle is planned.
-
-        R29, R138, R155, R157, R67, R110, R225, R227, R175, R206, R73, R111, R141.
-        """
-        settings = dict(FAKE_TASKS="a b", FAKE_WORKER2="hang", MAX_WORKERS="2")
+    def test_hanging_and_dead_workers_are_expired_their_work_backlogged(self):
+        """R29, R138, R155, R157, R159, R67, R110, R225, R227, R175, R206, R73,
+        R111, R141."""
+        settings = dict(FAKE_TASKS="a b c", FAKE_WORKER2="hang", FAKE_WORKER3="die",
+                        MAX_WORKERS="3", START_GRACE="1")
         self.loop.start()
-        self.drive(lambda: self.committed("b") and self.tasks(1)["a"]["status"] == "done",
-                   **settings)
+        self.drive(lambda: self.committed("b") and self.tasks(1)["a"]["status"] == "done"
+                   and self.tasks(1)["c"]["status"] == "expired", **settings)
         self.drive(self.cycle_planned(2), WORKER_TIMEOUT="1", **settings)
         tasks = self.tasks(1)
-        self.assertEqual((tasks["a"]["status"], tasks["b"]["status"]), ("accepted", "expired"))
+        self.assertEqual({k: t["status"] for k, t in tasks.items()},
+                         {"a": "accepted", "b": "expired", "c": "expired"})
         self.assertRegex(tasks["b"]["session"], r"^cycle1-worker2-")
+        self.assertRegex(tasks["c"]["session"], r"^cycle1-worker3-")  # not relaunched
         self.assertEqual(self.show("main", "a.txt"), "a")
         self.assertBacklogged(tasks["b"], "Expired")
-        # The hanging agent was stopped: no escalation that it may still be running.
+        self.assertBacklogged(tasks["c"], "Expired")
+        # Both agents were stopped: no escalation that one may still be running.
         self.assertEqual(self.loop.msm("issue", "list", '{"type": "escalation"}'), [])
 
-    def test_dead_worker_is_expired_after_the_start_grace(self):
-        """A Worker that exits without setting its session done is expired once the
-        launcher reports it not running after START_GRACE; it is not relaunched: the
-        cycle is curated without it, its work backlogged.
-
-        R159, R67, R110, R227, R175, R206, R111.
-        """
-        self.loop.start()
-        self.drive(self.cycle_planned(2), FAKE_WORKER="die", START_GRACE="1")
-        tasks = self.tasks(1)
-        self.assertEqual(tasks["hello"]["status"], "expired")
-        self.assertEqual(len([t for t in self.loop.msm("task", "list") if t["cycle"] == 1]), 1)
-        self.assertBacklogged(tasks["hello"], "Expired")
-
     def test_dead_planner_is_relaunched_until_it_succeeds(self):
-        """A Planner that dies is expired; the phase stays plan, so the next pass
-        launches another Planner for the same cycle.
-
-        R159, R161, R162, R168, R90, R141.
-        """
+        """R159, R161, R162, R168, R90, R141."""
         self.loop.start()
         self.drive(lambda: any(s["status"] == "expired" for s in self.loop.sessions("planner")),
                    FAKE_PLANNER="die", START_GRACE="1")
@@ -182,37 +144,20 @@ class TestExpiry(ScenarioCase):
 
 
 class TestRejection(ScenarioCase):
-    def test_branch_failing_validation_is_rejected_and_backlogged(self):
-        """The Curator merges each done Worker, runs the validation gates, and rejects
-        the Worker whose branch fails them: its task is rejected, the other merged, its
-        branch kept with a backlog item, and the next cycle is planned.
-
-        R34, R225, R233, R234, R236, R237, R239, R240, R242, R175, R206, R251, R83,
-        R111, R141.
-        """
+    def test_conflicting_and_failing_branches_are_rejected_and_backlogged(self):
+        """R34, R221, R222, R225, R226, R233, R234, R236, R237, R239, R240, R242,
+        R175, R206, R251, R83, R111, R141."""
         self.loop.start()
-        self.drive(self.cycle_planned(2), FAKE_TASKS="good bad", FAKE_WORKER2="broken",
-                   VALIDATION_GATES="test ! -e broken.txt", MAX_WORKERS="2")
+        self.drive(self.cycle_planned(2), FAKE_TASKS="one two bad", MAX_WORKERS="3",
+                   FAKE_WORKER1="conflict", FAKE_WORKER2="conflict", FAKE_WORKER3="broken",
+                   VALIDATION_GATES="test ! -e broken.txt")
         tasks = self.tasks(1)
-        self.assertEqual((tasks["good"]["status"], tasks["bad"]["status"]),
-                         ("accepted", "rejected"))
+        self.assertEqual(tasks["bad"]["status"], "rejected")
         self.assertIsNotNone(tasks["bad"]["curated_at"])
-        self.assertEqual(self.show("main", "good.txt"), "good")
         self.assertFalse(self.on_main("broken.txt"))
         self.assertBacklogged(tasks["bad"], "Rejected")
         self.assertEqual(self.show(tasks["bad"]["session"], "broken.txt"), "broken")
-
-    def test_conflicting_branch_is_rejected_and_backlogged(self):
-        """Two Workers change the same file: the Curator merges one, the other
-        conflicts and is left out and rejected, its branch kept with a backlog item.
-
-        R222, R226, R221, R233, R242, R175, R206, R251, R111, R141.
-        """
-        self.loop.start()
-        self.drive(self.cycle_planned(2), FAKE_TASKS="one two", FAKE_WORKER="conflict",
-                   MAX_WORKERS="2")
-        tasks = self.tasks(1).values()
-        verdicts = {t["status"]: t for t in tasks}
+        verdicts = {t["status"]: t for k, t in tasks.items() if k != "bad"}
         self.assertEqual(sorted(verdicts), ["accepted", "rejected"])
         accepted, rejected = verdicts["accepted"], verdicts["rejected"]
         self.assertEqual(self.show("main", "shared.txt"), accepted["session"])
@@ -225,14 +170,8 @@ class TestRejection(ScenarioCase):
 
 class TestStopAndResume(ScenarioCase):
     def test_stop_mid_cycle_then_resume_continues_the_same_cycle(self):
-        """`loop stop` mid-cycle: no more launches; the running Worker finishes and
-        the hanging one is still timed out. The operator resumes (session, done,
-        `loop resume`): the same cycle goes on with the waiting task, the operator
-        session is curated in the execute phase, and the cycle is then curated.
-
-        R41, R76, R138, R139, R155, R169, R170, R172, R173, R75, R113, R140, R142,
-        R212, R213, R110, R111.
-        """
+        """R41, R76, R138, R139, R155, R169, R170, R172, R173, R75, R113, R140, R142,
+        R212, R213, R110, R111."""
         settings = dict(FAKE_TASKS="a b c", MAX_WORKERS="2", FAKE_WORKER1="slow",
                         FAKE_DELAY="2", FAKE_WORKER2="hang")
         self.loop.start()

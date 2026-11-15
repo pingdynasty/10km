@@ -29,23 +29,13 @@ class LoopCase(unittest.TestCase):
         warnings.filterwarnings("ignore", "subprocess .* is still running", ResourceWarning)
         self.tmp = tempfile.TemporaryDirectory()
         self.root = os.path.join(self.tmp.name, "root")
-        base = {"LOOP_ROOT": self.root, "MSM_DB": "", "LOOP_AGENT": "sleep 30",
-                "NOTIFY_CMD": "", "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
-                "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
-                # Host git config (hooks, for one) stays out of the test loop.
-                "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
-        self.patch = mock.patch.dict(os.environ, dict(base, **self.env))
+        env = dict(testenv.GIT_ID, **testenv.HOST_GIT_OFF, LOOP_ROOT=self.root,
+                   LOOP_AGENT="sleep 30", NOTIFY_CMD="")
+        self.patch = mock.patch.dict(os.environ, dict(env, **self.env))
         self.patch.start()
-        os.environ.pop("MSM_DB")
-        for name in ("LOOP_SESSION", "MSM_LOG"):
-            os.environ.pop(name, None)  # gates run the tests inside a session
         self.cfg = config.load()
-        # What kickoff does: a loop repo and a project repo in central/.
         testenv.loop_repo(self.cfg.repo_path("loop"))
-        project = self.cfg.repo_path("project")
-        subprocess.run(["git", "init", "-q", "-b", "main", project], check=True)
-        subprocess.run(["git", "-C", project, "commit", "-q", "--allow-empty", "-m", "start"],
-                       check=True)
+        testenv.project_repo(self.cfg.repo_path("project"))
         init.run(self.cfg)
 
     def tearDown(self):
@@ -69,12 +59,24 @@ class LoopCase(unittest.TestCase):
     def m(self):
         return msm.transaction(self.cfg.db)
 
+    def sessions(self, role):
+        with self.m() as m:
+            return [s for s in m.list("session") if s["role"] == role]
+
     def start_loop(self):
+        """Start the loop with a done operator session: work for a Curator."""
         op = sessions.create(self.cfg, "operator", "mars")["name"]
         with self.m() as m:
             m.session_status(op, "done")
             m.loop_start()
         return op
+
+    def close_cycle(self, curated_at="2026-01-01T01:00:00Z"):
+        """Add a closed cycle, curated at curated_at."""
+        with self.m() as m:
+            m.db.execute("INSERT INTO cycles (id, status, planned_at, curated_at) "
+                         "VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM cycles), 'closed', ?, ?)",
+                         (curated_at, curated_at))
 
 
 class TestMigration(unittest.TestCase):
@@ -138,9 +140,7 @@ class TestInit(LoopCase):
         report = init.run(self.cfg)
         self.assertEqual(report, {"database": "existing", "loop": "main", "project": "main"})
         added = self.cfg.repo_path("extra")
-        subprocess.run(["git", "init", "-q", "-b", "develop", added], check=True)
-        subprocess.run(["git", "-C", added, "commit", "-q", "--allow-empty", "-m", "x"],
-                       check=True)
+        testenv.project_repo(added, "develop")
         self.assertEqual(init.run(self.cfg)["extra"], "develop")
         self.assertEqual(self.cfg.repos(), ["loop", "extra", "project"])
 
@@ -206,24 +206,20 @@ class TestSessions(LoopCase):
 
 
 class TestDispatch(LoopCase):
-    def session(self, role):
-        with self.m() as m:
-            return [s for s in m.list("session") if s["role"] == role]
-
     def test_launches_curator_with_handle_and_prompt(self):
         self.start_loop()
         dispatch.run_pass(self.cfg)
-        [cur] = self.session("curator")
+        [cur] = self.sessions("curator")
         self.assertTrue(cur["handle"].startswith("process:"))
         self.assertTrue(os.path.exists(os.path.join(cur["working_directory"], "prompt.txt")))
 
     def test_times_out_and_kills_agent(self):
         self.start_loop()
         dispatch.run_pass(self.cfg)
-        [cur] = self.session("curator")
+        [cur] = self.sessions("curator")
         pid = int(cur["handle"].split(":")[1])
         dispatch.run_pass(self.reload(CURATOR_TIMEOUT="-1", KILL_GRACE="2"))
-        self.assertEqual(self.session("curator")[0]["status"], "expired")
+        self.assertEqual(self.sessions("curator")[0]["status"], "expired")
         time.sleep(0.2)
         self.assertNotEqual(subprocess.run(["ps", "-p", str(pid), "-o", "stat="],
                                            capture_output=True, text=True).stdout.strip()[:1],
@@ -233,9 +229,11 @@ class TestDispatch(LoopCase):
         self.start_loop()
         cfg = self.reload(LOOP_AGENT="true")
         dispatch.run_pass(cfg)
-        time.sleep(0.5)
+        from tenkm.launchers import process
+        [cur] = self.sessions("curator")
+        self.assertTrue(testenv.wait_for(lambda: process.alive(cfg, cur["handle"]) is False))
         dispatch.run_pass(self.reload(LOOP_AGENT="true", START_GRACE="0"))
-        statuses = sorted(s["status"] for s in self.session("curator"))
+        statuses = sorted(s["status"] for s in self.sessions("curator"))
         self.assertIn("expired", statuses)
 
     def test_session_without_handle_only_times_out(self):
@@ -275,7 +273,7 @@ class TestDispatch(LoopCase):
         self.start_loop()
         cfg = self.reload(LOOP_AGENT="sleep 30 & sleep 30 & exit 0")
         dispatch.run_pass(cfg)
-        [cur] = self.session("curator")
+        [cur] = self.sessions("curator")
         time.sleep(0.5)
         from tenkm.launchers import process
         self.assertTrue(process.alive(cfg, cur["handle"]))  # leader gone, children alive
@@ -285,7 +283,7 @@ class TestDispatch(LoopCase):
     def test_alive_check_ignores_timezone_and_locale(self):
         self.start_loop()
         dispatch.run_pass(self.cfg)
-        [cur] = self.session("curator")
+        [cur] = self.sessions("curator")
         from tenkm.launchers import process
         with mock.patch.dict(os.environ, TZ="Asia/Tokyo", LC_ALL="fr_FR.UTF-8"):
             self.assertTrue(process.alive(self.cfg, cur["handle"]))
@@ -301,7 +299,7 @@ class TestDispatch(LoopCase):
         with self.m() as m:
             m.loop_stop("blocked")
         dispatch.run_pass(self.cfg)
-        self.assertEqual(self.session("curator"), [])
+        self.assertEqual(self.sessions("curator"), [])
         self.assertFalse(os.path.exists(os.path.join(self.cfg.central, "loop", "NOTIFICATIONS.md")))
 
     def test_unreadable_database_notifies_and_starts_nothing(self):
@@ -320,12 +318,6 @@ class TestAuditorDue(LoopCase):
         p = dispatch.Pass(self.reload(**overrides), now=now)
         with self.m() as m:
             return p.auditor_due(m)
-
-    def close_cycle(self, curated_at):
-        with self.m() as m:
-            m.db.execute("INSERT INTO cycles (id, status, planned_at, curated_at) "
-                         "VALUES ((SELECT COALESCE(MAX(id), 0) + 1 FROM cycles), 'closed', ?, ?)",
-                         (curated_at, curated_at))
 
     def test_never_before_first_curated_cycle(self):
         now = datetime(2026, 11, 14, 12, 0, tzinfo=timezone.utc)
@@ -357,6 +349,15 @@ class TestAuditorDue(LoopCase):
         self.assertFalse(self.due(now, AUDIT_TIME="", AUDIT_CYCLES_LIMIT="2"))
         self.close_cycle("2026-11-13T11:00:00Z")
         self.assertTrue(self.due(now, AUDIT_TIME="", AUDIT_CYCLES_LIMIT="2"))
+
+    def test_either_trigger_can_be_disabled(self):  # R146
+        for _ in range(3):
+            self.close_cycle("2026-11-13T11:00:00Z")
+        now = datetime(2026, 11, 14, 12, 0, tzinfo=timezone.utc)
+        self.assertFalse(self.due(now, AUDIT_TIME="", AUDIT_CYCLES_LIMIT="0"))
+        self.assertTrue(self.due(now, AUDIT_TIME="", AUDIT_CYCLES_LIMIT="3"))
+        self.assertTrue(self.due(now, AUDIT_TIME="07:00", AUDIT_TIMEZONE="UTC",
+                                 AUDIT_CYCLES_LIMIT="0"))
 
 
 if __name__ == "__main__":

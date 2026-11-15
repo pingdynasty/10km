@@ -1,9 +1,5 @@
-"""Requirements on issues and roles (REQUIREMENTS.md, Issues to Worker) and on the
-State Machine and configuration not covered elsewhere. Each test names the IDs it
-checks.
-
-Run: python3 -m unittest discover tests
-"""
+"""Requirements on issues and roles, the State Machine and configuration not
+covered elsewhere."""
 import json
 import os
 import subprocess
@@ -13,20 +9,11 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import testenv  # noqa: E402,F401  (test config, no caller env: tests/testenv.py)
+import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
 from test_loop import LoopCase  # noqa: E402
 from test_requirements_msm import MSM, MsmCase  # noqa: E402
-from test_scripts import CODE, ScriptCase, wait_for  # noqa: E402
+from test_scripts import ScriptCase  # noqa: E402
 from tenkm import config, dispatch, msm  # noqa: E402
-
-
-def read(path):
-    """A file's text, or "" if it doesn't exist yet."""
-    try:
-        with open(path) as f:
-            return f.read()
-    except FileNotFoundError:
-        return ""
 
 
 class TestReplacedCycleCount(MsmCase):
@@ -70,9 +57,7 @@ class TestHarnessSessionName(unittest.TestCase):
             with open(claude, "w") as f:
                 f.write(FAKE_CLAUDE)
             os.chmod(claude, 0o755)
-            base = {k: v for k, v in os.environ.items()
-                    if not k.endswith("_AGENT") and k not in ("LOOP_CONFIG", "SESSION", "LOOP_SESSION", "FIRST_MESSAGE",
-                                                       "ONE_SHOT")}
+            base = {k: v for k, v in os.environ.items() if k != "LOOP_CONFIG"}
             base.update(LOOP_ROOT=os.path.join(tmp, "root"))  # no central: the code's config
             with mock.patch.dict(os.environ, base, clear=True):
                 command = config.load().agent_command(role)
@@ -134,8 +119,7 @@ class TestIssueTypes(IssueCase):
         operator = self.ok("session", "create", "operator", "mars")["name"]
         for name in (worker, operator):
             rc, issue = self.as_session(name, "issue", "create", json.dumps(
-                {"type": "backlog", "title": f"from {name}", "assigner_session": name,
-                 "urgent_if": "later"}))
+                {"type": "backlog", "title": f"from {name}", "urgent_if": "later"}))
             self.assertEqual(rc, 0)
             self.assertEqual((issue["assigner_session"], issue["status"]), (name, "open"))
         self.ok("issue", "create", '{"type": "backlog", "title": "from the operator\'s shell"}')
@@ -143,8 +127,6 @@ class TestIssueTypes(IssueCase):
 
 
 class TestIssueLifecycle(IssueCase):
-    """Issues go open, answered, resolved; the assigner follows up on answers."""
-
     def setUp(self):
         super().setUp()
         self.ok("loop", "start")
@@ -202,9 +184,9 @@ class TestIssueLifecycle(IssueCase):
         own = self.as_ok(self.auditor, "issue", "create", '{"type": "backlog", "title": "a"}')
         self.assertEqual((own["assigner_session"], own["assigner_role"]),
                          (self.auditor, "auditor"))
-        named = self.as_ok(self.auditor, "issue", "create", json.dumps(
-            {"type": "backlog", "title": "b", "assigner_session": self.planner}))
-        self.assertEqual(named["assigner_role"], "planner")
+        planned = self.as_ok(self.planner, "issue", "create", '{"type": "backlog", "title": "b"}')
+        self.assertEqual((planned["assigner_session"], planned["assigner_role"]),
+                         (self.planner, "planner"))
         self.fails(1, "issue", "create", json.dumps(
             {"type": "backlog", "title": "c", "assigner_role": "planner"}))
         self.fails(1, "issue", "create", json.dumps(
@@ -217,27 +199,24 @@ class TestWorkerLaunch(ScriptCase):
     def test_worker_is_launched_with_its_session_name_and_prompt(self):  # R197
         self.loop.start()
         planner = self.loop.plan("a")
-        p = self.loop.run("dispatch", env={"LOOP_AGENT": "env > env.txt"})
-        self.assertEqual(p.returncode, 0, p.stderr)
+        self.dispatch(LOOP_AGENT="env > env.tmp; mv env.tmp env.txt")
         [worker] = self.loop.sessions("worker")
         name, directory = worker["name"], worker["working_directory"]
         path = os.path.join(directory, "env.txt")
-        self.assertTrue(wait_for(lambda: "FIRST_MESSAGE=" in read(path)))
-        env = dict(line.split("=", 1) for line in read(path).splitlines() if "=" in line)
+        self.assertTrue(testenv.wait_for(lambda: os.path.exists(path)))
+        env = testenv.read_env(path)
         self.assertEqual((env["SESSION"], env["LOOP_SESSION"]), (name, name))
         self.assertIn(name, env["FIRST_MESSAGE"])
         with open(os.path.join(directory, "prompt.txt")) as f:
             text = f.read()
         self.assertIn(f"Session: {name}", text)
-        with open(os.path.join(CODE, "prompts", "worker.md")) as f:
+        with open(os.path.join(testenv.CODE, "prompts", "worker.md")) as f:
             self.assertIn(f.read(), text)
         task = self.loop.msm("task", "get", "--session", name)
         self.assertEqual((task["shortname"], task["branch"]), ("a", planner))
 
 
 class TestStatePathSettings(LoopCase):
-    """MSM_DB and MSM_LOG are config.env settings that agents' msm calls follow."""
-
     def set_in_config(self, old, new):
         path = os.path.join(self.cfg.central, "loop", "config.env")
         with open(path) as f:
