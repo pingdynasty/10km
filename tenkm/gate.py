@@ -13,7 +13,9 @@ session's scratch directory.
   to GATE_WAIT seconds, and rerunning it waits on the same run.
 - Every run's log is kept as evidence and never overwritten.
 
-Exit status: 0 all passed, 1 a gate failed, 3 still running (rerun to wait).
+Gates refuse to run on uncommitted changes: commit first, so a pass belongs to a tree.
+
+Exit status: 0 all passed, 1 a gate failed, 2 refused, 3 still running (rerun to wait).
 """
 import hashlib
 import json
@@ -27,6 +29,10 @@ from .launchers import process
 from .locks import lock
 
 EXIT_FAILED, EXIT_RUNNING = 1, 3
+
+
+class GateError(Exception):
+    pass
 
 
 def gates(cfg, tier):
@@ -80,6 +86,8 @@ def _new_log(evidence, name):
 def run_gate(cfg, session, repo, command, wait):
     """Run one gate. Returns (status, log): status 'passed', 'skipped', 'failed', 'running'."""
     cwd = os.path.join(session["working_directory"], repo)
+    if gitutil.git(cfg, cwd, "status", "--porcelain"):
+        raise GateError(f"{repo} has uncommitted changes; commit them, then run the gate")
     tree = gitutil.git(cfg, cwd, "rev-parse", "HEAD^{tree}")
     key = f"{hashlib.sha1(command.encode()).hexdigest()[:12]}-{tree[:12]}"
     evidence = _evidence(cfg)
@@ -95,7 +103,10 @@ def run_gate(cfg, session, repo, command, wait):
             rc_path = log[:-4] + ".rc"
             scratch = os.path.join(session["working_directory"], "scratch")
             os.makedirs(scratch, exist_ok=True)
-            script = f'{command}\nrc=$?\necho "$rc" > "{rc_path}.tmp" && mv "{rc_path}.tmp" "{rc_path}"\n'
+            # The command runs in a subshell, so its own exit or set -e can't skip
+            # recording its status.
+            script = (f'(\n{command}\n)\nrc=$?\n'
+                      f'echo "$rc" > "{rc_path}.tmp" && mv "{rc_path}.tmp" "{rc_path}"\n')
             with open(log, "ab") as f:
                 f.write(f"$ {command}\n# repo {repo}, tree {tree}\n".encode())
                 f.flush()
@@ -162,7 +173,11 @@ def main(argv):
     wait = cfg.int("GATE_WAIT", 1500)
     results, status = [], 0
     for repo, command in gates(cfg, argv[0]):
-        state, log = run_gate(cfg, session, repo, command, wait)
+        try:
+            state, log = run_gate(cfg, session, repo, command, wait)
+        except GateError as e:
+            print(str(e), file=sys.stderr)
+            return 2
         results.append({"repo": repo, "command": command, "result": state, "log": log})
         if state == "running":
             status = EXIT_RUNNING

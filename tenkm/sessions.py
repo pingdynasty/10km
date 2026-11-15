@@ -74,7 +74,12 @@ def protected_branches(m):
 
 
 def remove(cfg, name, protected=()):
-    """Remove a session's worktrees, unprotected branches, directory and record."""
+    """Remove a session's worktrees, unprotected branches, directory and record.
+
+    Checks the caller first, so an expired caller removes nothing.
+    """
+    with msm.transaction(cfg.db) as m:
+        m.check_caller()
     directory = os.path.join(cfg.root, name)
     for repo in cfg.repos():
         path = cfg.repo_path(repo)
@@ -85,8 +90,6 @@ def remove(cfg, name, protected=()):
             gitutil.ok(cfg, path, "branch", "-D", name)
         gitutil.ok(cfg, path, "worktree", "prune")
     shutil.rmtree(directory, ignore_errors=True)
-    try:
-        with msm.transaction(cfg.db) as m:
+    with msm.transaction(cfg.db) as m:
+        if m.one("SELECT 1 FROM sessions WHERE name = ?", name):
             m.session_remove(name)
-    except msm.MSMError:
-        pass

@@ -54,7 +54,7 @@ class Pass:
             handle = s.get("handle")
             launcher = launchers.for_handle(handle) if handle else None
             if age > self.cfg.timeout(s["role"]):
-                stopped = not handle or (launcher is not None and launcher.stop(self.cfg, handle))
+                stopped = launcher is not None and launcher.stop(self.cfg, handle)
                 self.expire(s["name"], "timed out")
                 if not stopped:
                     self.escalate_unstopped(s, handle)

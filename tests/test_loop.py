@@ -161,12 +161,11 @@ class TestSessions(LoopCase):
             self.assertEqual(m.list("session"), [])
         self.assertEqual([d for d in os.listdir(self.root) if d.startswith("operator")], [])
 
-    def test_detached_central_head_is_a_git_error(self):
+    def test_detached_central_head_still_branches_from_main(self):
         subprocess.run(["git", "-C", self.cfg.repo_path("project"), "checkout", "-q", "--detach"],
                        check=True)
-        with self.assertRaises(sessions.SessionError) as e:
-            sessions.create(self.cfg, "operator", "mars")
-        self.assertEqual(e.exception.code, sessions.EGIT)
+        s = sessions.create(self.cfg, "operator", "mars")  # main was recorded at init
+        self.assertTrue(os.path.isdir(os.path.join(s["working_directory"], "project")))
 
     def test_precondition_failure_has_msm_code(self):
         with self.assertRaises(sessions.SessionError) as e:
@@ -216,6 +215,7 @@ class TestDispatch(LoopCase):
         dispatch.run_pass(self.reload(CURATOR_TIMEOUT="-1"))
         with self.m() as m:
             self.assertEqual(m.get_row("session", s["name"])["status"], "expired")
+            self.assertTrue(any(s["name"] in i["title"] for i in m.list("issue")))
 
     def test_unstoppable_sessions_are_expired_with_an_escalation(self):
         self.start_loop()

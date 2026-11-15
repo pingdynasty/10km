@@ -619,7 +619,11 @@ def connect(path=None, create=False):
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     db = sqlite3.connect(path, isolation_level=None, timeout=30)
     db.row_factory = sqlite3.Row
-    db.execute("PRAGMA journal_mode = WAL")
+    try:
+        db.execute("PRAGMA journal_mode = WAL")
+    except sqlite3.Error:
+        db.close()
+        raise
     return db
 
 

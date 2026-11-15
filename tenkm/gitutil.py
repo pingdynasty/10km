@@ -24,10 +24,12 @@ def ok(cfg, repo_dir, *args):
 
 
 def main_branch(cfg, repo):
-    """The repo's default branch: MAIN_BRANCH, else the central worktree's branch."""
+    """The repo's default branch: MAIN_BRANCH, else the branch init recorded in the
+    repo's config (tenkm.mainBranch), else "main"."""
     if cfg.get("MAIN_BRANCH"):
         return cfg["MAIN_BRANCH"]
-    return git(cfg, cfg.repo_path(repo), "symbolic-ref", "--short", "HEAD")
+    rc, out, _ = run(cfg, cfg.repo_path(repo), "config", "--get", "tenkm.mainBranch")
+    return out if rc == 0 and out else "main"
 
 
 def branch_exists(cfg, repo, branch):

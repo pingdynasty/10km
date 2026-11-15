@@ -3,7 +3,8 @@
     curate-prepare                     Step 1: remove leftover sessions
     curate-select                      Step 2: choose the sessions to curate
     curate-merge [--clean-only] S...   Step 3: merge sessions into the Curator branch
-    curate-rebuild --without S...      Step 6: rebuild the branch without rejected work
+    curate-rebuild --without S... [--drop-own-commits]
+                                       Step 6: rebuild the branch without rejected work
     curate-publish [--report TEXT | --report-file F] [--accepted S...] [--rejected S...]
                                        Step 8: fast-forward main, close the cycle
     curate-cleanup                     Step 9: remove the curated sessions
@@ -11,6 +12,8 @@
 Every step runs as the Curator session in LOOP_SESSION and refuses to run unless
 that session is active. State between steps is kept in <session>/curation.json.
 Each step is safe to rerun.
+
+Exit status: 0 done, 1 error, 2 refused (stop), 3 conflict (resolve, commit, rerun).
 """
 import argparse
 import json
@@ -19,12 +22,13 @@ import sys
 
 from . import config, faults, gitutil, msm, sessions
 
-EXIT_CONFLICT = 1
-EXIT_REFUSED = 2
+EXIT_ERROR, EXIT_REFUSED, EXIT_CONFLICT = 1, 2, 3
+# Replay recorded conflict resolutions in the Curator's merges only.
+RERERE = ("-c", "rerere.enabled=true", "-c", "rerere.autoUpdate=true")
 
 
 class CurateError(Exception):
-    def __init__(self, message, code=1):
+    def __init__(self, message, code=EXIT_ERROR):
         super().__init__(message)
         self.code = code
 
@@ -50,9 +54,14 @@ class Curation:
     def load(self):
         try:
             with open(self.state_path) as f:
-                return json.load(f)
+                state = json.load(f)
         except (OSError, ValueError):
-            return {"selection": None, "merged": [], "excluded": []}
+            state = {}
+        state.setdefault("selection", None)
+        state.setdefault("merged", [])
+        state.setdefault("excluded", [])
+        state.setdefault("rebuild", None)
+        return state
 
     def save(self, data):
         tmp = self.state_path + ".tmp"
@@ -71,8 +80,9 @@ def git(cfg, path, *args, check=True):
     return gitutil.git(cfg, path, *args, check=check)
 
 
-def has_branch(cfg, repo, name):
-    return gitutil.branch_exists(cfg, repo, name)
+def branch_repos(cfg, name):
+    """The repos in which a session has a branch."""
+    return [r for r in cfg.repos() if gitutil.branch_exists(cfg, r, name)]
 
 
 def is_merged(cfg, path, name):
@@ -80,10 +90,12 @@ def is_merged(cfg, path, name):
 
 
 def mid_merge(cfg, path):
-    git_dir = git(cfg, path, "rev-parse", "--git-dir")
-    if not os.path.isabs(git_dir):
-        git_dir = os.path.join(path, git_dir)
-    return os.path.exists(os.path.join(git_dir, "MERGE_HEAD"))
+    return gitutil.ok(cfg, path, "rev-parse", "-q", "--verify", "MERGE_HEAD")
+
+
+def dirty(cfg, path, untracked=False):
+    flag = "--untracked-files=normal" if untracked else "--untracked-files=no"
+    return bool(git(cfg, path, "status", "--porcelain", flag))
 
 
 def conflicts(cfg, path):
@@ -100,6 +112,15 @@ def merges_cleanly(cfg, path, name):
     clean = gitutil.ok(cfg, path, "merge", "--no-commit", "--no-ff", name)
     gitutil.ok(cfg, path, "merge", "--abort")
     return clean
+
+
+def central_on_main(cfg, repo):
+    central = cfg.repo_path(repo)
+    branch = gitutil.main_branch(cfg, repo)
+    rc, head, _ = gitutil.run(cfg, central, "symbolic-ref", "--short", "HEAD")
+    if rc != 0 or head != branch:
+        raise CurateError(f"central/{repo} is not on its main branch {branch}")
+    return central
 
 
 # --- Step 1: prepare --------------------------------------------------------
@@ -123,9 +144,6 @@ def prepare(cfg):
                 or leftover:
             sessions.remove(cfg, s["name"], protected)
             removed.append(s["name"])
-    for repo in cfg.repos():  # replay recorded conflict resolutions during rebuilds
-        git(cfg, c.worktree(repo), "config", "rerere.enabled", "true")
-        git(cfg, c.worktree(repo), "config", "rerere.autoUpdate", "true")
     return {"removed": removed}
 
 
@@ -145,7 +163,10 @@ def select(cfg):
         chosen = [s for s in inactive if s["role"] in ("planner", "worker")
                   and s["cycle"] == cur["id"]]
     state = c.load()
-    state.update(selection=chosen, merged=[], excluded=[])
+    names = {s["name"] for s in chosen}
+    # A rerun keeps the progress of sessions that are still selected.
+    state.update(selection=chosen, merged=[n for n in state["merged"] if n in names],
+                 excluded=[n for n in state["excluded"] if n in names])
     c.save(state)
     return chosen
 
@@ -159,12 +180,18 @@ def merge(cfg, names, clean_only=False):
     a session is merged only if it merges cleanly in every repo, else skipped.
     """
     c = Curation(cfg)
+    return _merge(c, cfg, names, clean_only)
+
+
+def _merge(c, cfg, names, clean_only=False):
     state = c.load()
-    report = {"merged": [], "skipped": [], "not_clean": [], "conflicts": []}
-    for name in names:
-        repos = [r for r in cfg.repos() if has_branch(cfg, r, name)]
+    report = {"merged": [], "skipped": [], "no_branches": [], "not_clean": [],
+              "conflicts": [], "remaining": []}
+    for i, name in enumerate(names):
+        repos = branch_repos(cfg, name)
         if not repos:
-            raise CurateError(f"no branch {name} in any repo")
+            report["no_branches"].append(name)  # nothing to merge, e.g. after a crash
+            continue
         pending = [r for r in repos if not is_merged(cfg, c.worktree(r), name)]
         if not pending:
             report["skipped"].append(name)
@@ -176,15 +203,21 @@ def merge(cfg, names, clean_only=False):
         for repo in pending:
             path = c.worktree(repo)
             if mid_merge(cfg, path):
-                raise CurateError(f"{repo}: a merge is in progress; resolve and commit it first")
-            if not gitutil.ok(cfg, path, "merge", "--no-ff", "--no-edit",
-                              "-m", f"Merge {name}", name):
-                files = conflicts(cfg, path)
-                if not files:  # rerere resolved everything
-                    git(cfg, path, "commit", "--no-edit")
-                    continue
-                report["conflicts"] = [{"session": name, "repo": repo, "files": files}]
-                return report
+                raise CurateError(f"{repo}: a merge is in progress; resolve and commit it, "
+                                  "then rerun", EXIT_CONFLICT)
+            rc, _, err = gitutil.run(cfg, path, *RERERE, "merge", "--no-ff", "--no-edit",
+                                     "-m", f"Merge {name}", name)
+            if rc == 0:
+                continue
+            if not mid_merge(cfg, path):
+                raise CurateError(f"{repo}: merging {name} failed: {err}")
+            files = conflicts(cfg, path)
+            if not files:  # rerere replayed every resolution
+                git(cfg, path, "commit", "--no-edit")
+                continue
+            report["conflicts"] = [{"session": name, "repo": repo, "files": files}]
+            report["remaining"] = names[i + 1:]
+            return report
         _record_merged(c, state, name)
         report["merged"].append(name)
     return report
@@ -197,22 +230,46 @@ def _record_merged(c, state, name):
 
 
 # --- Step 6: rebuild --------------------------------------------------------
-def rebuild(cfg, without):
+def own_commits(cfg, c, repo, merged):
+    """The Curator's own commits in a repo: on its branch but on no merged session
+    branch and not on main, excluding merge commits."""
+    path = c.worktree(repo)
+    exclude = [gitutil.main_branch(cfg, repo)] + [n for n in merged
+                                                    if gitutil.branch_exists(cfg, repo, n)]
+    out = git(cfg, path, "rev-list", "--no-merges", "HEAD", *[f"^{e}" for e in exclude])
+    return [line for line in out.splitlines() if line]
+
+
+def rebuild(cfg, without, drop_own_commits=False):
     """Reset the Curator branch to main in every repo and re-merge the merged
-    sessions except those in `without`. Recorded resolutions are replayed."""
+    sessions except those in `without`, in their original order. Recorded
+    resolutions are replayed. Rerunning continues an interrupted rebuild."""
     c = Curation(cfg)
     state = c.load()
-    state["excluded"] = sorted(set(state.get("excluded", [])) | set(without))
-    keep = [n for n in state["merged"] if n not in state["excluded"]]
-    for repo in cfg.repos():
-        path = c.worktree(repo)
-        if mid_merge(cfg, path):
-            git(cfg, path, "merge", "--abort", check=False)
-        git(cfg, path, "reset", "-q", "--hard", gitutil.main_branch(cfg, repo))
-    state["merged"] = []
-    c.save(state)
-    result = merge(cfg, keep)
-    result["excluded"] = state["excluded"]
+    excluded = sorted(set(state["excluded"]) | set(without))
+    plan = state["rebuild"]
+    if plan is None or plan["excluded"] != excluded:
+        keep = [n for n in state["merged"] if n not in excluded]
+        own = {r: own_commits(cfg, c, r, state["merged"]) for r in cfg.repos()}
+        own = {r: v for r, v in own.items() if v}
+        if own and not drop_own_commits:
+            raise CurateError("rebuild would drop the Curator's own commits "
+                              f"{json.dumps(own)}; rebuild before making fixes, or rerun "
+                              "with --drop-own-commits and make them again")
+        for repo in cfg.repos():
+            path = c.worktree(repo)
+            if mid_merge(cfg, path):
+                git(cfg, path, "merge", "--abort", check=False)
+            git(cfg, path, "reset", "-q", "--hard", gitutil.main_branch(cfg, repo))
+        plan = {"excluded": excluded, "keep": keep}
+        state.update(rebuild=plan, excluded=excluded, merged=[])
+        c.save(state)
+    result = _merge(c, cfg, plan["keep"])
+    if not result["conflicts"]:
+        state = c.load()
+        state["rebuild"] = None
+        c.save(state)
+    result["excluded"] = excluded
     return result
 
 
@@ -222,18 +279,20 @@ def publish(cfg, report="", accepted=(), rejected=()):
     loop repo; then, if a Planner session was selected, close the cycle with the
     verdicts. Rerunning after a crash finishes the job."""
     c = Curation(cfg)
+    state = c.load()
     selection = c.selection()
-    closing = any(s["role"] == "planner" for s in selection)
-    verdicts = _verdicts(cfg, selection, accepted, rejected) if closing else []
+    if state["rebuild"] is not None:
+        raise CurateError("a rebuild is unfinished; rerun curate-rebuild first")
     order = [name for name, _ in cfg.projects()] + ["loop"]
     for repo in order:
-        central = cfg.repo_path(repo)
-        branch = gitutil.main_branch(cfg, repo)
-        if git(cfg, central, "symbolic-ref", "--short", "HEAD") != branch:
-            raise CurateError(f"central/{repo} is not on {branch}")
-        if mid_merge(cfg, central) or git(cfg, central, "status", "--porcelain",
-                                          "--untracked-files=no"):
+        central_on_main(cfg, repo)
+        if mid_merge(cfg, cfg.repo_path(repo)) or dirty(cfg, cfg.repo_path(repo)):
             raise CurateError(f"central/{repo} has uncommitted changes or a merge in progress")
+        if mid_merge(cfg, c.worktree(repo)) or dirty(cfg, c.worktree(repo)):
+            raise CurateError(f"your {repo} worktree has uncommitted changes or an "
+                              "unfinished merge; commit or resolve them first")
+    closing = any(s["role"] == "planner" for s in selection)
+    verdicts = _verdicts(cfg, c, state, selection, accepted, rejected) if closing else []
     for repo in order:
         central = cfg.repo_path(repo)
         if is_merged(cfg, central, c.name):
@@ -241,6 +300,9 @@ def publish(cfg, report="", accepted=(), rejected=()):
         if not gitutil.ok(cfg, central, "merge", "--ff-only", "-q", c.name):
             raise CurateError(f"{repo}: main has moved; rebuild on main and validate again")
         faults.point(f"publish:after-ff:{repo}")
+    state = c.load()
+    state["published"] = True
+    c.save(state)
     if not closing:
         return {"published": order, "cycle": None}
     with msm.transaction(cfg.db) as m:
@@ -251,7 +313,7 @@ def publish(cfg, report="", accepted=(), rejected=()):
     return {"published": order, "cycle": cur["id"]}
 
 
-def _verdicts(cfg, selection, accepted, rejected):
+def _verdicts(cfg, c, state, selection, accepted, rejected):
     workers = {s["name"] for s in selection if s["role"] == "worker"}
     unknown = (set(accepted) | set(rejected)) - workers
     if unknown:
@@ -259,6 +321,12 @@ def _verdicts(cfg, selection, accepted, rejected):
     both = set(accepted) & set(rejected)
     if both:
         raise CurateError(f"both accepted and rejected: {', '.join(sorted(both))}")
+    for name in accepted:
+        if name in state["excluded"]:
+            raise CurateError(f"{name} was rebuilt out, so it can't be accepted")
+        missing = [r for r in branch_repos(cfg, name) if not is_merged(cfg, c.worktree(r), name)]
+        if missing:
+            raise CurateError(f"{name} is accepted but not merged in {', '.join(missing)}")
     out = []
     with msm.transaction(cfg.db) as m:
         for name in sorted(workers):
@@ -275,10 +343,13 @@ def _verdicts(cfg, selection, accepted, rejected):
 def cleanup(cfg):
     c = Curation(cfg)
     selection = c.selection()
+    unpublished = [r for r in cfg.repos() if not is_merged(cfg, cfg.repo_path(r), c.name)]
+    if selection and (unpublished or not c.load().get("published")):
+        raise CurateError("not published yet; run curate-publish first "
+                          f"(main lacks the Curator branch in {', '.join(unpublished) or 'none'})")
     warnings = []
     for repo in cfg.repos():
-        central = cfg.repo_path(repo)
-        if git(cfg, central, "status", "--porcelain", "--untracked-files=no"):
+        if dirty(cfg, cfg.repo_path(repo)):
             warnings.append(f"central/{repo} has uncommitted changes")
     with msm.transaction(cfg.db) as m:
         protected = sessions.protected_branches(m)
@@ -298,6 +369,7 @@ def main(step, argv):
         p.add_argument("sessions", nargs="+")
     elif step == "rebuild":
         p.add_argument("--without", nargs="+", required=True)
+        p.add_argument("--drop-own-commits", action="store_true")
     elif step == "publish":
         p.add_argument("--report", default="")
         p.add_argument("--report-file")
@@ -312,7 +384,7 @@ def main(step, argv):
         elif step == "merge":
             result = merge(cfg, args.sessions, args.clean_only)
         elif step == "rebuild":
-            result = rebuild(cfg, args.without)
+            result = rebuild(cfg, args.without, args.drop_own_commits)
         elif step == "publish":
             text = args.report
             if args.report_file:
@@ -326,10 +398,13 @@ def main(step, argv):
     except CurateError as e:
         print(json.dumps({"error": str(e)}), file=sys.stderr)
         return e.code
-    except msm.MSMError as e:
+    except (msm.MSMError, sessions.SessionError) as e:
         print(json.dumps({"code": e.code, "error": e.message}), file=sys.stderr)
-        return EXIT_REFUSED if e.code == msm.EPERM else 1
+        return EXIT_REFUSED if e.code == msm.EPERM else EXIT_ERROR
+    except gitutil.GitError as e:
+        print(json.dumps({"error": str(e)}), file=sys.stderr)
+        return EXIT_ERROR
     print(json.dumps(result, indent=1))
-    if isinstance(result, dict) and (result.get("conflicts")):
+    if isinstance(result, dict) and result.get("conflicts"):
         return EXIT_CONFLICT
     return 0

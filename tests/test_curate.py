@@ -104,6 +104,7 @@ class TestCyclePass(CurateCase):
             self.assertEqual(chosen, {planner, w1, w2})
             result = curate.merge(self.cfg, [planner, w1, w2])
             self.assertEqual(result["conflicts"][0]["session"], w2)
+            self.assertEqual(result["remaining"], [])
             self.assertEqual(result["conflicts"][0]["files"], ["f.txt"])
             wt = os.path.join(self.root, cur, "project")
             subprocess.run(["git", "-C", wt, "checkout", "--ours", "f.txt"], check=True)
@@ -230,3 +231,149 @@ class TestGate(CurateCase):
         cfg = self.reload(VALIDATION_GATES="loop: make check\nnpm test")
         self.assertEqual(gate.gates(cfg, "validation"),
                          [("loop", "make check"), ("project", "npm test")])
+
+
+class TestReviewFindings(CurateCase):
+    """One test per defect found in the Phase 2 review."""
+
+    def resolve_ours(self, cur, repo, path):
+        wt = os.path.join(self.root, cur, repo)
+        subprocess.run(["git", "-C", wt, "checkout", "--ours", path], check=True)
+        subprocess.run(["git", "-C", wt, "add", path], check=True)
+        subprocess.run(["git", "-C", wt, "commit", "-q", "--no-edit"], check=True)
+
+    def test_rebuild_keeps_sessions_after_a_conflict_and_reruns_finish(self):
+        planner, (w1, w2, w3, w4) = self.cycle_with_workers(
+            ("f.txt", "one"), ("f.txt", "two"), ("f.txt", "three"), ("g.txt", "four"))
+        cur = self.curator()
+        with self.as_session(cur):
+            curate.select(self.cfg)
+            names = [planner, w1, w2, w3, w4]
+            while curate.merge(self.cfg, names)["conflicts"]:
+                self.resolve_ours(cur, "project", "f.txt")
+            result = curate.rebuild(self.cfg, [w2])
+            while result["conflicts"]:
+                self.assertIn(w4, result["remaining"] + [result["conflicts"][0]["session"]])
+                self.resolve_ours(cur, "project", "f.txt")
+                result = curate.rebuild(self.cfg, [w2])
+            self.assertEqual(set(curate.Curation(self.cfg).load()["merged"]),
+                             {planner, w1, w3, w4})
+            curate.publish(self.cfg, "r", accepted=[w1, w3, w4], rejected=[w2])
+        self.assertEqual(self.central("project", "g.txt"), "four")
+
+    def test_publish_refuses_unfinished_merge_and_unmerged_or_excluded_accepts(self):
+        planner, (w1, w2) = self.cycle_with_workers(("f.txt", "one"), ("f.txt", "two"))
+        cur = self.curator()
+        with self.as_session(cur):
+            curate.select(self.cfg)
+            curate.merge(self.cfg, [planner, w1, w2])  # w2 conflicts, unresolved
+            with self.assertRaises(curate.CurateError):
+                curate.publish(self.cfg, "r", accepted=[w1, w2])
+            subprocess.run(["git", "-C", os.path.join(self.root, cur, "project"),
+                            "merge", "--abort"], check=True)
+            with self.assertRaises(curate.CurateError):  # w2 isn't merged
+                curate.publish(self.cfg, "r", accepted=[w1, w2])
+        self.assertIsNone(self.central("project", "f.txt"))
+
+    def test_cleanup_refuses_before_publish(self):
+        op = sessions.create(self.cfg, "operator", "mars")["name"]
+        self.commit(op, "project", "x.txt", "x")
+        with self.m() as m:
+            m.session_status(op, "done")
+            m.loop_start()
+        cur = self.curator()
+        with self.as_session(cur):
+            curate.select(self.cfg)
+            curate.merge(self.cfg, [op])
+            with self.assertRaises(curate.CurateError):
+                curate.cleanup(self.cfg)
+        with self.m() as m:
+            self.assertEqual(m.get_row("session", op)["status"], "done")
+
+    def test_gate_refuses_uncommitted_changes_and_exit_keeps_status(self):
+        op = sessions.create(self.cfg, "operator", "mars")["name"]
+        with self.m() as m:
+            session = dict(m.get_row("session", op))
+        with open(os.path.join(self.root, op, "project", "ok"), "w") as f:
+            f.write("x")
+        with self.assertRaises(gate.GateError):
+            gate.run_gate(self.cfg, session, "project", "test -f ok", 10)
+        os.remove(os.path.join(self.root, op, "project", "ok"))
+        self.assertEqual(gate.run_gate(self.cfg, session, "project", "echo hi; exit 0", 10)[0],
+                         "passed")
+        self.assertEqual(gate.run_gate(self.cfg, session, "project", "set -e; false; true", 10)[0],
+                         "failed")
+
+    def test_session_without_branches_is_skipped_by_merge(self):
+        op = sessions.create(self.cfg, "operator", "mars")["name"]
+        for repo in self.cfg.repos():
+            subprocess.run(["git", "-C", self.cfg.repo_path(repo), "worktree", "remove",
+                            "--force", os.path.join(self.root, op, repo)], check=True)
+            subprocess.run(["git", "-C", self.cfg.repo_path(repo), "branch", "-D", op],
+                           check=True, capture_output=True)
+        with self.m() as m:
+            m.session_status(op, "done")
+            m.loop_start()
+        cur = self.curator()
+        with self.as_session(cur):
+            curate.select(self.cfg)
+            self.assertEqual(curate.merge(self.cfg, [op])["no_branches"], [op])
+
+    def test_removal_by_an_expired_curator_fails_loudly(self):
+        self.start_loop()
+        cur = self.curator()
+        other = sessions.create(self.cfg, "operator", "mars")["name"]
+        with self.m() as m:
+            m.session_status(cur, "expired")
+        with self.as_session(cur), self.assertRaises(msm.MSMError):
+            sessions.remove(self.cfg, other)
+        self.assertTrue(os.path.isdir(os.path.join(self.root, other)))
+
+    def test_rebuild_refuses_to_drop_own_commits(self):
+        planner, (w1, w2) = self.cycle_with_workers(("a.txt", "a"), ("b.txt", "b"))
+        cur = self.curator()
+        with self.as_session(cur):
+            curate.select(self.cfg)
+            curate.merge(self.cfg, [planner, w1, w2])
+            self.commit(cur, "project", "fix.txt", "fix", "small fix")
+            with self.assertRaises(curate.CurateError):
+                curate.rebuild(self.cfg, [w2])
+            curate.rebuild(self.cfg, [w2], drop_own_commits=True)
+
+    def test_merge_failure_without_conflict_is_an_error(self):
+        planner, (w1,) = self.cycle_with_workers(("new.txt", "theirs"))
+        cur = self.curator()
+        with open(os.path.join(self.root, cur, "project", "new.txt"), "w") as f:
+            f.write("untracked in the way")
+        with self.as_session(cur):
+            curate.select(self.cfg)
+            with self.assertRaises(curate.CurateError):
+                curate.merge(self.cfg, [planner, w1])
+
+    def test_main_branch_is_recorded_not_guessed(self):
+        central = self.cfg.repo_path("project")
+        subprocess.run(["git", "-C", central, "checkout", "-q", "-b", "elsewhere"], check=True)
+        from tenkm import gitutil
+        self.assertEqual(gitutil.main_branch(self.cfg, "project"), "main")
+        with self.assertRaises(curate.CurateError):
+            curate.central_on_main(self.cfg, "project")
+
+    def test_rerere_is_not_enabled_in_shared_config(self):
+        self.start_loop()
+        cur = self.curator()
+        with self.as_session(cur):
+            curate.prepare(self.cfg)
+        out = subprocess.run(["git", "-C", self.cfg.repo_path("project"), "config", "--get",
+                              "rerere.enabled"], capture_output=True, text=True).stdout
+        self.assertEqual(out.strip(), "")
+
+    def test_exit_codes_separate_conflict_from_error(self):
+        planner, (w1, w2) = self.cycle_with_workers(("f.txt", "one"), ("f.txt", "two"))
+        cur = self.curator()
+        self.run_step(cur, "select")
+        rc, _, _ = self.run_step(cur, "merge", planner, w1, w2)
+        self.assertEqual(rc, curate.EXIT_CONFLICT)
+        rc, _, _ = self.run_step(cur, "merge", "no-such-session")
+        self.assertEqual(rc, 0)  # nothing to merge
+        rc, _, _ = self.run_step(cur, "publish")
+        self.assertEqual(rc, curate.EXIT_ERROR)

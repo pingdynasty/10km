@@ -60,7 +60,14 @@ def run(cfg):
         report[name] = _project(cfg, name, url)
     hooks = os.path.join(cfg.repo_path("loop"), "hooks")
     for repo in cfg.repos():
-        gitutil.git(cfg, cfg.repo_path(repo), "config", "core.hooksPath", hooks)
+        path = cfg.repo_path(repo)
+        gitutil.git(cfg, path, "config", "core.hooksPath", hooks)
+        # Record the default branch, so later checks don't depend on what central
+        # happens to have checked out.
+        if not gitutil.ok(cfg, path, "config", "--get", "tenkm.mainBranch"):
+            branch = cfg.get("MAIN_BRANCH") or gitutil.git(cfg, path, "symbolic-ref",
+                                                           "--short", "HEAD")
+            gitutil.git(cfg, path, "config", "tenkm.mainBranch", branch)
     with msm.transaction(cfg.db, create=True) as m:
         if m.one("SELECT name FROM sqlite_master WHERE name = 'loop'"):
             report["database"] = "existing"
