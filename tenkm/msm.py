@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 EINVAL, EPERM, ENOENT = 1, 2, 3
 
 ROLES = ("planner", "worker", "curator", "auditor", "operator")
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE loop (
@@ -667,32 +667,7 @@ def migrate(db):
     loop_cols = {r[1] for r in db.execute("PRAGMA table_info(loop)")}
     if "empty_cycles" not in loop_cols:
         db.execute("ALTER TABLE loop ADD COLUMN empty_cycles INTEGER NOT NULL DEFAULT 0")
-    if "assigner_role" not in {r[1] for r in db.execute("PRAGMA table_info(issues)")}:
-        migrate_issues(db)
     db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-
-
-def migrate_issues(db):
-    """Rebuild the issues table for status answered, answered_at, assigner_session and
-    assigner_role (SQLite can't alter a CHECK). owner_session becomes assigner_session,
-    assigner_role comes from its name, and resolver_role is dropped."""
-    table = SCHEMA[SCHEMA.index("CREATE TABLE issues"):]
-    table = table[:table.index(";")]
-    if not db.execute("SELECT name FROM sqlite_master WHERE name = 'issues'").fetchone():
-        db.execute(table)
-        return
-    db.execute(table.replace("TABLE issues", "TABLE issues_new"))
-    rows = db.execute("SELECT * FROM issues").fetchall()
-    for row in rows:
-        old = dict(row)
-        session = old.pop("owner_session", None) or None
-        old.pop("resolver_role", None)
-        new = dict(old, assigner_session=session,
-                   assigner_role=role_of(session) or "operator", answered_at=None)
-        db.execute(f"INSERT INTO issues_new ({', '.join(new)}) "
-                   f"VALUES ({', '.join('?' for _ in new)})", tuple(new.values()))
-    db.execute("DROP TABLE issues")
-    db.execute("ALTER TABLE issues_new RENAME TO issues")
 
 
 def connect(path=None, create=False):
