@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
@@ -22,11 +23,60 @@ class TestStatus(LoopCase):
                                           "assignee_role": "operator"})
             m.update("issue", answered["id"], {"status": "answered", "resolution": "left"})
         text = status.report(self.cfg)
-        for expected in ("Loop: running, phase plan, cycle 0", f"{op} (done)",
+        # Inactive sessions now read "<name>  done <time>  <ago>" and the answered
+        # count "Answered issues" (operator request, backlog 3e2f9550).
+        for expected in ("Loop: running, phase plan, cycle 0", f"{op}  done ",
                          "Open escalations: 1", "[blocking] help",
-                         "Answered issues, awaiting follow-up: 1",
-                         "[escalation] which way  -> operator", "project:"):
+                         "Answered issues: 1",
+                         "[escalation] which way  -> operator", "\nproject "):
             self.assertIn(expected, text)
+        self.assertNotIn("empty cycles in a row", text)
+
+    def test_report_times_are_local_and_elapsed(self):  # R10
+        """Fixed clock and zone: the target output of backlog 3e2f9550."""
+        op = self.start_loop()
+        with self.m() as m:
+            planner = "cycle1-planner-48y3tkot"
+            m.db.execute("INSERT INTO sessions (name, role, cycle, status, handle, created_at, "
+                         "updated_at) VALUES (?, 'planner', 1, 'active', ?, ?, ?)",
+                         (planner, "process:20940:Sun Nov 15 19:47:11 2026",
+                          "2026-11-15T18:47:00Z", "2026-11-15T18:47:00Z"))
+            m.cycle_create({"headline": "PH1: DEL2 and DEL3",
+                            "tasks": [{"shortname": "msm-fixes", "instructions": "x",
+                                       "branch": planner}]})
+            audit = m.create("audit", {"period": {"from": 1, "to": 1}, "summary": "s"})
+            m.db.execute("UPDATE cycles SET planned_at = '2026-11-15T18:35:00Z'")
+            m.db.execute("UPDATE sessions SET updated_at = '2026-11-14T22:05:00Z' "
+                         "WHERE name = ?", (op,))
+            m.db.execute("UPDATE audits SET created_at = '2025-11-14T22:05:00Z' WHERE id = ?",
+                         (audit["id"],))
+            m.db.execute("UPDATE loop SET empty_cycles = 1")
+        project = self.cfg.repo_path("project")
+        env = dict(os.environ, GIT_COMMITTER_DATE="2026-11-15T17:53:10Z",
+                   GIT_AUTHOR_DATE="2026-11-15T17:53:10Z")
+        subprocess.run(["git", "-C", project, "commit", "-q", "--allow-empty", "-m",
+                        "Metrics: skip control characters"], env=env, check=True)
+        text = status.report(self.cfg, now="2026-11-15T18:47:10Z",
+                             tz=timezone(timedelta(hours=1), "CET"))
+        lines = text.splitlines()
+        self.assertEqual(lines[0], "project loop, Nov 15 19:47 CET")
+        self.assertEqual(lines[1], "Loop: running, phase plan, cycle 1, "
+                                   "1 empty cycle in a row")
+        self.assertIn("Cycle 1 (open, planned 19:35, 12m ago):\n  PH1: DEL2 and DEL3\n"
+                      "  waiting  msm-fixes", text)
+        self.assertRegex(text, rf"\n  {planner}\s+since 19:47\s+10s\s+pid 20940\n")
+        self.assertRegex(text, rf"\n  {op}\s+done Nov 14 23:05\s+20h42m ago\n")
+        self.assertIn("Audits: 1, last Nov 14 2025 23:05, 365d20h ago", text)
+        self.assertRegex(text, r"\nRepository\s+Branch\s+Commit\s+When\s+Message\n")
+        self.assertRegex(text, r"\nproject\s+main\s+[0-9a-f]{7,}\s+54m ago\s+"
+                               r"Metrics: skip control characters")
+        self.assertNotIn("Main:", text)
+
+    def test_empty_cycles_plural(self):  # R10
+        self.start_loop()
+        with self.m() as m:
+            m.db.execute("UPDATE loop SET empty_cycles = 3")
+        self.assertIn("cycle 0, 3 empty cycles in a row", status.report(self.cfg))
 
 
 class TestCentralConfig(LoopCase):

@@ -16,7 +16,13 @@ MAP = {
     "R8": L + "TestNotify.test_default_appends_to_notifications_file",
     "R9": [("prompts/common.md", "Issues are escalations (a request for help or a decision)"),
            "tests/test_msm.py:MsmTest.test_issues"],
-    "R10": RL + "TestStatus.test_report_shows_loop_cycle_sessions_and_issues",
+    "R10": [RL + "TestStatus.test_report_shows_loop_cycle_sessions_and_issues",
+            RL + "TestStatus.test_report_times_are_local_and_elapsed",
+            RL + "TestStatus.test_empty_cycles_plural",
+            "tests/test_timefmt.py:TestFormat.test_clock_today_other_day_other_year",
+            "tests/test_timefmt.py:TestFormat.test_elapsed",
+            "tests/test_timefmt.py:TestParse."
+            "test_iso_utc_git_offset_and_ps_lstart_are_the_same_instant"],
 }
 
 PENDING = set()

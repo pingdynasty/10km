@@ -92,8 +92,37 @@ There are two ways to act on a running loop: change its state directly with `msm
 Run the commands from your own shell, with `LOOP_ROOT` and `PATH` set as in [Run it on a host](#run-it-on-a-host); in the container both are set already. Unset `LOOP_SESSION`: msm treats a set `LOOP_SESSION` as an agent's session.
 
 ```sh
-10km status               # phase, cycle, tasks, sessions, escalations, main
+10km status               # phase, cycle, tasks, sessions, issues, audits, repos
 ```
+
+For example:
+
+```
+10km loop, Nov 15 19:47 CET
+Loop: running, phase curate, cycle 1
+
+Cycle 1 (open, planned 19:35, 12m ago):
+  PH1: DEL2 (resume after idle stop resets empty_cycles) and DEL3 (small bugs)
+  done  msm-fixes       cycle1-worker1-uru425rs
+  done  dispatch-fixes  cycle1-worker2-bhuva5n5
+
+Active sessions: 1
+  cycle1-curator-y7hgc9yb  since 19:47  25s  pid 20940
+Waiting to be curated or removed: 2
+  cycle1-planner-48y3tkot  done 19:37  10m ago
+  cycle1-worker1-uru425rs  done 19:44  3m ago
+
+Open escalations: 0
+Open backlog items: 0
+Answered issues: 0
+Audits: 0
+
+Repository  Branch  Commit   When     Message
+loop        main    47b55b0  0s ago   Kickoff: goals, plan and settings for improving 10km
+10km        main    e6075ca  54m ago  Metrics: skip trailer values with control characters
+```
+
+Clock times are local (`TZ`, else the system zone), with the zone in the first line: `19:47` today, `Nov 14 23:05` on another day, `Nov 14 2025 23:05` in another year. Elapsed times read `45s`, `3m`, `1h12m`, `2d4h`. The Loop line counts empty cycles in a row only when there are any. Each repository row shows its main branch and latest commit.
 
 Agents raise escalations as issues for the Planner, Curator, Auditor or you. The loop notifies you only of blocking escalations and fatal errors, through `NOTIFY_CMD`. Test it with `10km notify <title> [body]`.
 
