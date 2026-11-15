@@ -2,8 +2,9 @@
 
     curate-prepare                     Step 1: remove leftover sessions
     curate-select                      Step 2: choose the sessions to curate
-    curate-merge ITEM...               Step 3: make the Curator branch main plus the
-                                       items (sessions and commits), in order
+    curate-merge [ITEM...]             Step 3: make the Curator branch main plus the
+                                       items (sessions and commits), in order; no
+                                       items: main plus the Curator's own commits
     curate-publish [--report TEXT | --report-file F] [--accepted S...] [--rejected S...]
                                        Step 9: fast-forward main, close the cycle
     curate-cleanup                     Step 10: remove the curated sessions
@@ -207,23 +208,27 @@ def resolve_items(cfg, words):
 def merge(cfg, words):
     """Make the Curator branch main plus the given items, in order, in every repo,
     keeping the Curator's own commits. Stops at a conflict with instructions;
-    rerunning continues. A list that isn't an extension of the last one rebuilds."""
+    rerunning continues. A list that isn't an extension of the last one rebuilds;
+    an empty list leaves main plus the Curator's own commits."""
     c = Curation(cfg)
     selected = {s["name"] for s in c.load()["selection"] or []}
     empty = [w for w in words if w in selected and not branch_repos(cfg, w)]
     words = [w for w in words if w not in empty]  # selected sessions with nothing to merge
     items = resolve_items(cfg, words)
     state = c.load()
+    keys = [i.key() for i in items]
     pending = state.get("pending")
+    dropped = []  # a dropped conflicting item may be merged in other repos already
     if pending:
-        done = _finish_pending(cfg, c, state, pending, [i.key() for i in items])
+        if pending["item"] not in keys and pending["kind"] != "own":
+            dropped = [_pending_item(pending)]
+        done = _finish_pending(cfg, c, state, pending, keys)
         if done is not None:
             return done
         state = c.load()
     applied = state.get("applied", [])
-    keys = [i.key() for i in items]
-    if keys[:len(applied)] != applied:
-        _rebuild(cfg, c, state, items)
+    if keys[:len(applied)] != applied or dropped:
+        _rebuild(cfg, c, state, dropped)
         state = c.load()
         applied = []
     report = {"applied": [], "no_branches": empty, "conflict": None}
@@ -342,12 +347,15 @@ def _finish_pending(cfg, c, state, pending, keys):
     """Continue after a conflict. Returns a report to stop with, or None to go on."""
     path = c.worktree(pending["repo"])
     in_progress = mid_merge(cfg, path) or picking(cfg, path)
-    item = Item(pending["kind"], pending["name"],
-                pending["repo"] if pending["kind"] != "session" else None)
+    item = _pending_item(pending)
     if pending["item"] not in keys and pending["kind"] != "own":
         if in_progress:  # the agent dropped the item: abandon its merge
             gitutil.ok(cfg, path, "merge", "--abort")
             gitutil.ok(cfg, path, "cherry-pick", "--abort")
+        elif pending["kind"] == "commit" and \
+                git(cfg, path, "rev-parse", "HEAD") != pending["before"]:
+            _record_pick(c, state, git(cfg, path, "rev-parse", "HEAD"))  # not an own commit
+            state = c.load()
         state["pending"] = None
         c.save(state)
         return None
@@ -373,6 +381,11 @@ def _finish_pending(cfg, c, state, pending, keys):
     return None
 
 
+def _pending_item(pending):
+    return Item(pending["kind"], pending["name"],
+                pending["repo"] if pending["kind"] != "session" else None)
+
+
 def _has_markers(path):
     try:
         with open(path, errors="replace") as f:
@@ -393,9 +406,10 @@ def own_commits(cfg, c, state, repo, items):
     return [sha for sha in out.splitlines() if sha and sha not in picked]
 
 
-def _rebuild(cfg, c, state, items):
-    """Reset every repo to main, keeping the Curator's own commits for replay."""
-    previous = []
+def _rebuild(cfg, c, state, dropped=()):
+    """Reset every repo to main, keeping the Curator's own commits for replay.
+    Commits of the applied items and of the dropped ones are not own commits."""
+    previous = list(dropped)
     for key in state.get("applied", []):
         kind, repo, name = key.split(":", 2)
         previous.append(Item(kind, name, repo or None))
@@ -507,7 +521,7 @@ def main(step, argv):
     cfg = config.load()
     p = argparse.ArgumentParser(prog=f"curate-{step}")
     if step == "merge":
-        p.add_argument("items", nargs="+", help="sessions and commits to include, in order")
+        p.add_argument("items", nargs="*", help="sessions and commits to include, in order")
     elif step == "publish":
         p.add_argument("--report", default="")
         p.add_argument("--report-file")
