@@ -17,9 +17,10 @@ from tenkm import cli, metrics, msm  # noqa: E402
 
 
 class MetricsCase(LoopCase):
-    def commit(self, repo, session, message="work"):
+    def commit(self, repo, session, message="work", date=None):
+        env = dict(os.environ, GIT_COMMITTER_DATE=date, GIT_AUTHOR_DATE=date) if date else None
         subprocess.run(["git", "-C", self.cfg.repo_path(repo), "commit", "-q", "--allow-empty",
-                        "-m", f"{message}\n\nLoop-Session: {session}"], check=True)
+                        "-m", f"{message}\n\nLoop-Session: {session}"], check=True, env=env)
 
     def write_usage(self, *records):
         with open(os.path.join(os.path.dirname(self.cfg.db), "usage.jsonl"), "a") as f:
@@ -107,6 +108,27 @@ class TestCollect(MetricsCase):
         self.assertEqual((workers["sessions"], workers["commits"]), (2, 2))
         self.assertEqual(workers["usage"]["input_tokens"], 10)
         self.assertTrue(any("No duration for: cycle9-worker1-old" in n for n in data["notes"]))
+
+    def test_earlier_loop_trailers_are_left_out(self):
+        """R265/R266: sessions known only by trailers older than the loop start are an
+        earlier loop's history: left out of sessions and summary, with a note
+        (backlog d7f1b6c6). Unknown trailer sessions since the start stay."""
+        planner, w1, w2, curator = self.one_cycle()
+        self.commit("project", "cycle4-worker1-old", date="2020-01-01T00:00:00Z")
+        self.commit("project", "cycle4-worker1-old", date="2020-01-02T00:00:00Z")
+        self.commit("loop", "cycle5-planner-old", date="2020-01-03T00:00:00Z")
+        self.commit("project", w1, date="2020-01-04T00:00:00Z")  # known: kept
+        self.commit("project", "cycle9-worker1-new")  # unknown but recent: kept
+        data = metrics.collect(self.cfg)
+        names = {r["session"] for r in data["sessions"]}
+        self.assertFalse(names & {"cycle4-worker1-old", "cycle5-planner-old"})
+        self.assertIn("cycle9-worker1-new", names)
+        by = {r["session"]: r for r in data["sessions"]}
+        self.assertEqual(by[w1]["commits"], {"project": 1})
+        unknown = [g for g in data["summary"] if g["role"] == "unknown"]
+        self.assertEqual([(g["sessions"], g["commits"]) for g in unknown], [(1, 1)])
+        self.assertTrue(any("Left out 2 sessions" in n and "(3 commits)" in n
+                            for n in data["notes"]), data["notes"])
 
     def logged(self, name, command):
         with open(self.cfg.action_log) as f:

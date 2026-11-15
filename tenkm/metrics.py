@@ -5,7 +5,8 @@ Harness usage is tokens and cost (Claude Code) or credits (kiro-cli).
 Sessions are removed at curation, so each session is pieced together from the
 sessions table, task and cycle rows, the action log's session lines and
 usage.jsonl (tenkm.usage); commits are counted by Loop-Session trailer on each
-repo's main branch.
+repo's main branch. Sessions known only by trailers, all older than the loop
+start (the earliest session the loop recorded), are an earlier loop's: left out.
 
     data = metrics.collect(cfg, cycle=None)   # {"sessions", "summary", "notes"}
     print(metrics.text(data))
@@ -54,24 +55,34 @@ def read_jsonl(path):
 
 
 def commits_by_session(cfg):
-    """{session: {repo: count}} from the Loop-Session trailers on each repo's main branch."""
-    found = {}
+    """({session: {repo: count}}, {session: latest commit time}) from the
+    Loop-Session trailers on each repo's main branch."""
+    found, latest = {}, {}
     for repo in cfg.repos():
         path = cfg.repo_path(repo)
         if not os.path.isdir(path):
             continue
         branch = gitutil.main_branch(cfg, repo)
         rc, out, _ = gitutil.run(cfg, path, "log", branch,
-                                 f"--format=%x00%(trailers:key={TRAILER},valueonly)")
+                                 f"--format=%x00%ct%n%(trailers:key={TRAILER},valueonly)")
         if rc != 0:
             continue
         for chunk in out.split("\0"):
+            lines = chunk.splitlines()
+            if not lines:
+                continue
+            try:
+                at = datetime.fromtimestamp(int(lines[0]), timezone.utc)
+            except (ValueError, OverflowError, OSError):
+                at = None
             # Trailers are agent-written: skip values that could carry terminal escapes.
-            for name in {v.strip() for v in chunk.splitlines() if v.strip().isprintable()
+            for name in {v.strip() for v in lines[1:] if v.strip().isprintable()
                          and v.strip()}:
                 repos = found.setdefault(name, {})
                 repos[repo] = repos.get(repo, 0) + 1
-    return found
+                if at and (name not in latest or at > latest[name]):
+                    latest[name] = at
+    return found, latest
 
 
 SESSION_EVENTS = {"session create": 0, "session done": 1, "session expired": 1,
@@ -209,7 +220,15 @@ def collect(cfg, cycle=None):
                 span[1] = end
     for action in read_jsonl(cfg.action_log):
         session_event(get, action, parse_time(action.get("at")))
-    for name, repos in commits_by_session(cfg).items():
+    # The loop start: the earliest start of a session the loop itself recorded.
+    loop_start = min((s.span()[0] for s in sessions.values() if s.span()[0]), default=None)
+    commits, latest = commits_by_session(cfg)
+    earlier = {}  # sessions known only by trailers, all older than the loop start
+    for name, repos in commits.items():
+        if name not in sessions and loop_start and latest.get(name) \
+                and latest[name] < loop_start:
+            earlier[name] = sum(repos.values())
+            continue
         get(name).commits = repos
 
     records = []
@@ -228,7 +247,7 @@ def collect(cfg, cycle=None):
     records.sort(key=lambda r: (r["cycle"] is None, r["cycle"] or 0,
                                 ROLE_ORDER.get(r["role"], 9), r["start"] or "", r["session"]))
     return {"sessions": records, "summary": summarize(records),
-            "notes": notes(records, cfg.usage_log, bool(runs))}
+            "notes": notes(records, cfg.usage_log, bool(runs), earlier)}
 
 
 def summarize(records):
@@ -250,11 +269,15 @@ def summarize(records):
         k[0] is None, k[0] or 0, ROLE_ORDER.get(k[1], 9)))]
 
 
-def notes(records, upath, have_usage):
-    """What the figures can't tell, in plain words."""
+def notes(records, upath, have_usage, earlier=None):
+    """What the figures can't tell, and what they leave out, in plain words."""
     out = []
     if not have_usage:
         out.append(f"No usage records in {upath}: no harness time, turns, tokens or cost.")
+    if earlier:
+        out.append(f"Left out {len(earlier)} sessions known only by Loop-Session trailers "
+                   f"older than the loop start ({sum(earlier.values())} commits): "
+                   "an earlier loop's history.")
     untimed = [r["session"] for r in records if r["duration_s"] is None]
     if untimed:
         out.append(f"No duration for: {', '.join(untimed)}.")

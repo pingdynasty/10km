@@ -15,7 +15,8 @@ MAP = {
              (A, "commits per session: `git log --since=<from>")],
     "R266": [(A, "Time, commits and harness metrics per role and cycle: `10km metrics --json`"),
              (A, "time per role and cycle: commit times"),
-             "tests/test_metrics.py:TestCollect.test_cycleless_sessions_get_only_an_open_cycle"],
+             "tests/test_metrics.py:TestCollect.test_cycleless_sessions_get_only_an_open_cycle",
+             "tests/test_metrics.py:TestCollect.test_earlier_loop_trailers_are_left_out"],
     "R267": [(A, "Harness metrics (tokens and cost, or credits) are there only if the harness records them per session."),
              "tests/test_metrics_e2e.py:TestMetricsOfACuratedLoop."
              "test_metrics_report_every_session_of_a_curated_cycle",
