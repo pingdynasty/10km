@@ -86,7 +86,7 @@ class TestNoHarness(ScriptCase):
                     return "10km tests: PLANNER_AGENT is not set" in f.read()
             except OSError:
                 return False
-        self.assertTrue(wait_for(failed, timeout=10), "the test config's command did not run")
+        self.assertTrue(wait_for(failed), "the test config's command did not run")
         self.assertNoHarness()
 
     def test_kickoff_runs_the_failing_operator_command(self):

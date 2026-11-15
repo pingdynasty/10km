@@ -61,7 +61,7 @@ class TestMetricsOfACuratedLoop(ScenarioCase):
             return self.usage_recorded(c["planner_session"], c["curator_session"], *workers)
 
         self.loop.start()
-        self.drive(curated_and_recorded, timeout=90, **settings)
+        self.drive(curated_and_recorded, **settings)
         cycle = self.cycles()[0]
         verdicts = {t["status"]: t for t in self.tasks(1).values()}
         self.assertEqual(sorted(verdicts), ["accepted", "rejected"], self.describe())

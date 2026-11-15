@@ -52,7 +52,7 @@ class TestOffPhaseCurator(ScenarioCase):
 
         R140, R91, R212, R167, R250, R256, R111.
         """
-        settings = dict(FAKE_WORKER="hang", WORKER_TIMEOUT="600")
+        settings = dict(FAKE_WORKER="hang", WORKER_TIMEOUT="3600")
         self.loop.start()
         self.drive(lambda: len(self.active("worker")) == 1, **settings)
         operator = self.loop.session("operator", "mars")["name"]
@@ -79,7 +79,7 @@ class TestOffPhaseCurator(ScenarioCase):
         R145, R140, R91, R212, R167, R250, R256.
         """
         settings = dict(AUDIT_CYCLES_LIMIT="1", FAKE_CYCLE2_WORKER1="hang",
-                        WORKER_TIMEOUT="600")
+                        WORKER_TIMEOUT="3600")
         self.loop.start()
         self.drive(lambda: "smoke learning" in (self.show("main", "LEARNINGS.md", "loop") or "")
                    and not self.loop.sessions("auditor"), **settings)

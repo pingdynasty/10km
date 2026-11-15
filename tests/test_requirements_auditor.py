@@ -12,7 +12,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import testenv  # noqa: E402,F401  (test config, no caller env: tests/testenv.py)
+import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
 from test_loop import LoopCase  # noqa: E402
 from test_scripts import BIN, CODE, ScriptCase, wait_for  # noqa: E402
 from tenkm import dispatch, notify, sessions  # noqa: E402
@@ -144,7 +144,7 @@ class TestFakeAgent(ScriptCase):
         env = dict(SESSION=name, LOOP_SESSION=name,
                    PATH=os.pathsep.join([BIN, self.loop.env["PATH"]]))
         p = subprocess.run([FAKE_AGENT], env=dict(self.loop.env, **env), capture_output=True,
-                           text=True, timeout=60)
+                           text=True, timeout=testenv.DEADLINE)
         self.assertExit(p, 0)
 
     def test_fake_agent_plays_each_role(self):

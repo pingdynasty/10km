@@ -18,23 +18,33 @@ Usage: python3 tests/run.py [-j N] [-v] [--agent] [pattern ...]
 Tests must be safe to run in parallel: temporary roots, no fixed ports or
 shared paths. Each test process imports tests/testenv.py first: the test config,
 in which agent commands fail unless the test sets a fake, and none of the
-caller's loop settings. The default run never includes tests/agent/.
+caller's loop settings. The default run never includes tests/agent/. The runner
+builds one template loop repo per run, which tests copy rather than build their
+own (testenv.loop_repo()).
 """
 import argparse
 import os
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 TESTS = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, TESTS)
+import testenv  # noqa: E402  (the test environment, before any test module)
+
 CODE = os.path.dirname(TESTS)
 AGENT_TESTS = os.path.join(TESTS, "agent")  # opt-in: tests that run real agents
 
 # Modules with slow tests (whole loops with the fake agent, or scripts run as
-# subprocesses), slowest first: started first, to keep them off the critical path.
-SLOW = ("test_scenarios", "test_curate_scripts", "test_scripts", "test_init")
+# subprocesses), by measured seconds per unit, slowest first: started first, so the
+# run ends on short units and the long ones stay off the critical path.
+SLOW = ("test_metrics_e2e", "test_scenarios", "test_scenarios_more", "test_curate_scripts",
+        "test_curate", "test_requirements_curator", "test_requirements_auditor",
+        "test_requirements_dispatch", "test_scripts", "test_loop", "test_requirements_loop",
+        "test_metrics", "test_init")
 
 # A child process: `python3 -m unittest <id>` with the test directory and tests/
 # on the path, in the test environment (tests/testenv.py).
@@ -63,7 +73,6 @@ def discover(patterns=(), start=TESTS):
     class with shared setup ("test_x.TestY") or a module that failed to import.
     start is tests/ (the default suite, never tests/agent/) or AGENT_TESTS."""
     sys.path[:0] = [start, TESTS]
-    import testenv  # noqa: F401  (the test environment, before any test module)
     suite = unittest.defaultTestLoader.discover(start, top_level_dir=start)
     units = []
     for test in iter_tests(suite):
@@ -136,7 +145,11 @@ def main(argv=None):
 
     start = time.time()
     results = []
-    with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+    with tempfile.TemporaryDirectory(prefix="10km-run-") as tmp, \
+            ThreadPoolExecutor(max_workers=args.jobs) as pool:
+        template = os.path.join(tmp, "loop")
+        testenv.make_template(template)
+        os.environ[testenv.TEMPLATE_VAR] = template  # tests copy it: testenv.loop_repo()
         futures = [pool.submit(run_unit, unit, top) for unit in order(units)]
         for future in as_completed(futures):
             unit, rc, output, seconds = future.result()

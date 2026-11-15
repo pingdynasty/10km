@@ -34,7 +34,7 @@ mode=${mode:-ok}
 # Where a hanging or dying agent stops.
 give_up() {
   case $mode in
-    hang) sleep 600; exit 0 ;;
+    hang) sleep 3600; exit 0 ;;
     die) exit 1 ;;
   esac
 }
