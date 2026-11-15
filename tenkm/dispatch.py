@@ -4,6 +4,7 @@ It records the usage of agents that have exited, and notifies only fatal errors
 (R300), after the pass and outside the dispatch lock.
 """
 import os
+import re
 import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
@@ -22,8 +23,18 @@ def log(message):
     print(message, flush=True)
 
 
+ESC = re.compile(r"ESC(\d+)\b")
+
+
 class DatabaseUnreadable(Exception):
     """The database can't be read, or holds no loop record."""
+
+
+def next_escalation(m):
+    """The next free escalation shortname (ESCn), as agents number them."""
+    numbers = [int(x.group(1)) for i in m.list("issue", '{"type": "escalation"}')
+               for x in [ESC.match(i.get("title") or "")] if x]
+    return f"ESC{max(numbers, default=0) + 1}"
 
 
 class Pass:
@@ -60,7 +71,8 @@ class Pass:
         """R158."""
         with msm.transaction(self.cfg.db) as m:
             m.create("issue", {
-                "type": "escalation", "title": f"Agent may still be running: {s['name']}",
+                "type": "escalation",
+                "title": f"{next_escalation(m)}: Agent may still be running: {s['name']}",
                 "description": f"Session {s['name']} timed out and was expired, but its "
                                f"launcher could not confirm the agent stopped (handle "
                                f"{handle}). Stop it by hand if it is still running.",

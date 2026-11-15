@@ -261,6 +261,26 @@ class TestDispatch(LoopCase):
                 [issue] = [i for i in m.list("issue") if s["name"] in i["title"]]
                 self.assertEqual((issue["severity"], issue["assignee_role"]), ("high", "operator"))
 
+    def test_unstopped_escalation_takes_the_next_escalation_number(self):  # R158
+        self.start_loop()
+        with self.m() as m:
+            m.create("issue", {"type": "escalation", "title": "ESC4: an agent's question"})
+            m.create("issue", {"type": "backlog", "title": "ESC9: not an escalation"})
+            m.create("issue", {"type": "escalation", "title": "no number"})
+        names = []
+        for _ in range(2):
+            with self.m() as m:
+                m.db.execute("DELETE FROM sessions WHERE role = 'curator'")
+            s = sessions.create(self.cfg, "curator")
+            names.append(s["name"])
+            with self.m() as m:
+                m.session_update(s["name"], {"handle": "nosuch:x"})
+            dispatch.run_pass(self.reload(CURATOR_TIMEOUT="-1", LOOP_AGENT=""))
+        with self.m() as m:
+            titles = {i["title"] for i in m.list("issue")}
+        self.assertIn(f"ESC5: Agent may still be running: {names[0]}", titles)
+        self.assertIn(f"ESC6: Agent may still be running: {names[1]}", titles)
+
     def test_failed_prompt_write_removes_the_session(self):  # R151
         self.start_loop()
         with mock.patch("tenkm.dispatch.open", side_effect=OSError("disk full"), create=True):

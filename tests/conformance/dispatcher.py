@@ -54,7 +54,8 @@ MAP = {
              "test_hanging_and_dead_workers_are_expired_their_work_backlogged"],
     "R156": RD + "TestDispatchRules.test_operator_sessions_never_time_out",
     "R157": [TIME_OUT, D + "test_agent_ignoring_sigterm_is_killed"],
-    "R158": L + "test_unstoppable_sessions_are_expired_with_an_escalation",
+    "R158": [L + "test_unstoppable_sessions_are_expired_with_an_escalation",
+             L + "test_unstopped_escalation_takes_the_next_escalation_number"],
     "R159": [D + "test_agent_that_died_is_expired_after_the_start_grace",
              L + "test_dead_agent_is_expired_after_start_grace"],
     "R160": [RD + "TestSessionScriptRules."
