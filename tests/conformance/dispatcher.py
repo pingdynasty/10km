@@ -41,7 +41,8 @@ MAP = {
     "R149": [RD + "TestLaunching.test_taken_branch_name_is_tried_three_times",
              D + "test_taken_branch_names_are_retried_then_given_up"],
     "R150": LAUNCHES,
-    "R151": [LAUNCHES, L + "test_launches_curator_with_handle_and_prompt"],
+    "R151": [LAUNCHES, L + "test_launches_curator_with_handle_and_prompt",
+             L + "test_failed_prompt_write_removes_the_session"],
     "R152": RD + "TestLaunching.test_launcher_is_configured_for_the_loop",
     "R153": [LAUNCHES, "tests/test_requirements_loop.py:TestCentralConfig."
              "test_agent_command_per_role_falls_back_to_loop_agent"],
@@ -53,7 +54,8 @@ MAP = {
              "test_hanging_and_dead_workers_are_expired_their_work_backlogged"],
     "R156": RD + "TestDispatchRules.test_operator_sessions_never_time_out",
     "R157": [TIME_OUT, D + "test_agent_ignoring_sigterm_is_killed"],
-    "R158": L + "test_unstoppable_sessions_are_expired_with_an_escalation",
+    "R158": [L + "test_unstoppable_sessions_are_expired_with_an_escalation",
+             L + "test_unstopped_escalation_takes_the_next_escalation_number"],
     "R159": [D + "test_agent_that_died_is_expired_after_the_start_grace",
              L + "test_dead_agent_is_expired_after_start_grace"],
     "R160": [RD + "TestSessionScriptRules."

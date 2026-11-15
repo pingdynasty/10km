@@ -261,6 +261,36 @@ class TestDispatch(LoopCase):
                 [issue] = [i for i in m.list("issue") if s["name"] in i["title"]]
                 self.assertEqual((issue["severity"], issue["assignee_role"]), ("high", "operator"))
 
+    def test_unstopped_escalation_takes_the_next_escalation_number(self):  # R158
+        self.start_loop()
+        with self.m() as m:
+            m.create("issue", {"type": "escalation", "title": "ESC4: an agent's question"})
+            m.create("issue", {"type": "backlog", "title": "ESC9: not an escalation"})
+            m.create("issue", {"type": "escalation", "title": "no number"})
+        names = []
+        for _ in range(2):
+            with self.m() as m:
+                m.db.execute("DELETE FROM sessions WHERE role = 'curator'")
+            s = sessions.create(self.cfg, "curator")
+            names.append(s["name"])
+            with self.m() as m:
+                m.session_update(s["name"], {"handle": "nosuch:x"})
+            dispatch.run_pass(self.reload(CURATOR_TIMEOUT="-1", LOOP_AGENT=""))
+        with self.m() as m:
+            titles = {i["title"] for i in m.list("issue")}
+        self.assertIn(f"ESC5: Agent may still be running: {names[0]}", titles)
+        self.assertIn(f"ESC6: Agent may still be running: {names[1]}", titles)
+
+    def test_failed_prompt_write_removes_the_session(self):  # R151
+        self.start_loop()
+        with mock.patch("tenkm.dispatch.open", side_effect=OSError("disk full"), create=True):
+            self.assertEqual(dispatch.run_pass(self.cfg), 0)
+        self.assertEqual(self.sessions("curator"), [])
+        self.assertEqual([n for n in os.listdir(self.root) if n.startswith("cycle")], [])
+        dispatch.run_pass(self.cfg)  # the next pass launches normally
+        [cur] = self.sessions("curator")
+        self.assertTrue(cur["handle"].startswith("process:"))
+
     def test_expiring_a_session_that_just_finished_is_harmless(self):
         self.start_loop()
         s = sessions.create(self.cfg, "curator")
@@ -311,6 +341,31 @@ class TestDispatch(LoopCase):
         dispatch.run_pass(self.cfg)
         with open(os.path.join(self.cfg.central, "loop", "NOTIFICATIONS.md")) as f:
             self.assertIn("database unreadable", f.read())
+
+    def assert_unreadable_notice(self):
+        self.assertEqual(dispatch.run_pass(self.cfg), 0)
+        self.assertEqual(self.sessions_on_disk(), [])
+        with open(os.path.join(self.cfg.central, "loop", "NOTIFICATIONS.md")) as f:
+            self.assertIn("database unreadable", f.read())
+
+    def sessions_on_disk(self):
+        return [n for n in os.listdir(self.root) if n.startswith("cycle")]
+
+    def test_empty_database_notifies_and_starts_nothing(self):  # R300
+        self.start_loop()
+        for suffix in ("", "-wal", "-shm"):
+            if os.path.exists(self.cfg.db + suffix):
+                os.remove(self.cfg.db + suffix)
+        open(self.cfg.db, "w").close()
+        self.assert_unreadable_notice()
+
+    def test_uninitialised_database_notifies_and_starts_nothing(self):  # R300
+        self.start_loop()
+        with self.m() as m:
+            m.db.execute("DELETE FROM loop")
+        self.assert_unreadable_notice()
+        with self.m() as m:
+            self.assertEqual([s["role"] for s in m.list("session")], ["operator"])
 
 
 class TestAuditorDue(LoopCase):

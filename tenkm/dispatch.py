@@ -4,6 +4,7 @@ It records the usage of agents that have exited, and notifies only fatal errors
 (R300), after the pass and outside the dispatch lock.
 """
 import os
+import re
 import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
@@ -20,6 +21,20 @@ def parse_time(text):
 
 def log(message):
     print(message, flush=True)
+
+
+ESC = re.compile(r"ESC(\d+)\b")
+
+
+class DatabaseUnreadable(Exception):
+    """The database can't be read, or holds no loop record."""
+
+
+def next_escalation(m):
+    """The next free escalation shortname (ESCn), as agents number them."""
+    numbers = [int(x.group(1)) for i in m.list("issue", '{"type": "escalation"}')
+               for x in [ESC.match(i.get("title") or "")] if x]
+    return f"ESC{max(numbers, default=0) + 1}"
 
 
 class Pass:
@@ -56,7 +71,8 @@ class Pass:
         """R158."""
         with msm.transaction(self.cfg.db) as m:
             m.create("issue", {
-                "type": "escalation", "title": f"Agent may still be running: {s['name']}",
+                "type": "escalation",
+                "title": f"{next_escalation(m)}: Agent may still be running: {s['name']}",
                 "description": f"Session {s['name']} timed out and was expired, but its "
                                f"launcher could not confirm the agent stopped (handle "
                                f"{handle}). Stop it by hand if it is still running.",
@@ -113,8 +129,13 @@ class Pass:
             return False
         name, directory = session["name"], session["working_directory"]
         prompt_file = os.path.join(directory, "prompt.txt")
-        with open(prompt_file, "w") as f:
-            f.write(self.prompt(role, session))
+        try:
+            with open(prompt_file, "w") as f:
+                f.write(self.prompt(role, session))
+        except OSError as e:  # no agent to run: don't leave a session without one
+            log(f"launch {role} failed: prompt not written: {e}")
+            sessions.remove(self.cfg, name)
+            return False
         first_message = (f"You are the 10km {role} session {name}. Your worktrees are in "
                          f"{directory}. Read your instructions in {prompt_file} and follow them.")
         env = self.agent_env(name, prompt_file, first_message)
@@ -192,7 +213,16 @@ class Pass:
         return trigger.astimezone(timezone.utc)
 
     # --- the pass ----------------------------------------------------------
+    def check_database(self):
+        """Raise DatabaseUnreadable unless the database opens and has a loop record."""
+        try:
+            with msm.transaction(self.cfg.db) as m:
+                m.loop_get()
+        except (sqlite3.DatabaseError, msm.MSMError) as e:
+            raise DatabaseUnreadable(str(e)) from e
+
     def run(self):
+        self.check_database()
         self.expire_sessions()
         self.record_usage()
         with msm.transaction(self.cfg.db) as m:
@@ -241,9 +271,8 @@ def run_pass(cfg=None, now=None):
         try:
             p.run()
             notify.forget(cfg, "db-unreadable")
-        except (sqlite3.DatabaseError, msm.MSMError) as e:
-            if isinstance(e, msm.MSMError) and e.code in (1, 2, 3):
-                raise
+        except (sqlite3.DatabaseError, DatabaseUnreadable) as e:
+            # Other MSMErrors are refusals or bugs, not a database problem: raise them.
             p.notice("Loop database unreadable", f"{cfg.db}: {e}. The Dispatcher starts "
                      "nothing until it can read the database.", "critical", key="db-unreadable")
     p.flush()
