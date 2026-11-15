@@ -109,7 +109,7 @@ msm issue get <id>
 msm issue update <id> '{"status": "answered", "resolution": "<your decision>"}'
 ```
 
-Write the resolution as an instruction: what you decided, and what the loop should do now. An issue goes open, answered, resolved: the role that raised it (its `assigner_role`) reads your answer, acts on it (a plan change, a backlog item, a task) and resolves it.
+Write the resolution as an instruction: what you decided, and what the loop should do now. An issue goes open, answered, resolved: the role that raised it (its `assigner_role`) reads your answer, acts on it (a plan change, a backlog item, a task) and resolves it. An escalation with no `assigner_session`, such as the Dispatcher's, has no role to follow up: resolve it yourself (`"status": "resolved"`).
 
 **Create a backlog item.** The Planner turns open backlog items into tasks:
 
@@ -180,7 +180,7 @@ Commit everything before `session done`: the Curator merges commits only, and un
 
 ## Metrics and logs
 
-`10km metrics [--cycle N] [--json]` lists every session the loop still knows of, by cycle and role: its task and outcome, start and duration, commits on main (by `Loop-Session:` trailer) and harness usage (agent time, turns, tokens, cost); then totals per cycle and role. Sessions are removed once curated, so times come from what survives: the session row, the Worker's task, the action log, usage records or commits. Durations marked `~` are activity windows rather than whole sessions. `--json` gives the same data for agents.
+`10km metrics [--cycle N] [--json]` lists every session the loop still knows of, by cycle and role: its task and outcome, start and duration, commits on main (by `Loop-Session:` trailer) and harness usage (agent time, turns, tokens, cost); then totals per cycle and role. Sessions are removed once curated, so times come from what survives: the session row, the Worker's task, the session's lines in the action log, and usage records. `--json` gives the same data for agents.
 
 Each session directory holds the agent's `agent.log` and its `prompt.txt` until the session is removed. Usage outlives it in `usage.jsonl` next to the database (`USAGE_LOG`): one JSON line per agent run, with its session, role, cycle and harness, and its duration, turns, tokens and cost when the harness reports them (Claude Code with `--output-format json`, as in the default `LOOP_AGENT`).
 

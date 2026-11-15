@@ -14,9 +14,8 @@ prompts, scripts, plan, goals, deliverables, BACKLOG.md and LEARNINGS.md.
 3. Gather the facts for the period:
    - Time, commits and harness metrics per role and cycle: `10km metrics --json`
      (`--cycle N` for one cycle): `sessions` per session, `summary` per cycle and
-     role, `notes` for what is missing. Durations with `times_from` `actions` or
-     `commits` are activity windows, not whole sessions. Harness metrics (tokens,
-     cost) are there only if the harness records them per session.
+     role, `notes` for what is missing. Harness metrics (tokens, cost) are there
+     only if the harness records them per session.
    - Cross-checks, or fallbacks if metrics fails, in each repo: commits per
      session: `git log --since=<from> --format='%h %cI %(trailers:key=Loop-Session,valueonly,separator=%x2C) %s' main`
      (the session name gives role and cycle); time per role and cycle: commit

@@ -15,7 +15,8 @@ What an operator session is for:
 - **Escalations.** Answer escalations assigned to the operator (`msm issue list
   '{"status":"open","assignee_role":"operator"}'`): answer each with the
   operator's decision, `msm issue update <id> '{"status":"answered","resolution":"..."}'`,
-  and make any change the decision needs. The raising role resolves it.
+  and make any change the decision needs. The raising role resolves it; resolve
+  directly those with no `assigner_session`, such as the Dispatcher's.
 - **Direct work.** Change the project repos yourself, as a Worker would.
 - **Settings.** Change `config.env`; it takes effect once merged.
 - **Status.** For a status report, follow `prompts/status.md`.
