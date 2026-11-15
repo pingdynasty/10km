@@ -227,7 +227,7 @@ def merge(cfg, words):
             return done
         state = c.load()
     applied = state.get("applied", [])
-    if keys[:len(applied)] != applied or dropped:
+    if keys[:len(applied)] != applied or dropped or behind_main(cfg, c):
         _rebuild(cfg, c, state, dropped)
         state = c.load()
         applied = []
@@ -251,6 +251,13 @@ def merge(cfg, words):
             state["own_to_replay"].remove([repo, sha])
             c.save(state)
     return report
+
+
+def behind_main(cfg, c):
+    """True if main has moved past the Curator branch in some repo (someone else
+    published since the merge): the branch must be rebuilt on the new main."""
+    return any(not gitutil.ok(cfg, c.worktree(r), "merge-base", "--is-ancestor",
+                              gitutil.main_branch(cfg, r), "HEAD") for r in cfg.repos())
 
 
 def _repos_for(cfg, item):
