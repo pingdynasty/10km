@@ -37,7 +37,9 @@ MAP = {
              "test_auditor_is_launched_with_its_session_name_and_prompt", OFF_PHASE],
     "R146": A + "test_either_trigger_can_be_disabled",
     "R147": A + "test_never_before_first_curated_cycle",
-    "R148": [RD + "TestLaunching.test_taken_branch_name_is_tried_three_times", LAUNCHES],
+    "R148": [RD + "TestLaunching.test_taken_branch_name_is_tried_three_times", LAUNCHES,
+             "tests/test_curate.py:TestGitCalls."
+             "test_a_pass_reads_each_repos_setup_once_for_all_its_launches"],
     "R149": [RD + "TestLaunching.test_taken_branch_name_is_tried_three_times",
              D + "test_taken_branch_names_are_retried_then_given_up"],
     "R150": LAUNCHES,

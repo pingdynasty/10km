@@ -139,8 +139,8 @@ def prepare(cfg):
             or (s["cycle"] == cur["id"] and cur["status"] == "closed"))
         if s["role"] == "curator" or (s["role"] == "planner" and s["status"] == "expired") \
                 or leftover:
-            sessions.remove(cfg, s["name"], protected)
             removed.append(s["name"])
+    sessions.remove_all(cfg, removed, protected)
     return {"removed": removed}
 
 
@@ -531,8 +531,8 @@ def cleanup(cfg):
                                 f"{mains[repo]}..{s['name']}")
             if count != "0" and s["name"] not in protected:
                 unpublished.append({"session": s["name"], "repo": repo, "commits": int(count)})
-        sessions.remove(cfg, s["name"], protected)
         removed.append(s["name"])
+    sessions.remove_all(cfg, removed, protected)
     return {"removed": removed, "unpublished_removed": unpublished, "warnings": warnings}
 
 

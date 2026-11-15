@@ -127,11 +127,11 @@ class TestLaunching(LoopCase):
         calls = []
 
         def taken(times):
-            def create(cfg, role, username=None):
+            def create(cfg, role, username=None, setup=None):
                 calls.append(role)
                 if len(calls) <= times:
                     raise sessions.SessionError(sessions.EAGAIN, "taken")
-                return real(cfg, role, username)
+                return real(cfg, role, username, setup)
             return create
 
         with mock.patch.object(sessions, "create", taken(3)):

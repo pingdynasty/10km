@@ -16,9 +16,33 @@ class SessionError(Exception):
         self.message = message
 
 
-def create(cfg, role, username=None):
+def repo_setup(cfg):
+    """{repo: (base, hooks)}: the branch a new session's worktree starts from
+    (gitutil.main_branch) and the core.hooksPath it sets (init.session_hooks_path,
+    or None). Read once, it serves every session created in one step (a Dispatcher
+    pass): neither changes while a step runs."""
+    mains = gitutil.main_branches(cfg, cfg.repos())
+    return {repo: (mains[repo], init.session_hooks_path(cfg.repo_path(repo)))
+            for repo in cfg.repos()}
+
+
+def _add_worktree(cfg, repo, name, worktree, base):
+    """`git worktree add -b name`; SessionError EAGAIN if it failed because the
+    branch exists (R134). Checking only on failure saves a git call per repo."""
+    try:
+        gitutil.git(cfg.repo_path(repo), "worktree", "add", "-q", "-b", name, worktree, base)
+    except gitutil.GitError as e:
+        if "already exists" in str(e) and gitutil.branch_exists(cfg, repo, name):
+            raise SessionError(EAGAIN, f"branch {name} exists in {repo}")
+        raise
+
+
+def create(cfg, role, username=None, setup=None):
     """Create a session for a role (R128-R131). Returns its record; raises
-    SessionError with the codes of R132-R135."""
+    SessionError with the codes of R132-R135. A caller creating several sessions
+    passes the same dict as setup to each call: the first that gets past msm fills
+    it with repo_setup(cfg), the others reuse it."""
+    setup = {} if setup is None else setup
     with lock(cfg, "session"):
         try:
             with msm.transaction(cfg.db) as m:
@@ -31,15 +55,13 @@ def create(cfg, role, username=None):
         try:
             try:
                 os.makedirs(directory, exist_ok=True)
+                if not setup:
+                    setup.update(repo_setup(cfg))
                 for repo in cfg.repos():
-                    if gitutil.branch_exists(cfg, repo, name):
-                        raise SessionError(EAGAIN, f"branch {name} exists in {repo}")
-                    base = gitutil.main_branch(cfg, repo)
+                    base, hooks = setup[repo]
                     worktree = os.path.join(directory, repo)
-                    gitutil.git(cfg.repo_path(repo), "worktree", "add", "-q", "-b", name,
-                                worktree, base)
+                    _add_worktree(cfg, repo, name, worktree, base)
                     created.append(repo)
-                    hooks = init.session_hooks_path(cfg.repo_path(repo))
                     if hooks:  # the loop's hooks, for this worktree only (tenkm.init)
                         gitutil.git(worktree, "config", "--worktree", "core.hooksPath", hooks)
                     faults.point(f"session:after-worktree:{repo}")
@@ -73,21 +95,35 @@ def protected_branches(m):
 def remove(cfg, name, protected=()):
     """Remove a session's worktrees, unprotected branches, directory and record.
     An expired caller removes nothing (R87); usage is recorded first."""
+    remove_all(cfg, [name], protected)
+
+
+def remove_all(cfg, names, protected=()):
+    """remove() for several sessions, with one `branch -D` and one `worktree prune`
+    per repo for all of them. Safe to rerun after a crash: a record goes last."""
+    names = list(dict.fromkeys(names))
+    if not names:
+        return
     with msm.transaction(cfg.db) as m:
         m.check_caller()
-        session = m.one("SELECT * FROM sessions WHERE name = ?", name)
-    if session is not None:
-        usage.safe_record(cfg, dict(session))
-    directory = os.path.join(cfg.root, name)
+        records = [m.one("SELECT * FROM sessions WHERE name = ?", n) for n in names]
+    for session in records:
+        if session is not None:
+            usage.safe_record(cfg, dict(session))
+    branches = [n for n in names if n not in protected]
     for repo in cfg.repos():
         path = cfg.repo_path(repo)
         if not os.path.isdir(path):
             continue
-        gitutil.ok(path, "worktree", "remove", "--force", os.path.join(directory, repo))
-        if name not in protected:
-            gitutil.ok(path, "branch", "-D", name)
+        for name in names:
+            gitutil.ok(path, "worktree", "remove", "--force",
+                       os.path.join(cfg.root, name, repo))
+        if branches:  # deletes those that exist, even if some don't
+            gitutil.ok(path, "branch", "-D", *branches)
         gitutil.ok(path, "worktree", "prune")
-    shutil.rmtree(directory, ignore_errors=True)
+    for name in names:
+        shutil.rmtree(os.path.join(cfg.root, name), ignore_errors=True)
     with msm.transaction(cfg.db) as m:
-        if m.one("SELECT 1 FROM sessions WHERE name = ?", name):
-            m.session_remove(name)
+        for name in names:
+            if m.one("SELECT 1 FROM sessions WHERE name = ?", name):
+                m.session_remove(name)

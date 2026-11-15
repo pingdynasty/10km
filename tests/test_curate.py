@@ -9,7 +9,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
 from test_loop import LoopCase  # noqa: E402
-from tenkm import curate, gate, gitutil, msm, sessions  # noqa: E402
+from tenkm import curate, dispatch, gate, gitutil, init, msm, sessions  # noqa: E402
 
 
 class CurateCase(LoopCase):
@@ -433,6 +433,32 @@ class TestGitCalls(CurateCase):
         self.assertEqual(curate.branch_repos(self.cfg, w), self.cfg.repos())
         self.assertEqual(curate.branch_repos(self.cfg, "nope"), [])
 
+    def test_a_pass_reads_each_repos_setup_once_for_all_its_launches(self):  # R130 R148
+        with self.m() as m:
+            m.loop_start()
+        planner = sessions.create(self.cfg, "planner")["name"]
+        with self.m() as m:
+            m.cycle_create({"planner_session": planner, "headline": "h", "tasks": [
+                {"shortname": f"t{i}", "instructions": "edit", "branch": planner}
+                for i in range(3)]})
+            m.session_status(planner, "done")
+        repos = len(self.cfg.repos())
+        calls, patcher = self.git_calls()
+        with patcher:
+            dispatch.Pass(self.reload(MAX_WORKERS="3")).run()
+        workers = [s["name"] for s in self.sessions("worker") if s["status"] == "active"]
+        self.assertEqual(len(workers), 3)
+        self.assertEqual(self.count(calls, "show-ref"), 0)  # checked only if add fails
+        self.assertEqual(self.count(calls, "tenkm.mainBranch"), repos)
+        self.assertEqual(self.count(calls, "--git-common-dir"), repos)
+        self.assertEqual(self.count(calls, "add"), 3 * repos)
+        hooks = {r: init.generated_dir(self.cfg.repo_path(r)) for r in self.cfg.repos()}
+        for w in workers:
+            for repo in self.cfg.repos():
+                worktree = os.path.join(self.root, w, repo)
+                self.assertEqual(gitutil.git(worktree, "config", "--worktree", "core.hooksPath"),
+                                 hooks[repo])
+
     def test_run_takes_the_repo_dir_and_reports_failure(self):  # R218
         central = self.cfg.repo_path("project")
         self.assertEqual(gitutil.run(central, "symbolic-ref", "--short", "HEAD"),
@@ -462,6 +488,9 @@ class TestGitCalls(CurateCase):
                 out = curate.cleanup(self.cfg)
         self.assertEqual(self.count(calls, "for-each-ref"), repos)
         self.assertEqual(self.count(calls, "tenkm.mainBranch"), repos)
+        # One branch deletion and one prune per repo for all four sessions.
+        self.assertEqual(self.count(calls, "-D"), repos)
+        self.assertEqual(self.count(calls, "prune"), repos)
         self.assertEqual(out["unpublished_removed"],
                          [{"session": workers[1], "repo": "project", "commits": 1}])
         self.assertEqual(sorted(out["removed"]), sorted([planner] + workers))
