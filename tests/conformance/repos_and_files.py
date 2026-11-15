@@ -33,7 +33,10 @@ MAP = {
     "R22": C + "TestContributionPass.test_operator_work_reaches_main_and_session_is_removed",
     "R23": [S + "TestSessionScript.test_creates_record_directory_branch_and_worktree_per_repo",
             S + "TestSessionScript.test_names_follow_role_cycle_and_counters", TWO_REPOS],
-    "R24": RL + "TestCommitTrailer.test_commits_carry_a_loop_session_trailer",
+    "R24": [RL + "TestCommitTrailer.test_commits_carry_a_loop_session_trailer",
+            "tests/test_init.py:InitHooksTest."
+            "test_session_worktree_sets_hooks_path_and_central_does_not",
+            "tests/test_init.py:InitHooksTest.test_chains_to_inherited_hooks"],
     "R25": [RL + "TestCommitTrailer.test_commits_carry_a_loop_session_trailer",
             ("prompts/common.md", "Commits get a `Loop-Session:` trailer from the commit hook")],
     "R26": ["tests/test_requirements_roles.py:TestHarnessSessionName."

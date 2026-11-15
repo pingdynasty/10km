@@ -41,7 +41,7 @@ its copy of 10km, then runs `run-loop`, which calls the Dispatcher every
 ## Run it on a host
 
 In another sandbox (a VM or a dedicated user account) you need Python 3.9+
-(standard library only), Bash, git and an agent CLI such as `claude`, `codex` or
+(standard library only), Bash, git 2.26+ and an agent CLI such as `claude`, `codex` or
 `kiro-cli`. The loop root (`LOOP_ROOT`) is a directory holding `central/`; the
 database is `<root>/.10km/loop.db` unless `MSM_DB` says otherwise.
 
@@ -165,7 +165,7 @@ git add <files> && git commit -m "<what and why>"
 10km session done <session>                    # hand the work to the Curator
 ```
 
-Commit everything before `session done`: the Curator merges commits only, and uncommitted changes are lost when the session is removed. Commits get a `Loop-Session:` trailer from the session branch.
+Commit everything before `session done`: the Curator merges commits only, and uncommitted changes are lost when the session is removed. Commits get a `Loop-Session:` trailer from the session branch: each session worktree sets `core.hooksPath` (per worktree) to the hooks `10km init` generates, which add the trailer and then run the hooks git would otherwise run. The central worktrees set no `core.hooksPath`, so commits made there run only your own hooks.
 
 **Which to use.**
 
