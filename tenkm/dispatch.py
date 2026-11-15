@@ -117,8 +117,13 @@ class Pass:
             return False
         name, directory = session["name"], session["working_directory"]
         prompt_file = os.path.join(directory, "prompt.txt")
-        with open(prompt_file, "w") as f:
-            f.write(self.prompt(role, session))
+        try:
+            with open(prompt_file, "w") as f:
+                f.write(self.prompt(role, session))
+        except OSError as e:  # no agent to run: don't leave a session without one
+            log(f"launch {role} failed: prompt not written: {e}")
+            sessions.remove(self.cfg, name)
+            return False
         first_message = (f"You are the 10km {role} session {name}. Your worktrees are in "
                          f"{directory}. Read your instructions in {prompt_file} and follow them.")
         env = self.agent_env(name, prompt_file, first_message)

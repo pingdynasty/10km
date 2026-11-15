@@ -261,6 +261,16 @@ class TestDispatch(LoopCase):
                 [issue] = [i for i in m.list("issue") if s["name"] in i["title"]]
                 self.assertEqual((issue["severity"], issue["assignee_role"]), ("high", "operator"))
 
+    def test_failed_prompt_write_removes_the_session(self):  # R151
+        self.start_loop()
+        with mock.patch("tenkm.dispatch.open", side_effect=OSError("disk full"), create=True):
+            self.assertEqual(dispatch.run_pass(self.cfg), 0)
+        self.assertEqual(self.sessions("curator"), [])
+        self.assertEqual([n for n in os.listdir(self.root) if n.startswith("cycle")], [])
+        dispatch.run_pass(self.cfg)  # the next pass launches normally
+        [cur] = self.sessions("curator")
+        self.assertTrue(cur["handle"].startswith("process:"))
+
     def test_expiring_a_session_that_just_finished_is_harmless(self):
         self.start_loop()
         s = sessions.create(self.cfg, "curator")

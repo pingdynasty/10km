@@ -41,7 +41,8 @@ MAP = {
     "R149": [RD + "TestLaunching.test_taken_branch_name_is_tried_three_times",
              D + "test_taken_branch_names_are_retried_then_given_up"],
     "R150": LAUNCHES,
-    "R151": [LAUNCHES, L + "test_launches_curator_with_handle_and_prompt"],
+    "R151": [LAUNCHES, L + "test_launches_curator_with_handle_and_prompt",
+             L + "test_failed_prompt_write_removes_the_session"],
     "R152": RD + "TestLaunching.test_launcher_is_configured_for_the_loop",
     "R153": [LAUNCHES, "tests/test_requirements_loop.py:TestCentralConfig."
              "test_agent_command_per_role_falls_back_to_loop_agent"],
