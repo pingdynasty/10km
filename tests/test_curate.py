@@ -187,6 +187,46 @@ class TestDeclarativeMerge(CurateCase):
             with self.assertRaises(curate.CurateError):
                 curate.merge(self.cfg, ["no-such-session"])
 
+    def assert_main_plus_own(self, cur, own):
+        """Each repo's Curator worktree is main plus exactly the given own commit
+        subjects, with no merges."""
+        for repo in self.cfg.repos():
+            wt = os.path.join(self.root, cur, repo)
+            log = subprocess.run(["git", "-C", wt, "log", "--format=%s", "main..HEAD"],
+                                 capture_output=True, text=True, check=True).stdout.split("\n")
+            self.assertEqual([s for s in log if s], own.get(repo, []), repo)
+
+    def test_no_items_rejects_everything_and_keeps_own_commits(self):
+        planner, (w1, w2) = self.cycle_with_workers(("f.txt", "one"), ("g.txt", "two"))
+        cur = self.curator()
+        with self.as_session(cur):
+            curate.select(self.cfg)
+            self.assertIsNone(curate.merge(self.cfg, [planner, w1, w2])["conflict"])
+            self.commit(cur, "loop", "PLAN.md", "plan", "Update plan")
+            self.commit(cur, "project", "own.txt", "own", "Own change")
+            out = curate.merge(self.cfg, [])
+            self.assertEqual((out["applied"], out["conflict"]), ([], None))
+            self.assert_main_plus_own(cur, {"loop": ["Update plan"], "project": ["Own change"]})
+            self.assertIsNone(curate.merge(self.cfg, [])["conflict"])  # rerun: no change
+            self.assert_main_plus_own(cur, {"loop": ["Update plan"], "project": ["Own change"]})
+            curate.publish(self.cfg, "r", rejected=[w1, w2])
+        self.assertIsNone(self.central("project", "f.txt"))
+        self.assertEqual(self.central("project", "own.txt"), "own")
+        rc, _, _ = self.run_step(cur, "merge")
+        self.assertEqual(rc, 0)
+
+    def test_no_items_after_a_conflict_on_the_first_item_undoes_other_repos(self):
+        planner, (w1,) = self.cycle_with_workers(("f.txt", "worker"))
+        self.commit(w1, "loop", "w.txt", "worker")
+        cur = self.curator()
+        with self.as_session(cur):
+            curate.select(self.cfg)
+            self.commit(cur, "project", "f.txt", "curator", "Own change")
+            out = curate.merge(self.cfg, [w1])  # loop merges, project conflicts
+            self.assertEqual(out["conflict"]["repo"], "project")
+            self.assertIsNone(curate.merge(self.cfg, [])["conflict"])
+            self.assert_main_plus_own(cur, {"project": ["Own change"]})
+
 
 class TestRefusals(CurateCase):
     def test_steps_refuse_an_inactive_curator(self):
