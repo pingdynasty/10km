@@ -17,9 +17,10 @@ from tenkm import cli, metrics, msm  # noqa: E402
 
 
 class MetricsCase(LoopCase):
-    def commit(self, repo, session, message="work"):
+    def commit(self, repo, session, message="work", date=None):
+        env = dict(os.environ, GIT_COMMITTER_DATE=date, GIT_AUTHOR_DATE=date) if date else None
         subprocess.run(["git", "-C", self.cfg.repo_path(repo), "commit", "-q", "--allow-empty",
-                        "-m", f"{message}\n\nLoop-Session: {session}"], check=True)
+                        "-m", f"{message}\n\nLoop-Session: {session}"], check=True, env=env)
 
     def write_usage(self, *records):
         with open(os.path.join(os.path.dirname(self.cfg.db), "usage.jsonl"), "a") as f:
@@ -108,6 +109,27 @@ class TestCollect(MetricsCase):
         self.assertEqual(workers["usage"]["input_tokens"], 10)
         self.assertTrue(any("No duration for: cycle9-worker1-old" in n for n in data["notes"]))
 
+    def test_earlier_loop_trailers_are_left_out(self):
+        """R265/R266: sessions known only by trailers older than the loop start are an
+        earlier loop's history: left out of sessions and summary, with a note
+        (backlog d7f1b6c6). Unknown trailer sessions since the start stay."""
+        planner, w1, w2, curator = self.one_cycle()
+        self.commit("project", "cycle4-worker1-old", date="2020-01-01T00:00:00Z")
+        self.commit("project", "cycle4-worker1-old", date="2020-01-02T00:00:00Z")
+        self.commit("loop", "cycle5-planner-old", date="2020-01-03T00:00:00Z")
+        self.commit("project", w1, date="2020-01-04T00:00:00Z")  # known: kept
+        self.commit("project", "cycle9-worker1-new")  # unknown but recent: kept
+        data = metrics.collect(self.cfg)
+        names = {r["session"] for r in data["sessions"]}
+        self.assertFalse(names & {"cycle4-worker1-old", "cycle5-planner-old"})
+        self.assertIn("cycle9-worker1-new", names)
+        by = {r["session"]: r for r in data["sessions"]}
+        self.assertEqual(by[w1]["commits"], {"project": 1})
+        unknown = [g for g in data["summary"] if g["role"] == "unknown"]
+        self.assertEqual([(g["sessions"], g["commits"]) for g in unknown], [(1, 1)])
+        self.assertTrue(any("Left out 2 sessions" in n and "(3 commits)" in n
+                            for n in data["notes"]), data["notes"])
+
     def logged(self, name, command):
         with open(self.cfg.action_log) as f:
             lines = [json.loads(x) for x in f.read().splitlines()]
@@ -166,13 +188,42 @@ class TestCollect(MetricsCase):
                 m.session_remove(name)
         self.assertEqual(outcomes(), expected)
 
-    def test_operator_session_gets_the_cycle_planned_before_it(self):
-        self.one_cycle()
+    def test_cycleless_sessions_get_only_an_open_cycle(self):
+        """R266: an operator session started while a cycle is open is in that cycle; an
+        Auditor (cycle null) started after the cycle is curated is in no cycle, not
+        in the last one (backlog d7f1b6c6)."""
+        self.start_loop()
+        time.sleep(1 - time.time() % 1)
+        with self.m() as m:
+            planner = m.session_create("planner")["name"]
+        with msm.transaction(self.cfg.db, caller=planner) as m:
+            m.cycle_create({"planner_session": planner, "headline": "h", "tasks": [
+                {"shortname": "a", "instructions": "i", "branch": planner}]})
+            m.session_status(planner, "done")
+        time.sleep(1.01)  # one-second resolution: start after planned_at
         with self.m() as m:
             op = m.session_create("operator", "mars")["name"]
-        data = metrics.collect(self.cfg, cycle=1)
-        row = [r for r in data["sessions"] if r["session"] == op][0]
-        self.assertEqual((row["role"], row["outcome"], row["end"]), ("operator", "active", None))
+            curator = m.session_create("curator")["name"]
+        time.sleep(1.01)  # curated_at after the operator's start
+        with msm.transaction(self.cfg.db, caller=curator) as m:
+            task = m.cycle_get()["tasks"][0]
+            m.cycle_curate({"curator_session": curator, "report": "r", "tasks": [
+                {"id": task["id"], "status": "rejected"}]})
+            m.session_status(curator, "done")
+        time.sleep(1.01)
+        with self.m() as m:
+            auditor = m.session_create("auditor")["name"]
+            late_op = m.session_create("operator", "venus")["name"]
+        by = {r["session"]: r for r in metrics.collect(self.cfg)["sessions"]}
+        self.assertEqual((by[op]["role"], by[op]["cycle"], by[op]["outcome"]),
+                         ("operator", 1, "active"))
+        self.assertIsNone(by[auditor]["cycle"])
+        self.assertIsNone(by[late_op]["cycle"])
+        self.assertNotIn(auditor, {r["session"] for r in
+                                   metrics.collect(self.cfg, cycle=1)["sessions"]})
+        summary = {(g["cycle"], g["role"]): g["sessions"]
+                   for g in metrics.collect(self.cfg)["summary"]}
+        self.assertEqual((summary[(None, "auditor")], summary.get((1, "auditor"))), (1, None))
 
 
 class TestCommand(MetricsCase):
@@ -195,6 +246,21 @@ class TestCommand(MetricsCase):
         data = json.loads(out)
         self.assertEqual(len(data["sessions"]), 4)
         self.assertEqual(self.run_cli("--cycle")[0], 1)
+
+    def test_kiro_credits(self):
+        """R267: kiro-cli's credits are summed per session and per cycle and role."""
+        planner, w1, w2, curator = self.one_cycle()
+        self.write_usage(*({"session": w, "role": "worker", "cycle": 1, "harness": "kiro-cli",
+                            "recorded_at": "2026-01-01T10:00:00Z", "credits": 1.25,
+                            "duration_ms": 60000} for w in (w1, w2)))
+        data = metrics.collect(self.cfg)
+        by = {r["session"]: r for r in data["sessions"]}
+        self.assertEqual(by[w1]["usage"]["credits"], 1.25)
+        workers = [g for g in data["summary"] if (g["cycle"], g["role"]) == (1, "worker")][0]
+        self.assertEqual(workers["usage"]["credits"], 2.5)
+        out = metrics.text(data)
+        self.assertIn("credits", out)
+        self.assertIn("2.50", out)
         self.assertEqual(self.run_cli("--bogus")[0], 1)
 
 

@@ -1,9 +1,12 @@
 """tenkm.metrics: sessions, times, commits and harness usage per cycle and role (R26, R267).
 
+Harness usage is tokens and cost (Claude Code) or credits (kiro-cli).
+
 Sessions are removed at curation, so each session is pieced together from the
 sessions table, task and cycle rows, the action log's session lines and
 usage.jsonl (tenkm.usage); commits are counted by Loop-Session trailer on each
-repo's main branch.
+repo's main branch. Sessions known only by trailers, all older than the loop
+start (the earliest session the loop recorded), are an earlier loop's: left out.
 
     data = metrics.collect(cfg, cycle=None)   # {"sessions", "summary", "notes"}
     print(metrics.text(data))
@@ -52,24 +55,34 @@ def read_jsonl(path):
 
 
 def commits_by_session(cfg):
-    """{session: {repo: count}} from the Loop-Session trailers on each repo's main branch."""
-    found = {}
+    """({session: {repo: count}}, {session: latest commit time}) from the
+    Loop-Session trailers on each repo's main branch."""
+    found, latest = {}, {}
     for repo in cfg.repos():
         path = cfg.repo_path(repo)
         if not os.path.isdir(path):
             continue
         branch = gitutil.main_branch(cfg, repo)
         rc, out, _ = gitutil.run(path, "log", branch,
-                                 f"--format=%x00%(trailers:key={TRAILER},valueonly)")
+                                 f"--format=%x00%ct%n%(trailers:key={TRAILER},valueonly)")
         if rc != 0:
             continue
         for chunk in out.split("\0"):
+            lines = chunk.splitlines()
+            if not lines:
+                continue
+            try:
+                at = datetime.fromtimestamp(int(lines[0]), timezone.utc)
+            except (ValueError, OverflowError, OSError):
+                at = None
             # Trailers are agent-written: skip values that could carry terminal escapes.
-            for name in {v.strip() for v in chunk.splitlines() if v.strip().isprintable()
+            for name in {v.strip() for v in lines[1:] if v.strip().isprintable()
                          and v.strip()}:
                 repos = found.setdefault(name, {})
                 repos[repo] = repos.get(repo, 0) + 1
-    return found
+                if at and (name not in latest or at > latest[name]):
+                    latest[name] = at
+    return found, latest
 
 
 SESSION_EVENTS = {"session create": 0, "session done": 1, "session expired": 1,
@@ -135,6 +148,20 @@ class _Session:
         return totals
 
 
+def open_cycle(cycles, at):
+    """The cycle planned but not yet curated at `at`, or None.
+
+    For sessions without a cycle (Auditor, operator): an Auditor runs after a
+    cycle is curated, so it belongs to no cycle rather than the last one."""
+    if not at:
+        return None
+    for c in sorted(cycles, key=lambda c: c["id"], reverse=True):
+        planned, curated = parse_time(c.get("planned_at")), parse_time(c.get("curated_at"))
+        if planned and planned <= at and (curated is None or at < curated):
+            return c["id"]
+    return None
+
+
 def collect(cfg, cycle=None):
     """Metrics for every session the database, action log, usage log or git know of,
     optionally only those of one cycle."""
@@ -193,17 +220,21 @@ def collect(cfg, cycle=None):
                 span[1] = end
     for action in read_jsonl(cfg.action_log):
         session_event(get, action, parse_time(action.get("at")))
-    for name, repos in commits_by_session(cfg).items():
+    # The loop start: the earliest start of a session the loop itself recorded.
+    loop_start = min((s.span()[0] for s in sessions.values() if s.span()[0]), default=None)
+    commits, latest = commits_by_session(cfg)
+    earlier = {}  # sessions known only by trailers, all older than the loop start
+    for name, repos in commits.items():
+        if name not in sessions and loop_start and latest.get(name) \
+                and latest[name] < loop_start:
+            earlier[name] = sum(repos.values())
+            continue
         get(name).commits = repos
 
-    # Sessions without a cycle (auditor, operator): the cycle last planned when they started.
-    planned = sorted((parse_time(c["planned_at"]), c["id"]) for c in cycles if c.get("planned_at"))
     records = []
     for s in sessions.values():
         start, end, source = s.span()
-        cyc = s.cycle
-        if cyc is None and start:
-            cyc = max((cid for at, cid in planned if at and at <= start), default=None)
+        cyc = s.cycle if s.cycle is not None else open_cycle(cycles, start)
         if cycle is not None and cyc != cycle:
             continue
         duration = (end - start).total_seconds() if start and end else None
@@ -216,7 +247,7 @@ def collect(cfg, cycle=None):
     records.sort(key=lambda r: (r["cycle"] is None, r["cycle"] or 0,
                                 ROLE_ORDER.get(r["role"], 9), r["start"] or "", r["session"]))
     return {"sessions": records, "summary": summarize(records),
-            "notes": notes(records, cfg.usage_log, bool(runs))}
+            "notes": notes(records, cfg.usage_log, bool(runs), earlier)}
 
 
 def summarize(records):
@@ -238,11 +269,15 @@ def summarize(records):
         k[0] is None, k[0] or 0, ROLE_ORDER.get(k[1], 9)))]
 
 
-def notes(records, upath, have_usage):
-    """What the figures can't tell, in plain words."""
+def notes(records, upath, have_usage, earlier=None):
+    """What the figures can't tell, and what they leave out, in plain words."""
     out = []
     if not have_usage:
         out.append(f"No usage records in {upath}: no harness time, turns, tokens or cost.")
+    if earlier:
+        out.append(f"Left out {len(earlier)} sessions known only by Loop-Session trailers "
+                   f"older than the loop start ({sum(earlier.values())} commits): "
+                   "an earlier loop's history.")
     untimed = [r["session"] for r in records if r["duration_s"] is None]
     if untimed:
         out.append(f"No duration for: {', '.join(untimed)}.")
@@ -260,7 +295,7 @@ def _num(value, fmt="{:,}"):
 def text(data):
     """The metrics as readable text tables."""
     head = ("cycle", "role", "session", "task", "outcome", "start", "time", "from",
-            "commits", "agent", "turns", "in tok", "out tok", "cost")
+            "commits", "agent", "turns", "in tok", "out tok", "cost", "credits")
     rows = []
     for r in data["sessions"]:
         u = r["usage"]
@@ -269,9 +304,11 @@ def text(data):
                      r["times_from"] or "-", str(sum(r["commits"].values())),
                      _minutes(u["duration_ms"] / 1000) if "duration_ms" in u else "-",
                      _num(u.get("num_turns")), _num(u.get("input_tokens")),
-                     _num(u.get("output_tokens")), _num(u.get("total_cost_usd"), "${:.2f}")))
+                     _num(u.get("output_tokens")), _num(u.get("total_cost_usd"), "${:.2f}"),
+                     _num(u.get("credits"), "{:.2f}")))
     lines = ["Sessions:"] + _table(head, rows)
-    head = ("cycle", "role", "sessions", "time", "commits", "agent", "in tok", "out tok", "cost")
+    head = ("cycle", "role", "sessions", "time", "commits", "agent", "in tok", "out tok", "cost",
+            "credits")
     rows = []
     for g in data["summary"]:
         u = g["usage"]
@@ -280,7 +317,7 @@ def text(data):
                      str(g["commits"]),
                      _minutes(u["duration_ms"] / 1000) if "duration_ms" in u else "-",
                      _num(u.get("input_tokens")), _num(u.get("output_tokens")),
-                     _num(u.get("total_cost_usd"), "${:.2f}")))
+                     _num(u.get("total_cost_usd"), "${:.2f}"), _num(u.get("credits"), "{:.2f}")))
     lines += ["", "By cycle and role:"] + _table(head, rows)
     if data["notes"]:
         lines += ["", "Notes:"] + [f"- {n}" for n in data["notes"]]
