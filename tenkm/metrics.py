@@ -7,9 +7,12 @@ together from what survives, in this order of preference:
   created_at and, once inactive, updated_at as the end;
 - task rows (Workers): session, started_at, done_at and the task status;
 - cycle rows: the planner_session and curator_session of each cycle;
+- session create, done, expired and remove lines in the action log: the start,
+  and the end (done or expired, else removal);
 - usage.jsonl next to the database (one record per finished agent run, from the
   harness): role, cycle, recorded_at as the end, duration_ms;
-- the action log: the first and last state change a session made;
+- the action log: the first and last state change a session made (for logs
+  from before msm logged sessions);
 - failing all these, the first and last commit with the session's trailer.
 The last two are activity windows, not the session's start and end; the text
 output marks them with "~".
@@ -97,6 +100,23 @@ def commits_by_session(cfg):
     return found
 
 
+SESSION_EVENTS = {"session create": 0, "session done": 1, "session expired": 1,
+                  "session remove": 2}
+
+
+def session_event(get, action, at):
+    """Record a logged session create, done, expired or remove as the session's
+    start, end or (if it ended no other way) removal time."""
+    slot = SESSION_EVENTS.get(action.get("command"))
+    name = action.get("name")
+    if slot is None or not at or not isinstance(name, str) or not name:
+        return
+    s = get(name)
+    if not s.role and isinstance(action.get("role"), str):
+        s.role = action["role"]
+    s.logged[slot] = s.logged[slot] or at
+
+
 class _Session:
     def __init__(self, name):
         self.name = name
@@ -111,14 +131,17 @@ class _Session:
         self.cycle_outcome = None
         self.times = {}         # source -> [start, end]
         self.actions = []       # times of logged state changes
+        self.logged = [None, None, None]  # logged create, done or expired, remove
         self.usage = []
         self.commits = {}
         self.commit_times = []
 
     def span(self):
         """(start, end, source): the best surviving start and end."""
-        for source in ("session", "task", "usage"):
-            start, end = self.times.get(source, (None, None))
+        create, ended, removed = self.logged
+        times = dict(self.times, log=(create, ended or removed))
+        for source in ("session", "task", "log", "usage"):
+            start, end = times.get(source, (None, None))
             if start or end:
                 return start, end, source
         for source, times in (("actions", self.actions), ("commits", self.commit_times)):
@@ -205,6 +228,7 @@ def collect(cfg, cycle=None):
         for name in (action.get("session"), action.get("worker")):
             if isinstance(name, str) and name and at:
                 get(name).actions.append(at)
+        session_event(get, action, at)
     for name, entry in commits_by_session(cfg).items():
         get(name).commits, get(name).commit_times = entry["repos"], entry["times"]
 
@@ -260,8 +284,8 @@ def notes(records, upath, have_usage):
     if approx:
         out.append(f"{len(approx)} session(s) have only an activity window (~): first to last "
                    "state change in the action log, or first to last commit. Session rows are "
-                   "removed at curation and session start and end aren't logged, so Planners, "
-                   "Curators, Auditors and operators without usage records have no exact times.")
+                   "removed at curation, and action logs from before msm logged session "
+                   "create, done and expired have no exact start and end for them.")
     untimed = [r["session"] for r in records if r["duration_s"] is None]
     if untimed:
         out.append(f"No duration for: {', '.join(untimed)}.")
