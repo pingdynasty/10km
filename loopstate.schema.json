@@ -369,6 +369,7 @@
         "status": {
           "enum": [
             "open",
+            "answered",
             "resolved",
             null
           ]
@@ -380,6 +381,13 @@
           ]
         },
         "created_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "answered_at": {
           "type": [
             "string",
             "null"
@@ -413,6 +421,7 @@
         "status",
         "branch",
         "created_at",
+        "answered_at",
         "resolved_at",
         "resolution"
       ]

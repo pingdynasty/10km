@@ -128,6 +128,7 @@ MAP = {
     "R257": (P, "Exit: if there are blocking operator escalations"),
     "R258": [(P, "if there are blocking operator escalations, `msm loop stop <reason>` with the escalation's reason"), IDLE],
     "R259": [(P, "`msm session done $LOOP_SESSION`"), CLEANUP],
+    "R321": "prompts/curator.md",  # placeholder: task issue-prompts replaces it
 }
 
 PENDING = set()

@@ -36,6 +36,8 @@ MAP = {
     "R281": ["tests/test_msm.py:MsmTest.test_audits_and_auditor_naming",
              (A, "Store your report: `msm audit create")],
     "R282": f"{T}:TestAuditorLaunch.test_no_auditor_until_the_previous_audit_is_curated",
+    "R322": "prompts/auditor.md",  # placeholder: task issue-prompts replaces it
+    "R323": "prompts/auditor.md",  # placeholder: task issue-prompts replaces it
 }
 
 PENDING = set()
