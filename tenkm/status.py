@@ -51,6 +51,6 @@ def report(cfg):
     for repo in cfg.repos():
         path = cfg.repo_path(repo)
         if os.path.isdir(path):
-            head = gitutil.git(cfg, path, "log", "-1", "--format=%h %cI %s", check=False)
+            head = gitutil.git(path, "log", "-1", "--format=%h %cI %s", check=False)
             lines.append(f"  {repo}: {head}")
     return "\n".join(lines)

@@ -35,7 +35,7 @@ def create(cfg, role, username=None):
                     if gitutil.branch_exists(cfg, repo, name):
                         raise SessionError(EAGAIN, f"branch {name} exists in {repo}")
                     base = gitutil.main_branch(cfg, repo)
-                    gitutil.git(cfg, cfg.repo_path(repo), "worktree", "add", "-q", "-b", name,
+                    gitutil.git(cfg.repo_path(repo), "worktree", "add", "-q", "-b", name,
                                 os.path.join(directory, repo), base)
                     created.append(repo)
                     faults.point(f"session:after-worktree:{repo}")
@@ -49,9 +49,9 @@ def create(cfg, role, username=None):
 
 def _undo(cfg, name, directory, repos):
     for repo in repos:
-        gitutil.ok(cfg, cfg.repo_path(repo), "worktree", "remove", "--force",
+        gitutil.ok(cfg.repo_path(repo), "worktree", "remove", "--force",
                    os.path.join(directory, repo))
-        gitutil.ok(cfg, cfg.repo_path(repo), "branch", "-D", name)
+        gitutil.ok(cfg.repo_path(repo), "branch", "-D", name)
     shutil.rmtree(directory, ignore_errors=True)
     try:
         with msm.transaction(cfg.db) as m:
@@ -79,10 +79,10 @@ def remove(cfg, name, protected=()):
         path = cfg.repo_path(repo)
         if not os.path.isdir(path):
             continue
-        gitutil.ok(cfg, path, "worktree", "remove", "--force", os.path.join(directory, repo))
+        gitutil.ok(path, "worktree", "remove", "--force", os.path.join(directory, repo))
         if name not in protected:
-            gitutil.ok(cfg, path, "branch", "-D", name)
-        gitutil.ok(cfg, path, "worktree", "prune")
+            gitutil.ok(path, "branch", "-D", name)
+        gitutil.ok(path, "worktree", "prune")
     shutil.rmtree(directory, ignore_errors=True)
     with msm.transaction(cfg.db) as m:
         if m.one("SELECT 1 FROM sessions WHERE name = ?", name):

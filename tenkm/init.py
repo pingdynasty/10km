@@ -52,9 +52,9 @@ def run(cfg):
     hooks = os.path.join(loop, "hooks")
     for repo in cfg.repos():
         path = cfg.repo_path(repo)
-        if not gitutil.ok(cfg, path, "config", "--get", "tenkm.mainBranch"):
-            gitutil.git(cfg, path, "config", "tenkm.mainBranch",
-                        gitutil.git(cfg, path, "symbolic-ref", "--short", "HEAD"))
+        if not gitutil.ok(path, "config", "--get", "tenkm.mainBranch"):
+            gitutil.git(path, "config", "tenkm.mainBranch",
+                        gitutil.git(path, "symbolic-ref", "--short", "HEAD"))
         install_hooks(cfg, path, hooks)
         report[repo] = gitutil.main_branch(cfg, repo)
     return report
@@ -104,7 +104,7 @@ def install_hooks(cfg, path, hooks):
     if rc not in (0, 1):  # 1: not set
         raise msm.MSMError(msm.EINVAL, f"10km init needs git 2.26 or later: {err}")
     values = dict(line.split("\t", 1) for line in out.splitlines() if "\t" in line)
-    common = gitutil.git(cfg, path, "rev-parse", "--git-common-dir")
+    common = gitutil.git(path, "rev-parse", "--git-common-dir")
     gen = os.path.abspath(os.path.join(path, common, "tenkm-hooks"))
     local = values.get("local", "")
     if local and not _same_dir(local, gen):
@@ -117,7 +117,7 @@ def install_hooks(cfg, path, hooks):
         inherited = ""
     write_hooks(gen, hooks, inherited)
     if not local:
-        gitutil.git(cfg, path, "config", "--local", "core.hooksPath", gen)
+        gitutil.git(path, "config", "--local", "core.hooksPath", gen)
 
 
 def _same_dir(a, b):

@@ -83,8 +83,8 @@ def _new_log(evidence, name):
 def run_gate(cfg, session, repo, command, wait):
     """Run one gate. Returns (status, log): status 'passed', 'skipped', 'failed', 'running'."""
     cwd = os.path.join(session["working_directory"], repo)
-    cacheable = not gitutil.git(cfg, cwd, "status", "--porcelain")
-    tree = gitutil.git(cfg, cwd, "rev-parse", "HEAD^{tree}")
+    cacheable = not gitutil.git(cwd, "status", "--porcelain")
+    tree = gitutil.git(cwd, "rev-parse", "HEAD^{tree}")
     key = f"{hashlib.sha1(command.encode()).hexdigest()[:12]}-{tree[:12]}"
     if not cacheable:
         key += f"-dirty-{session['name']}"

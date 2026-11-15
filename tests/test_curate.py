@@ -75,8 +75,8 @@ class TestContributionPass(CurateCase):
             self.assertEqual([s["name"] for s in m.list("session")], [cur])
         self.assertFalse(os.path.exists(os.path.join(self.root, op)))
         for repo in self.cfg.repos():
-            self.assertNotIn(op, gitutil.git(self.cfg, self.cfg.repo_path(repo), "branch"))
-            self.assertNotIn(op, gitutil.git(self.cfg, self.cfg.repo_path(repo), "worktree",
+            self.assertNotIn(op, gitutil.git(self.cfg.repo_path(repo), "branch"))
+            self.assertNotIn(op, gitutil.git(self.cfg.repo_path(repo), "worktree",
                                              "list"))
 
 

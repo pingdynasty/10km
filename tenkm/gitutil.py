@@ -7,8 +7,10 @@ class GitError(Exception):
     pass
 
 
-def git(cfg, repo_dir, *args, check=True):
-    """Run git in repo_dir with the loop's commit identity. Returns stdout."""
+def git(repo_dir, *args, check=True):
+    """Run git in repo_dir; return its stdout, stripped.
+
+    Raises GitError if git fails and check is true."""
     env = dict(os.environ)
     p = subprocess.run(["git", "-C", repo_dir, *args], env=env, capture_output=True, text=True)
     if check and p.returncode != 0:
@@ -16,7 +18,7 @@ def git(cfg, repo_dir, *args, check=True):
     return p.stdout.strip()
 
 
-def ok(cfg, repo_dir, *args):
+def ok(repo_dir, *args):
     """True if the git command succeeds."""
     env = dict(os.environ)
     return subprocess.run(["git", "-C", repo_dir, *args], env=env,
@@ -35,7 +37,7 @@ def main_branch(cfg, repo):
 
 
 def branch_exists(cfg, repo, branch):
-    return ok(cfg, cfg.repo_path(repo), "show-ref", "--verify", "--quiet", f"refs/heads/{branch}")
+    return ok(cfg.repo_path(repo), "show-ref", "--verify", "--quiet", f"refs/heads/{branch}")
 
 
 def run(cfg, repo_dir, *args):
