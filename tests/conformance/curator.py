@@ -105,7 +105,8 @@ MAP = {
     "R245": (P, "update the plan and backlog"),
     "R246": (P, "answer or resolve escalations you can"),
     "R247": [(P, "create a blocking operator escalation whose title starts with its reason"),
-             RC + "TestIdleLimit.test_the_idle_limit_and_empty_cycle_count_the_prompt_names_exist",
+             (P, "`empty_cycles` at `IDLE_CYCLE_LIMIT`"),
+             RC + "TestIdleLimit.test_config_env_sets_the_idle_limit_the_prompt_names",
              IDLE],
     "R248": (P, "If there are open blocking operator escalations, `notify"),
     # Step 9: Publish

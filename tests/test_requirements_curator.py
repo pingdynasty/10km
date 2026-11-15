@@ -40,8 +40,9 @@ class TestPromptSteps(unittest.TestCase):
 
 
 class TestIdleLimit(unittest.TestCase):
-    def test_the_idle_limit_and_empty_cycle_count_the_prompt_names_exist(self):  # R247
-        self.assertIn("`empty_cycles` at `IDLE_CYCLE_LIMIT`", testenv.read(PROMPT))
+    def test_config_env_sets_the_idle_limit_the_prompt_names(self):
+        """R247. The prompt's phrase is checked, whitespace-normalised, by the
+        conformance map (R32, R247)."""
         self.assertRegex(testenv.read(os.path.join(CODE, "config.env")),
                          r"(?m)^IDLE_CYCLE_LIMIT=")
 
