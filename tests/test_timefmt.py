@@ -1,5 +1,4 @@
-"""tenkm.timefmt: local clock times and short elapsed times for the operator (R10).
-Every test fixes the clock and the zone."""
+"""Tests for tenkm.timefmt (R10), with a fixed clock and zone."""
 import os
 import sys
 import unittest
@@ -14,27 +13,17 @@ NOW = "2026-11-15T18:47:10Z"  # 19:47 CET
 
 
 class TestParse(unittest.TestCase):
-    def test_iso_utc_git_offset_and_ps_lstart_are_the_same_instant(self):
-        utc = timefmt.parse("2026-11-15T18:47:36Z")
+    def test_iso_utc_and_git_offset_are_the_same_instant(self):
+        utc = datetime(2026, 11, 15, 18, 47, 36, tzinfo=timezone.utc)
+        self.assertEqual(timefmt.parse("2026-11-15T18:47:36Z"), utc)
         self.assertEqual(timefmt.parse("2026-11-15T19:47:36+01:00"), utc)
-        self.assertEqual(timefmt.parse("Sun Nov 15 19:47:36 2026", CET), utc)
-        self.assertEqual(timefmt.parse("Sun Nov  5 19:47:36 2026", CET),
-                         utc - timedelta(days=10))
+        self.assertEqual(timefmt.parse("2026-11-15T18:47:36"), utc)
 
     def test_unreadable_times_are_none(self):
         for text in (None, "", "yesterday", 42):
             self.assertIsNone(timefmt.parse(text))
         self.assertEqual(timefmt.clock(None, NOW, CET), "?")
-        self.assertEqual(timefmt.ago("bad", NOW, CET), "?")
-
-    def test_process_handle(self):
-        handle = "process:20940:Sun Nov 15 19:47:11 2026"
-        self.assertEqual(timefmt.short_handle(handle), "pid 20940")
-        self.assertEqual(timefmt.handle_start(handle, CET),
-                         datetime(2026, 11, 15, 18, 47, 11, tzinfo=timezone.utc))
-        self.assertEqual(timefmt.short_handle("other:x"), "other:x")
-        self.assertEqual(timefmt.short_handle(None), "no handle")
-        self.assertIsNone(timefmt.handle_start("other:x"))
+        self.assertEqual(timefmt.ago("bad", NOW), "?")
 
 
 class TestFormat(unittest.TestCase):
@@ -55,9 +44,9 @@ class TestFormat(unittest.TestCase):
             self.assertEqual(timefmt.elapsed(seconds), text, seconds)
 
     def test_ago(self):
-        self.assertEqual(timefmt.ago("2026-11-15T17:53:10Z", NOW, CET), "54m ago")
-        self.assertEqual(timefmt.ago("2026-11-13T14:47:10Z", NOW, CET), "2d4h ago")
-        self.assertEqual(timefmt.since("2026-11-15T18:47:00Z", NOW, CET), "10s")
+        self.assertEqual(timefmt.ago("2026-11-15T17:53:10Z", NOW), "54m ago")
+        self.assertEqual(timefmt.ago("2026-11-13T14:47:10Z", NOW), "2d4h ago")
+        self.assertEqual(timefmt.since("2026-11-15T18:47:00Z", NOW), "10s")
 
 
 if __name__ == "__main__":

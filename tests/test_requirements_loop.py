@@ -72,6 +72,18 @@ class TestStatus(LoopCase):
                                r"Metrics: skip control characters")
         self.assertNotIn("Main:", text)
 
+    def test_report_replaces_terminal_escapes(self):  # R10
+        self.start_loop()
+        with self.m() as m:
+            m.create("issue", {"type": "escalation", "title": "red \x1b[31m\x07",
+                               "assignee_role": "operator"})
+        subprocess.run(["git", "-C", self.cfg.repo_path("project"), "commit", "-q",
+                        "--allow-empty", "-m", "clear \x1b[2J"], check=True)
+        text = status.report(self.cfg)
+        self.assertIn("red ?[31m?", text)
+        self.assertIn("clear ?[2J", text)
+        self.assertNotIn("\x1b", text)
+
     def test_empty_cycles_plural(self):  # R10
         self.start_loop()
         with self.m() as m:

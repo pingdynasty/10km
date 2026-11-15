@@ -83,15 +83,15 @@ class UsageTest(unittest.TestCase):
         partial = {"type": "result", "num_turns": 2, "usage": {"output_tokens": "many"}}
         self.assertEqual(usage.parse_result(json.dumps(partial)), {"num_turns": 2})
 
-    # --- kiro-cli (GOALS DEL6; captured with kiro-cli 2.37.0 --output-format stream-json)
+    # kiro-cli fixtures: captured with kiro-cli 2.37.0 --output-format stream-json
     def test_parse_kiro_v2_log(self):
-        """R26/R267: engine v2's end-of-turn metadata gives credits and time."""
+        """R26 R267: engine v2."""
         self.assertEqual(usage.parse_kiro(fixture("kiro-v2-stream.jsonl")), {
             "harness_session_id": "742d77a6-c2e2-429c-9200-7324d02160ca",
             "duration_ms": 1879, "credits": 0.9612229740630184})
 
     def test_parse_kiro_v3_log(self):
-        """R26/R267: engine v3's turn_completion and session_usage give credits and time."""
+        """R26 R267: engine v3."""
         self.assertEqual(usage.parse_kiro(fixture("kiro-v3-stream.jsonl")), {
             "harness_session_id": "sess_dbbb97e6-50d7-437d-85e6-46e591cdb838",
             "duration_ms": 4986, "credits": 0.4030556404311775})

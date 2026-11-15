@@ -5,8 +5,7 @@ Harness usage is tokens and cost (Claude Code) or credits (kiro-cli).
 Sessions are removed at curation, so each session is pieced together from the
 sessions table, task and cycle rows, the action log's session lines and
 usage.jsonl (tenkm.usage); commits are counted by Loop-Session trailer on each
-repo's main branch. Sessions known only by trailers, all older than the loop
-start (the earliest session the loop recorded), are an earlier loop's: left out.
+repo's main branch.
 
     data = metrics.collect(cfg, cycle=None)   # {"sessions", "summary", "notes"}
     print(metrics.text(data))
@@ -19,17 +18,6 @@ from . import gitutil, msm, timefmt, usage
 
 ROLE_ORDER = {r: i for i, r in enumerate(("planner", "worker", "curator", "auditor", "operator"))}
 TRAILER = "Loop-Session"
-
-
-def parse_time(text):
-    """A UTC datetime from an ISO 8601 string, or None."""
-    if not isinstance(text, str) or not text:
-        return None
-    try:
-        t = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t.astimezone(timezone.utc)
 
 
 def fmt_time(t):
@@ -149,14 +137,11 @@ class _Session:
 
 
 def open_cycle(cycles, at):
-    """The cycle planned but not yet curated at `at`, or None.
-
-    For sessions without a cycle (Auditor, operator): an Auditor runs after a
-    cycle is curated, so it belongs to no cycle rather than the last one."""
+    """The cycle planned but not yet curated at `at`, or None (R266)."""
     if not at:
         return None
     for c in sorted(cycles, key=lambda c: c["id"], reverse=True):
-        planned, curated = parse_time(c.get("planned_at")), parse_time(c.get("curated_at"))
+        planned, curated = timefmt.parse(c.get("planned_at")), timefmt.parse(c.get("curated_at"))
         if planned and planned <= at and (curated is None or at < curated):
             return c["id"]
     return None
@@ -181,15 +166,15 @@ def collect(cfg, cycle=None):
         s.role, s.status = r["role"], r["status"]
         if r["cycle"] is not None:
             s.cycle = r["cycle"]
-        s.times["session"] = [parse_time(r["created_at"]),
-                              parse_time(r["updated_at"]) if r["status"] != "active" else None]
+        s.times["session"] = [timefmt.parse(r["created_at"]),
+                              timefmt.parse(r["updated_at"]) if r["status"] != "active" else None]
     for t in tasks:
         if not t.get("session"):
             continue
         s = get(t["session"])
         s.role, s.cycle = s.role or "worker", t["cycle"]
         s.task = (t["shortname"], t["status"])
-        s.times["task"] = [parse_time(t.get("started_at")), parse_time(t.get("done_at"))]
+        s.times["task"] = [timefmt.parse(t.get("started_at")), timefmt.parse(t.get("done_at"))]
     for c in cycles:
         if c.get("planner_session"):
             s = get(c["planner_session"])
@@ -209,7 +194,7 @@ def collect(cfg, cycle=None):
         if s.cycle is None and isinstance(record.get("cycle"), int):
             s.cycle = record["cycle"]
         s.usage.append(record)
-        end = parse_time(record.get("recorded_at"))
+        end = timefmt.parse(record.get("recorded_at"))
         if end:
             ms = record.get("duration_ms")
             start = end - timedelta(milliseconds=ms) if usage.is_number(ms) else None
@@ -219,11 +204,11 @@ def collect(cfg, cycle=None):
             if span[1] is None or end > span[1]:
                 span[1] = end
     for action in read_jsonl(cfg.action_log):
-        session_event(get, action, parse_time(action.get("at")))
+        session_event(get, action, timefmt.parse(action.get("at")))
     # The loop start: the earliest start of a session the loop itself recorded.
     loop_start = min((s.span()[0] for s in sessions.values() if s.span()[0]), default=None)
     commits, latest = commits_by_session(cfg)
-    earlier = {}  # sessions known only by trailers, all older than the loop start
+    earlier = {}  # known only by trailers, all older than the loop start: an earlier loop's
     for name, repos in commits.items():
         if name not in sessions and loop_start and latest.get(name) \
                 and latest[name] < loop_start:
@@ -284,9 +269,13 @@ def notes(records, upath, have_usage, earlier=None):
     return out
 
 
-def _minutes(seconds):
-    """A duration as tenkm.timefmt elapsed text ("45s", "1h12m"), or "-"."""
+def _elapsed(seconds):
     return "-" if seconds is None else timefmt.elapsed(seconds)
+
+
+def _agent(u):
+    """The harness's own time for a usage total."""
+    return _elapsed(u["duration_ms"] / 1000) if "duration_ms" in u else "-"
 
 
 def _num(value, fmt="{:,}"):
@@ -294,8 +283,7 @@ def _num(value, fmt="{:,}"):
 
 
 def text(data, now=None, tz=None):
-    """The metrics as readable text tables, with local start times (tenkm.timefmt;
-    `now` and `tz` fix the clock and zone, for tests)."""
+    """The metrics as readable text tables; `now` and `tz` fix the clock, for tests."""
     head = ("cycle", "role", "session", "task", "outcome", "start", "time", "from",
             "commits", "agent", "turns", "in tok", "out tok", "cost", "credits")
     rows = []
@@ -303,31 +291,29 @@ def text(data, now=None, tz=None):
         u = r["usage"]
         rows.append((_num(r["cycle"], "{}"), r["role"], r["session"], r["task"] or "",
                      r["outcome"], timefmt.clock(r["start"], now, tz) if r["start"] else "-",
-                     _minutes(r["duration_s"]),
-                     r["times_from"] or "-", str(sum(r["commits"].values())),
-                     _minutes(u["duration_ms"] / 1000) if "duration_ms" in u else "-",
-                     _num(u.get("num_turns")), _num(u.get("input_tokens")),
+                     _elapsed(r["duration_s"]), r["times_from"] or "-", str(sum(r["commits"].values())),
+                     _agent(u), _num(u.get("num_turns")), _num(u.get("input_tokens")),
                      _num(u.get("output_tokens")), _num(u.get("total_cost_usd"), "${:.2f}"),
                      _num(u.get("credits"), "{:.2f}")))
-    lines = ["Sessions:"] + _table(head, rows)
+    lines = ["Sessions:"] + table([head] + rows)
     head = ("cycle", "role", "sessions", "time", "commits", "agent", "in tok", "out tok", "cost",
             "credits")
     rows = []
     for g in data["summary"]:
         u = g["usage"]
-        time = _minutes(g["duration_s"]) + (f" ({g['untimed']} untimed)" if g["untimed"] else "")
+        time = _elapsed(g["duration_s"]) + (f" ({g['untimed']} untimed)" if g["untimed"] else "")
         rows.append((_num(g["cycle"], "{}"), g["role"], str(g["sessions"]), time,
-                     str(g["commits"]),
-                     _minutes(u["duration_ms"] / 1000) if "duration_ms" in u else "-",
+                     str(g["commits"]), _agent(u),
                      _num(u.get("input_tokens")), _num(u.get("output_tokens")),
                      _num(u.get("total_cost_usd"), "${:.2f}"), _num(u.get("credits"), "{:.2f}")))
-    lines += ["", "By cycle and role:"] + _table(head, rows)
+    lines += ["", "By cycle and role:"] + table([head] + rows)
     if data["notes"]:
         lines += ["", "Notes:"] + [f"- {n}" for n in data["notes"]]
     return "\n".join(lines)
 
 
-def _table(head, rows):
-    widths = [max(len(str(x)) for x in col) for col in zip(head, *rows)]
-    return ["  " + "  ".join(str(x).ljust(w) for x, w in zip(row, widths)).rstrip()
-            for row in [head] + rows]
+def table(rows, indent="  "):
+    """Rows of cells, left-aligned in columns two spaces apart."""
+    widths = [max(len(str(c)) for c in col) for col in zip(*rows)]
+    return [(indent + "  ".join(str(c).ljust(w) for c, w in zip(r, widths))).rstrip()
+            for r in rows]

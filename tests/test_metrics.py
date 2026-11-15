@@ -4,16 +4,16 @@ import json
 import os
 import subprocess
 import sys
-import time
 import unittest
 from contextlib import redirect_stdout
+from datetime import timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import testenv  # noqa: E402,F401  (test config, no caller env: tests/testenv.py)
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from test_loop import LoopCase  # noqa: E402
-from tenkm import cli, metrics, msm  # noqa: E402
+from tenkm import cli, metrics, msm, timefmt  # noqa: E402
 
 
 class MetricsCase(LoopCase):
@@ -30,11 +30,11 @@ class MetricsCase(LoopCase):
     def one_cycle(self):
         """A loop through one curated cycle with two Workers; the planner, accepted
         Worker and curator sessions removed, as the Curator's cleanup leaves them.
-        The cycle is planned in a later second than the operator session started
-        (times have one-second resolution), so the operator is in no cycle."""
-        self.start_loop()
-        time.sleep(1 - time.time() % 1)
+        The operator session starts before the cycle is planned: in no cycle."""
+        op = self.start_loop()
         with self.m() as m:
+            m.db.execute("UPDATE sessions SET created_at = '2026-01-01T09:00:00Z' "
+                         "WHERE name = ?", (op,))
             planner = m.session_create("planner")["name"]
         with msm.transaction(self.cfg.db, caller=planner) as m:
             m.cycle_create({"planner_session": planner, "headline": "h", "tasks": [
@@ -110,9 +110,8 @@ class TestCollect(MetricsCase):
         self.assertTrue(any("No duration for: cycle9-worker1-old" in n for n in data["notes"]))
 
     def test_earlier_loop_trailers_are_left_out(self):
-        """R265/R266: sessions known only by trailers older than the loop start are an
-        earlier loop's history: left out of sessions and summary, with a note
-        (backlog d7f1b6c6). Unknown trailer sessions since the start stay."""
+        """R265 R266: trailer-only sessions older than the loop start are left out,
+        with a note; newer ones stay."""
         planner, w1, w2, curator = self.one_cycle()
         self.commit("project", "cycle4-worker1-old", date="2020-01-01T00:00:00Z")
         self.commit("project", "cycle4-worker1-old", date="2020-01-02T00:00:00Z")
@@ -141,8 +140,8 @@ class TestCollect(MetricsCase):
         row = by[curator]
         start, end = self.logged(curator, "session create"), self.logged(curator, "session done")
         self.assertEqual((row["times_from"], row["start"], row["end"]), ("log", start, end))
-        self.assertEqual(row["duration_s"], (metrics.parse_time(end)
-                                             - metrics.parse_time(start)).total_seconds())
+        self.assertEqual(row["duration_s"], (timefmt.parse(end)
+                                             - timefmt.parse(start)).total_seconds())
         self.assertEqual(by[planner]["times_from"], "log")
 
     def test_cycle_filter_and_missing_usage_log(self):
@@ -189,31 +188,31 @@ class TestCollect(MetricsCase):
         self.assertEqual(outcomes(), expected)
 
     def test_cycleless_sessions_get_only_an_open_cycle(self):
-        """R266: an operator session started while a cycle is open is in that cycle; an
-        Auditor (cycle null) started after the cycle is curated is in no cycle, not
-        in the last one (backlog d7f1b6c6)."""
+        """R266: an operator session is in the cycle open when it starts; an Auditor
+        started after curation is in no cycle."""
         self.start_loop()
-        time.sleep(1 - time.time() % 1)
         with self.m() as m:
             planner = m.session_create("planner")["name"]
         with msm.transaction(self.cfg.db, caller=planner) as m:
             m.cycle_create({"planner_session": planner, "headline": "h", "tasks": [
                 {"shortname": "a", "instructions": "i", "branch": planner}]})
             m.session_status(planner, "done")
-        time.sleep(1.01)  # one-second resolution: start after planned_at
         with self.m() as m:
             op = m.session_create("operator", "mars")["name"]
             curator = m.session_create("curator")["name"]
-        time.sleep(1.01)  # curated_at after the operator's start
         with msm.transaction(self.cfg.db, caller=curator) as m:
             task = m.cycle_get()["tasks"][0]
             m.cycle_curate({"curator_session": curator, "report": "r", "tasks": [
                 {"id": task["id"], "status": "rejected"}]})
             m.session_status(curator, "done")
-        time.sleep(1.01)
         with self.m() as m:
             auditor = m.session_create("auditor")["name"]
             late_op = m.session_create("operator", "venus")["name"]
+            m.db.execute("UPDATE cycles SET planned_at = '2026-01-01T10:00:00Z', "
+                         "curated_at = '2026-01-01T12:00:00Z'")
+            for name, at in ((op, "11:00"), (auditor, "13:00"), (late_op, "13:00")):
+                m.db.execute("UPDATE sessions SET created_at = ? WHERE name = ?",
+                             (f"2026-01-01T{at}:00Z", name))
         by = {r["session"]: r for r in metrics.collect(self.cfg)["sessions"]}
         self.assertEqual((by[op]["role"], by[op]["cycle"], by[op]["outcome"]),
                          ("operator", 1, "active"))
@@ -246,6 +245,7 @@ class TestCommand(MetricsCase):
         data = json.loads(out)
         self.assertEqual(len(data["sessions"]), 4)
         self.assertEqual(self.run_cli("--cycle")[0], 1)
+        self.assertEqual(self.run_cli("--bogus")[0], 1)
 
     def test_kiro_credits(self):
         """R267: kiro-cli's credits are summed per session and per cycle and role."""
@@ -261,13 +261,11 @@ class TestCommand(MetricsCase):
         out = metrics.text(data)
         self.assertIn("credits", out)
         self.assertIn("2.50", out)
-        self.assertEqual(self.run_cli("--bogus")[0], 1)
 
 
 class TestText(unittest.TestCase):
     def test_start_is_local_clock_and_durations_are_elapsed(self):
-        """R26: the text tables read times as 10km status does (tenkm.timefmt)."""
-        from datetime import timedelta, timezone
+        """R26: times read as in 10km status (tenkm.timefmt)."""
         usage = {"duration_ms": 45000}
         data = {"sessions": [{"cycle": 1, "role": "worker", "session": "w", "task": "a",
                               "outcome": "accepted", "start": "2026-11-14T22:05:00Z",
