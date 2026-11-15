@@ -40,6 +40,7 @@ from .locks import lock
 
 EXIT_FAILED, EXIT_RUNNING = 1, 3
 OPERATOR = "operator"  # the name and evidence subdir of `10km gate` runs
+POLL_FIRST, POLL_MAX = 0.05, 1.0  # seconds between checks on a run, backing off
 
 
 def gates(cfg, tier):
@@ -105,6 +106,7 @@ def run_gate(cfg, session, repo, command, wait, evidence=None, scratch=None):
     evidence = evidence or _evidence(cfg)
     passed_path = os.path.join(evidence, "passed.json")
     running_path = os.path.join(evidence, f"running-{key}.json")
+    child = None  # the run, if this call started it
     with lock(cfg, "gate"):
         passed = _load(passed_path, {})
         if cacheable and key in passed:
@@ -128,15 +130,8 @@ def run_gate(cfg, session, repo, command, wait, evidence=None, scratch=None):
             run = {"log": log, "rc": rc_path, "command": command, "repo": repo,
                    "pgid": child.pid}
             _save(running_path, run)
-    deadline = time.time() + wait
-    while not os.path.exists(run["rc"]):
-        if not process._group_exists(run["pgid"]) and not os.path.exists(run["rc"]):
-            with open(run["rc"], "w") as f:  # killed before it could record its status
-                f.write("137\n")
-            break
-        if time.time() >= deadline:
-            return "running", run["log"]
-        time.sleep(1)
+    if not _wait(run, child, wait):
+        return "running", run["log"]
     with lock(cfg, "gate"):
         if _rc(run) == 0:
             if cacheable:
@@ -153,6 +148,33 @@ def run_gate(cfg, session, repo, command, wait, evidence=None, scratch=None):
         except FileNotFoundError:
             pass
         return "failed", run["log"]
+
+
+def _wait(run, child, wait):
+    """Wait up to wait seconds for the run to record its status; True once it has.
+    A run whose process group is gone without a status was killed: record 137.
+    Waits on the child when this call started it, so a quick gate returns as soon
+    as it ends; otherwise polls, from POLL_FIRST seconds backing off to POLL_MAX."""
+    deadline = time.monotonic() + wait
+    interval = POLL_FIRST
+    while not os.path.exists(run["rc"]):
+        if not process._group_exists(run["pgid"]) and not os.path.exists(run["rc"]):
+            with open(run["rc"], "w") as f:  # killed before it could record its status
+                f.write("137\n")
+            return True
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return False
+        step = min(interval, left)
+        if child is not None and child.poll() is None:
+            try:
+                child.wait(step)
+            except subprocess.TimeoutExpired:
+                pass
+        else:
+            time.sleep(step)
+        interval = min(interval * 2, POLL_MAX)
+    return True
 
 
 def _rc(run):

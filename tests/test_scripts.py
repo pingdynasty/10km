@@ -372,6 +372,18 @@ class TestGateScript(GateCase):
         self.assertEqual((again[0]["result"], again[0]["log"]), ("passed", results[0]["log"]))
         self.assertEqual(len(self.loop.evidence(f"{self.name}-*.log")), 1)
 
+    def test_a_quick_gate_returns_well_under_a_second(self):
+        # R34: waiting on the detached run doesn't round a quick gate up to a
+        # second. Best of three distinct runs, so load on the host can't make it flaky.
+        times = []
+        for n in range(3):
+            start = time.monotonic()
+            p, results = self.gate(f"true {n}")
+            times.append(time.monotonic() - start)
+            self.assertExit(p, 0)
+            self.assertEqual(results[0]["result"], "passed")
+        self.assertLess(min(times), 0.8, times)
+
     def test_killed_gate_counts_as_failed_and_is_rerun(self):
         command = "sleep 60"
         p, results = self.gate(command, GATE_WAIT="0")
@@ -387,6 +399,34 @@ class TestGateScript(GateCase):
         p, rerun = self.gate(command, GATE_WAIT="0")
         self.assertExit(p, 3)
         self.assertNotEqual(rerun[0]["log"], results[0]["log"])
+
+
+class TestGateWait(unittest.TestCase):
+    def test_waiting_on_another_calls_run_polls_quickly_then_backs_off(self):
+        # R34: a rerun waiting on a run it didn't start checks often at first,
+        # then at most once a second.
+        from tenkm import gate
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        sleeper = subprocess.Popen(["sleep", "60"], start_new_session=True)
+        self.addCleanup(sleeper.wait)
+        self.addCleanup(sleeper.kill)
+        run = {"rc": os.path.join(tmp, "gate.rc"), "pgid": sleeper.pid}
+        steps = []
+
+        def sleep(seconds):
+            steps.append(seconds)
+            if len(steps) == 8:
+                with open(run["rc"], "w") as f:
+                    f.write("0\n")
+
+        real = gate.time.sleep
+        gate.time.sleep = sleep
+        try:
+            self.assertTrue(gate._wait(run, None, 60))
+        finally:
+            gate.time.sleep = real
+        self.assertEqual(steps, [0.05, 0.1, 0.2, 0.4, 0.8, 1.0, 1.0, 1.0])
 
 
 # --- dispatch ----------------------------------------------------------------
