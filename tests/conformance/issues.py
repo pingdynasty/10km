@@ -13,6 +13,12 @@ MAP = {
              "test_hanging_worker_is_expired_its_work_backlogged_and_the_loop_goes_on",
              "tests/test_scenarios.py:TestRejection."
              "test_branch_failing_validation_is_rejected_and_backlogged"],
+    "R314": "prompts/common.md",  # placeholder: task issue-msm replaces it
+    "R315": "prompts/common.md",  # placeholder: task issue-msm replaces it
+    "R316": "prompts/common.md",  # placeholder: task issue-msm replaces it
+    "R317": "prompts/common.md",  # placeholder: task issue-msm replaces it
+    "R318": "prompts/common.md",  # placeholder: task issue-msm replaces it
+    "R319": "prompts/common.md",  # placeholder: task issue-msm replaces it
 }
 
 PENDING = set()

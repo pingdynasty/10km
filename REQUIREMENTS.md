@@ -184,9 +184,10 @@ Issue   { id: uuid,  # R99
           resolver_role: planner|curator|auditor|operator,
           severity: low|high|blocking,
           urgent_if: string,
-          status: open|resolved,
+          status: open|answered|resolved,
           branch: string,
           created_at: time, 
+		  answered_at: time,
 		  resolved_at: time,
 		  resolution: string }
 
@@ -207,7 +208,7 @@ cycle curate  # R102
 ```
 **R103** State is stored in a database that supports transactions.
 **R104** Sessions and Status reflect a point in time. 
-**R105** Cycles, Tasks, Audits and Issues accumulate. **R106** They are kept for metrics and analysis, but are disposable. **R107** Only the operator decides when they are archived or removed, and may delegate this to an agent. **R108** Removal must not affect the current cycle, open issues, or active sessions.
+**R105** Cycles, Tasks, Audits and Issues accumulate. **R106** They are kept for metrics and analysis, but are disposable. **R107** Only the operator decides when they are archived or removed, and may delegate this to an agent. **R108** Removal must not affect the current cycle, unresolved (open or answered) issues, or active sessions.
 
 ### Phase Transitions
 **R109** Planner session `done`: if the current cycle is open: `execute`, or `curate` if it has no tasks.
@@ -279,16 +280,21 @@ Notes:
 ### Resume
 **R169** Only the operator can resume a stopped loop: 
 - **R170** start an operator session
-- **R171** resolves blocking escalations
+- **R171** answers blocking escalations
 - **R312** may update the goals
 - **R172** set the operator session to done
 - **R173** call `loop resume`
 
-**R313** `msm loop resume` refuses with EPERM while a blocking escalation assigned to the operator is open.
+**R313** `msm loop resume` refuses with EPERM while a blocking escalation assigned to the operator is open; an answered one doesn't count.
 
 ## Issues
 **R174** There are two types of issues: Escalation, and Backlog.
 **R175** Issues from unmerged work (expired, incomplete, or rejected) should reference its branch.
+**R314** An issue's status goes open, then answered, then resolved.
+**R315** The assignee answers an issue: it sets status answered with the answer or decision in `resolution`; msm sets `answered_at`. **R316** The operator answers operator escalations with `msm issue update`.
+**R317** The role that raised an issue (the role of its `owner_session`) owns the follow-up: it reads the answered issues its role raised, acts on the answer (a plan change, a backlog item, a task), then sets status resolved; msm sets `resolved_at`.
+**R318** The assignee may resolve an issue directly, without answering it first, when it leaves no follow-up for another role: a backlog item it has done, or an issue its own role raised or that has no `owner_session`.
+**R319** Only open issues wait for an answer.
 
 ## Escalations
 **R176** Issues can be escalated by any role to the Planner, Auditor or Curator.
@@ -305,8 +311,8 @@ Notes:
 ## Planner
 **R184** It is launched with its session name. **R185** It reads its session.
 **R186** It reads the plan, open backlog items, and the last curator report.
-**R187** It reads open escalations.
-**R188** It may resolve escalations.
+**R187** It reads open escalations. **R320** It reads answered issues raised by Planners.
+**R188** It may answer or resolve escalations.
 **R189** It may consolidate, reprioritise, or prune the backlog.
 **R190** It updates the plan and decides the headline (focus/goal/purpose of cycle).
 **R191** It plans the cycle tasks.
@@ -324,7 +330,7 @@ Notes:
 
 ## Curator
 **R203** The Curator agent runs these steps in order. **R204** Steps marked (script) are deterministic scripts that it calls. **R205** Scripts refuse to run unless the Curator session is active.
-**R206** Scripts never remove branches referenced by open issues.
+**R206** Scripts never remove branches referenced by unresolved (open or answered) issues.
 
 **R207** Step 1: Prepare (script `curate-prepare`)
 **R208** It removes done Curator sessions, and expired Curator and Planner sessions, with their worktrees and branches.
@@ -350,7 +356,7 @@ Note: Selection makes sure that operator and Auditor work is curated as soon as 
 - **R227** incomplete work is either backlogged or discarded
 
 **R228** Step 5: Read
-**R229** It reads the plan, goals, open escalations, the current cycle, and audits since the cycle was planned.
+**R229** It reads the plan, goals, open escalations, the current cycle, and audits since the cycle was planned. **R321** It reads answered issues raised by Curators.
 
 **R230** Step 6: Evaluate
 For each done or included expired Worker session:
@@ -372,9 +378,9 @@ If any gate fails:
 **R243** Step 8: Assess
 **R244** It evaluates milestones, goals and deliverables
 **R245** It may update the plan and backlog.
-**R246** It may resolve escalations.
+**R246** It may answer or resolve escalations.
 **R247** If the project is done, or `Loop.empty_cycles` has reached the idle limit from config.env, create a blocking operator escalation.
-**R248** If there are blocking operator escalations, notify the operator.
+**R248** If there are open blocking operator escalations, notify the operator.
 
 **R249** Step 9: Publish (script `curate-publish`)
 **R250** The script fast-forwards main onto the Curator branch in each project repo, then in the loop repo.
@@ -387,20 +393,20 @@ If the selection includes a Planner session:
 **R256** It removes the selected sessions with their worktrees and branches.
 
 **R257** Step 11: Exit
-**R258** If there are blocking operator escalations, it calls `loop stop` with the reason.
+**R258** If there are open blocking operator escalations, it calls `loop stop` with the reason.
 **R259** It sets the Curator session to done (phase = plan if the cycle is not open).
 
 ## Auditor
 **R260** It is launched with its session name. **R261** It reads its session.
 **R262** It reads its prompt and the last audit.
 **R263** It reads previous learnings from LEARNINGS.md.
-**R264** It reads any open escalations.
+**R264** It reads any open escalations. **R322** It reads answered issues raised by Auditors.
 **R265** It retrieves a git log summary since last audit.
 **R266** It analyses git history for time spent per role and cycle.
 **R267** It may analyse agent harness metrics for tokens or credits used per role and cycle.
 **R268** It retrieves the sizes and growth of prompt files.
 **R269** It evaluates progress against the goals, deliverables and plan.
-**R270** It looks for recurring expired tasks, and long-running or expired sessions.
+**R270** It looks for recurring expired tasks, and long-running or expired sessions. **R323** It flags issues left answered for long.
 **R271** It may trim files by summarizing, culling or archiving.
 **R272** It may remove merged git branches.
 **R273** It may update role prompts.
@@ -408,7 +414,7 @@ If the selection includes a Planner session:
 **R275** It may instruct the Curator to relax or tighten validation criteria.
 **R276** It may clarify definitions of done, e.g. for deliverables, milestones, goals.
 **R277** It may create scripts to automate common agent tasks.
-**R278** It may resolve open escalations.
+**R278** It may answer or resolve open escalations.
 **R279** If it can fix a problem itself, it does so. If not, it may create backlog items or escalations.
 **R280** It may add to LEARNINGS.md if the learnings are general.
 **R281** It stores an audit report in the database.

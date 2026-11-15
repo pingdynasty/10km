@@ -25,6 +25,7 @@ MAP = {
     "R196": [(P, "Finish with `msm session done <session>`. This sets the phase to execute, or "
                  "to curate if the cycle has no tasks."),
              M + "test_full_cycle", M + "test_empty_cycle_goes_to_curate"],
+    "R320": "prompts/planner.md",  # placeholder: task issue-prompts replaces it
 }
 
 PENDING = set()
