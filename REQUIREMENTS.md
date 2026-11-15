@@ -17,7 +17,7 @@ Status: Get a project status report
 ## Git Repositories and File System
 There is one loop repo, and one or more project repos configured at kickoff.
 The loop repo contains its scripts and prompts, the plan, goals, deliverables, BACKLOG.md, LEARNINGS.md. The database is a file at a configured path, outside the repos.
-Configuration (project repos, main branch, launcher, agent commands, time-outs, auditor time, timezone and cycles, notification action, backlog size, max workers, validation gates, idle cycle limit) is in `config.env` in the loop repo. Scripts read it from the central loop worktree.
+Configuration is in `config.env` in the loop repo (see Configuration below). Scripts read it from the central loop worktree.
 The operator may provide one or more pre-existing project repos for the loop to work on.
 If not, a new project repo is created during kickoff.
 Each session has a directory with git worktrees and scratch files.
@@ -50,6 +50,20 @@ root/central/project-repo2/
 - Commit trailers: every agent commit carries a `Loop-Session:` trailer. The session script or the role prompt sets it. With trailers, the Auditor can attribute work even after branches are gone.
 - Harness sessions: name each coding-harness session after the loop session, or record the harness session name in a trailer. That lets the Auditor join token and time metrics to role and cycle.
 
+### Configuration
+- Project repos
+- Database path
+- Main branch
+- Commit identity
+- Launcher and agent commands
+- Session time-outs
+- Max workers
+- Auditor daily time, timezone and cycle limit
+- Idle cycle limit
+- Backlog size
+- Worker and validation gates
+- Notification action
+
 ## State Machine
 Loop state is managed through a deterministic script with atomic transactions.
 The state machine manages only the database. It does not touch files or git.
@@ -70,6 +84,7 @@ msm session remove <name>
 msm task get|remove <id> | --session <name>
 msm task update <id> | --session <name> <json>
 msm task list [filter]
+msm task batch <verdicts-json> [<cycle-curate-json>]
 
 msm cycle create|curate {json}
 msm cycle get|list|update|remove ...
@@ -97,6 +112,7 @@ The state machine returns exit status:
 8. `loop stop <reason>`: stopped = true, reason = <reason>.
 
 Changing loop or session status updates `updated_at`.
+An expired session cannot be set to done.
 Creating a Cycle sets `id: (Loop.current_cycle + 1)`, `status: open` and `planned_at`.
 Curating a Cycle sets `curated_at` and `status: closed`.
 Creating a Task sets `cycle`, `status: waiting`, and `created_at`.
@@ -241,7 +257,7 @@ The launcher is configured for the loop. The default process launcher runs an ag
 
 ### Session Time-out
 The Dispatcher times out sessions that have run longer than the configured limit. Operator sessions are never timed out.
-It asks the launcher to stop the agent (process launcher: SIGTERM, a short grace period, then SIGKILL) and sets the session status to expired. If the launcher cannot stop it, the Dispatcher notifies the operator and leaves the session active.
+It asks the launcher to stop the agent (process launcher: SIGTERM, a short grace period, then SIGKILL) and sets the session status to expired. If the launcher cannot confirm the agent stopped, the Dispatcher also creates a non-blocking operator escalation naming the session.
 The Dispatcher may also expire sessions whose launcher reports them not running, after a start grace period. Sessions not launched by the Dispatcher have no handle.
 
 Notes:
@@ -294,7 +310,7 @@ The worker agent performs the work in the worktree, and commits to the session b
 When finished, it sets the session to done (this also sets the task to done).
 
 ## Curator
-The Curator agent runs these steps in order. Steps marked (script) are deterministic scripts that it calls.
+The Curator agent runs these steps in order. Steps marked (script) are deterministic scripts that it calls. Scripts refuse to run unless the Curator session is active.
 Scripts never remove branches referenced by open issues.
 
 Step 1: Clean up (script `curate-clean`)
@@ -392,7 +408,7 @@ When done, kickoff sets its session to done and calls `loop start`. The Curator 
 ## Notification
 The operator notification mechanism should be a deterministic action configured during Kickoff.
 The default notification is to append to NOTIFICATIONS.md in the central loop worktree. The file is gitignored, so notifications are immediate and don't depend on a merge.
-Unless given other instructions, the loop only notifies the operator when it stops.
+Unless given other instructions, the loop only notifies the operator of blocking escalations and fatal errors.
 
 # Test Scripts
 Replace agent command with test invocation: `LOOP_AGENT=test.sh $SESSION`
