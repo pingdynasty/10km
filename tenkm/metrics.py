@@ -64,7 +64,9 @@ def commits_by_session(cfg):
         if rc != 0:
             continue
         for chunk in out.split("\0"):
-            for name in {v.strip() for v in chunk.splitlines() if v.strip()}:
+            # Trailers are agent-written: skip values that could carry terminal escapes.
+            for name in {v.strip() for v in chunk.splitlines() if v.strip().isprintable()
+                         and v.strip()}:
                 repos = found.setdefault(name, {})
                 repos[repo] = repos.get(repo, 0) + 1
     return found
