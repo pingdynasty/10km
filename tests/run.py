@@ -33,8 +33,12 @@ CODE = os.path.dirname(TESTS)
 AGENT_TESTS = os.path.join(TESTS, "agent")  # opt-in: tests that run real agents
 
 # Modules with slow tests (whole loops with the fake agent, or scripts run as
-# subprocesses), slowest first: started first, to keep them off the critical path.
-SLOW = ("test_scenarios", "test_curate_scripts", "test_scripts", "test_init")
+# subprocesses), by measured seconds per unit, slowest first: started first, so the
+# run ends on short units and the long ones stay off the critical path.
+SLOW = ("test_metrics_e2e", "test_scenarios", "test_scenarios_more", "test_curate_scripts",
+        "test_curate", "test_requirements_curator", "test_requirements_auditor",
+        "test_requirements_dispatch", "test_scripts", "test_loop", "test_requirements_loop",
+        "test_metrics", "test_init")
 
 # A child process: `python3 -m unittest <id>` with the test directory and tests/
 # on the path, in the test environment (tests/testenv.py).
