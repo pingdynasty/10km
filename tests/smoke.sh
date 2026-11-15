@@ -1,11 +1,22 @@
 #!/usr/bin/env bash
-# End-to-end smoke test with a fake agent. Runs in the container:
-#   docker build -t 10km . && docker run --rm 10km /opt/10km/tests/smoke.sh
+# End-to-end smoke test with a fake agent, in the container or on a Linux or
+# macOS host (needs bash, git, jq and python3 3.9+):
+#   make smoke        # docker build -t 10km . && docker run --rm 10km /opt/10km/tests/smoke.sh
+#   make smoke-host   # tests/smoke.sh
+# It runs in a temporary directory, removed on exit, with this checkout's bin/
+# and tests/ first on PATH, and ignores the settings of any loop it runs inside.
 set -euo pipefail
-export LOOP_ROOT=$(mktemp -d) MSM_DB=$(mktemp -d)/loop.db
-export LOOP_AGENT=fake-agent DISPATCH_INTERVAL=1 PATH="/opt/10km/tests:$PATH"
 here="$(cd "$(dirname "$0")/.." && pwd)"
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/10km-smoke.XXXXXX")
+trap 'rm -rf "$tmp"' EXIT
+unset LOOP_SESSION SESSION LOOP_CONFIG PROMPT_FILE FIRST_MESSAGE MSM_LOG PYTHONPATH "${!TENKM_@}"
+mkdir "$tmp/loop" "$tmp/data"
+export LOOP_ROOT="$tmp/loop" MSM_DB="$tmp/data/loop.db"
+export LOOP_AGENT=fake-agent DISPATCH_INTERVAL=1 PATH="$here/bin:$here/tests:$PATH"
 
+# Ignore the host's system and global git config (a system core.hooksPath, for
+# one, would stop 10km init installing the loop's hooks).
+export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
 export GIT_AUTHOR_NAME=smoke GIT_AUTHOR_EMAIL=smoke@localhost
 export GIT_COMMITTER_NAME=smoke GIT_COMMITTER_EMAIL=smoke@localhost
 
@@ -36,6 +47,11 @@ for _ in $(seq 90); do
 done
 
 msm loop stop >/dev/null
+# Let sessions already launched finish before the temporary directory goes.
+for _ in $(seq 30); do
+  [ "$(msm session list '{"status": "active"}' | jq length)" = 0 ] && break
+  sleep 1
+done
 fail() { echo "FAIL: $1"; exit 1; }
 [ "$(msm cycle get 1 | jq -r .status)" = closed ] || fail "cycle 1 not closed"
 [ "$(msm cycle get 1 | jq -r '.tasks[0].status')" = accepted ] || fail "task not accepted"
