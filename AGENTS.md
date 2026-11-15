@@ -59,3 +59,9 @@ the Dispatcher or the Curator flow.
 - Planning, progress and project-specific files stay on working branches.
 - One topic per commit. Subject in the imperative, under 72 characters; the body
   says why.
+
+## Customising the loop
+
+If you are running a loop in a 10km fork then feel free to adapt prompts and
+scripts to your project needs. The database is best left alone and the `msm` state
+machine should be the last thing that you touch.
