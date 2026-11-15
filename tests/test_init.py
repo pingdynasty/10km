@@ -218,7 +218,7 @@ class InitHooksTest(unittest.TestCase):
         old_git = (129, "", "error: unknown option `show-scope'")
         with mock.patch.object(gitutil, "run", return_value=old_git):
             with self.assertRaisesRegex(msm.MSMError, "git 2.26"):
-                init.install_hooks(None, self.project, self.inherited)
+                init.install_hooks(self.project, self.inherited)
         self.assertEqual(self.config("core.hooksPath"), self.inherited)
 
 

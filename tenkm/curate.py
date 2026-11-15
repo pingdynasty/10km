@@ -113,7 +113,7 @@ def conflicts(path):
 def central_on_main(cfg, repo):
     central = cfg.repo_path(repo)
     branch = gitutil.main_branch(cfg, repo)
-    rc, head, _ = gitutil.run(cfg, central, "symbolic-ref", "--short", "HEAD")
+    rc, head, _ = gitutil.run(central, "symbolic-ref", "--short", "HEAD")
     if rc != 0 or head != branch:
         raise CurateError(f"central/{repo} is not on its main branch {branch}")
     return central
@@ -139,8 +139,8 @@ def prepare(cfg):
             or (s["cycle"] == cur["id"] and cur["status"] == "closed"))
         if s["role"] == "curator" or (s["role"] == "planner" and s["status"] == "expired") \
                 or leftover:
-            sessions.remove(cfg, s["name"], protected)
             removed.append(s["name"])
+    sessions.remove_all(cfg, removed, protected)
     return {"removed": removed}
 
 
@@ -200,7 +200,7 @@ def resolve_items(cfg, words, known=None):
         sha = sha if sep and repo in cfg.repos() else word
         found = []
         for r in candidates:
-            rc, full, _ = gitutil.run(cfg, cfg.repo_path(r), "rev-parse", "-q", "--verify",
+            rc, full, _ = gitutil.run(cfg.repo_path(r), "rev-parse", "-q", "--verify",
                                       f"{sha}^{{commit}}")
             if rc == 0:
                 found.append((r, full))
@@ -250,7 +250,7 @@ def merge(cfg, words):
         report["applied"].append(item.label())
     if state.get("own_to_replay"):
         for repo, sha in list(state["own_to_replay"]):
-            stop = _cherry_pick(cfg, c, state, Item("own", sha, repo), words)
+            stop = _cherry_pick(c,state, Item("own", sha, repo), words)
             if stop:
                 report["conflict"] = stop
                 return report
@@ -273,13 +273,13 @@ def _repos_for(cfg, item, known):
 
 def _apply(cfg, c, state, item, words, known):
     if item.kind == "commit":
-        return _cherry_pick(cfg, c, state, item, words)
+        return _cherry_pick(c,state, item, words)
     for repo in _repos_for(cfg, item, known):
         path = c.worktree(repo)
         if is_merged(path, item.name):
             continue
         before = gitutil.git(path, "rev-parse", "HEAD")
-        rc, _, err = gitutil.run(cfg, path, *RERERE, "merge", "--no-ff", "--no-edit",
+        rc, _, err = gitutil.run(path, *RERERE, "merge", "--no-ff", "--no-edit",
                                  "-m", f"Merge {item.name}", item.name)
         if rc == 0:
             continue
@@ -292,10 +292,10 @@ def _apply(cfg, c, state, item, words, known):
     return None
 
 
-def _cherry_pick(cfg, c, state, item, words):
+def _cherry_pick(c,state, item, words):
     path = c.worktree(item.repo)
     before = gitutil.git(path, "rev-parse", "HEAD")
-    rc, out, err = gitutil.run(cfg, path, *RERERE, "cherry-pick", "-x", item.name)
+    rc, out, err = gitutil.run(path, *RERERE, "cherry-pick", "-x", item.name)
     own = item.kind == "own"  # replayed own commits stay "own", so later rebuilds keep them
     if rc == 0:
         if not own:
@@ -303,7 +303,7 @@ def _cherry_pick(cfg, c, state, item, words):
         return None
     if picking(path) and not conflicts(path):
         if "empty" in (out + err).lower() or not gitutil.git(path, "diff", "--cached", "--name-only"):
-            gitutil.run(cfg, path, "cherry-pick", "--skip")  # already applied
+            gitutil.run(path, "cherry-pick", "--skip")  # already applied
             return None
         _continue(path)
         if not own:
@@ -531,8 +531,8 @@ def cleanup(cfg):
                                 f"{mains[repo]}..{s['name']}")
             if count != "0" and s["name"] not in protected:
                 unpublished.append({"session": s["name"], "repo": repo, "commits": int(count)})
-        sessions.remove(cfg, s["name"], protected)
         removed.append(s["name"])
+    sessions.remove_all(cfg, removed, protected)
     return {"removed": removed, "unpublished_removed": unpublished, "warnings": warnings}
 
 

@@ -43,6 +43,7 @@ class Pass:
         self.now = now or datetime.now(timezone.utc)
         self.launcher = launchers.get(cfg)
         self.notices = []
+        self.setup = {}  # sessions.repo_setup, read by the pass's first launch
 
     def notice(self, title, body="", priority="default", key=None):
         self.notices.append((title, body, priority, key))
@@ -117,7 +118,7 @@ class Pass:
         session = None
         for _ in range(3):
             try:
-                session = sessions.create(self.cfg, role)
+                session = sessions.create(self.cfg, role, setup=self.setup)
                 break
             except sessions.SessionError as e:
                 if e.code == sessions.EAGAIN:

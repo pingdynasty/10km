@@ -34,7 +34,8 @@ MAP = {
     "R128": [RD + "TestSessionScriptRules.test_creation_waits_for_the_session_lock",
              NAMES],
     "R129": S + "test_precondition_failures_exit_with_msm_code_and_leave_nothing",
-    "R130": CREATES,
+    "R130": [CREATES, "tests/test_curate.py:TestGitCalls."
+             "test_a_pass_reads_each_repos_setup_once_for_all_its_launches"],
     "R131": [S + "test_branch_name_taken_is_eagain_and_rolls_back_other_repos",
              S + "test_git_failure_is_egit_and_rolls_back",
              "tests/test_loop.py:TestSessions.test_git_failure_rolls_back"],

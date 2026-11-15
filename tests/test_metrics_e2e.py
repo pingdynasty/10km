@@ -64,7 +64,7 @@ class TestMetricsOfACuratedLoop(ScenarioCase):
         self.drive(curated_and_recorded, **settings)
         cycle = self.cycles()[0]
         verdicts = {t["status"]: t for t in self.tasks(1).values()}
-        self.assertEqual(sorted(verdicts), ["accepted", "rejected"], self.describe())
+        self.assertEqual(sorted(verdicts), ["accepted", "rejected"], self.state())
         good, bad = verdicts["accepted"]["session"], verdicts["rejected"]["session"]
 
         data = json.loads(self.metrics("--json", "--cycle", "1"))
@@ -75,7 +75,7 @@ class TestMetricsOfACuratedLoop(ScenarioCase):
                     good: ("worker", verdicts["accepted"]["shortname"], "accepted"),
                     bad: ("worker", verdicts["rejected"]["shortname"], "rejected"),
                     cycle["curator_session"]: ("curator", None, "curated")}
-        self.assertEqual(set(by_name), set(expected), self.describe())
+        self.assertEqual(set(by_name), set(expected), self.state())
         for name, (role, task, outcome) in expected.items():
             r = by_name[name]
             self.assertEqual((r["role"], r["cycle"], r["task"]), (role, 1, task), r)

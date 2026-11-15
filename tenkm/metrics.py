@@ -59,7 +59,7 @@ def commits_by_session(cfg):
         if not os.path.isdir(path):
             continue
         branch = gitutil.main_branch(cfg, repo)
-        rc, out, _ = gitutil.run(cfg, path, "log", branch,
+        rc, out, _ = gitutil.run(path, "log", branch,
                                  f"--format=%x00%(trailers:key={TRAILER},valueonly)")
         if rc != 0:
             continue
