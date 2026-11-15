@@ -99,14 +99,14 @@ class TestCollect(MetricsCase):
                          ("auditor", 1, "usage"))
         self.assertEqual(auditor["start"], "2026-01-01T10:59:00Z")
         self.assertEqual(auditor["duration_s"], 60)
-        old = by["cycle9-worker1-old"]
+        old = by["cycle9-worker1-old"]  # known only by its commits
         self.assertEqual((old["role"], old["cycle"], old["outcome"], old["times_from"]),
-                         ("worker", 9, "unknown", "commits"))
+                         ("unknown", None, "unknown", None))
 
         workers = [g for g in data["summary"] if (g["cycle"], g["role"]) == (1, "worker")][0]
         self.assertEqual((workers["sessions"], workers["commits"]), (2, 2))
         self.assertEqual(workers["usage"]["input_tokens"], 10)
-        self.assertTrue(any("activity window" in n for n in data["notes"]))  # old worker
+        self.assertTrue(any("No duration for: cycle9-worker1-old" in n for n in data["notes"]))
 
     def logged(self, name, command):
         with open(self.cfg.action_log) as f:
@@ -122,22 +122,6 @@ class TestCollect(MetricsCase):
         self.assertEqual(row["duration_s"], (metrics.parse_time(end)
                                              - metrics.parse_time(start)).total_seconds())
         self.assertEqual(by[planner]["times_from"], "log")
-        self.assertFalse(any("activity window" in n for n in metrics.collect(self.cfg)["notes"]))
-
-    def test_log_without_session_lines_falls_back_to_activity_windows(self):
-        planner, w1, w2, curator = self.one_cycle()
-        with open(self.cfg.action_log) as f:
-            lines = [x for x in f.read().splitlines()
-                     if not json.loads(x)["command"].startswith("session ")]
-        with open(self.cfg.action_log, "w") as f:
-            f.write("".join(x + "\n" for x in lines))
-        data = metrics.collect(self.cfg)
-        by = {r["session"]: r for r in data["sessions"]}
-        self.assertEqual((by[planner]["times_from"], by[curator]["times_from"]),
-                         ("actions", "actions"))
-        self.assertEqual(by[w1]["times_from"], "task")
-        self.assertTrue(any("activity window" in n for n in data["notes"]))
-        self.assertIn("~", metrics.text(data))
 
     def test_cycle_filter_and_missing_usage_log(self):
         planner, w1, w2, curator = self.one_cycle()
@@ -206,7 +190,6 @@ class TestCommand(MetricsCase):
         self.assertIn("By cycle and role:", out)
         self.assertIn(w1, out)
         self.assertIn("accepted", out)
-        self.assertNotIn("~", out)  # planner and curator times come from the log
         code, out = self.run_cli("--json", "--cycle", "1")
         self.assertEqual(code, 0)
         data = json.loads(out)

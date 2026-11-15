@@ -3,8 +3,8 @@ accepted, one rejected) and a Curator run with the fake agent printing usage
 (FAKE_USAGE=1); the metrics then list every session with its role, cycle,
 outcome, usage and commits. See tests/test_scenarios.py for `ScenarioCase`.
 
-Durations and the "~" marker are only checked to be present: how times are
-pieced together for removed sessions is covered in tests/test_metrics.py.
+Durations are only checked to be present: how times are pieced together for
+removed sessions is covered in tests/test_metrics.py.
 
 Run: python3 -m unittest tests.test_metrics_e2e   (needs bash, git and jq)
 """
