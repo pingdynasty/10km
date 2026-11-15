@@ -109,7 +109,7 @@ msm issue list '{"status": "open", "assignee_role": "operator"}'
 msm issue update <id> '{"status": "resolved", "resolution": "..."}'
 ```
 
-`10km metrics` lists every session the loop still knows of, by cycle and role: its task and outcome, start and duration, commits on main by `Loop-Session:` trailer, and harness usage (agent time, turns, tokens, cost) from `usage.jsonl` next to the database; then totals per cycle and role. The Curator removes sessions once curated, so times come from what survives: the session row, the Worker's task, usage records, or failing those the session's first and last state change in the action log or first and last commit, marked `~` as an activity window rather than the whole session. `--json` gives the same data for agents.
+`10km metrics` lists every session the loop still knows of, by cycle and role: its task and outcome, start and duration, commits on main by `Loop-Session:` trailer, and harness usage (agent time, turns, tokens, cost) from `usage.jsonl` next to the database; then totals per cycle and role. The Curator removes sessions once curated, so times come from what survives: the session row, the Worker's task, the session's create and done or expired lines in the action log, usage records, or failing those (action logs from before msm logged sessions) the session's first and last state change in the action log or first and last commit, marked `~` as an activity window rather than the whole session. `--json` gives the same data for agents.
 
 ## Recovering from a stop
 
