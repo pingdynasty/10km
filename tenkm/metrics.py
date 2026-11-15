@@ -83,6 +83,8 @@ def session_event(get, action, at):
     s = get(name)
     if not s.role and isinstance(action.get("role"), str):
         s.role = action["role"]
+    if s.cycle is None and isinstance(action.get("cycle"), int):
+        s.cycle = action["cycle"]
     s.logged[slot] = s.logged[slot] or at
     if slot == 1 and not s.logged_outcome:
         s.logged_outcome = action["command"].split()[1]
