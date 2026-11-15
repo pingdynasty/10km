@@ -71,23 +71,32 @@ class TestSessionScriptRules(ScriptCase):
 
 class TestDispatchRules(ScriptCase):
     def test_run_loop_dispatches_every_interval(self):  # R136
+        """Each pass logs when it starts: passes keep coming, at least the interval
+        apart. Waits on the passes, so a loaded host only makes it slower."""
         log = os.path.join(self.tmp, "passes.log")
         fake = os.path.join(self.loop.central, "loop", "bin", "dispatch")
         with open(fake, "w") as f:
-            f.write(f"#!/bin/sh\necho pass >> '{log}'\n")
+            f.write(f"#!{sys.executable}\nimport time\n"
+                    f"with open({log!r}, 'a') as f:\n    f.write(f'{{time.time()}}\\n')\n")
         os.chmod(fake, 0o755)
         p = subprocess.Popen([os.path.join(BIN, "run-loop")], start_new_session=True,
                              env=dict(self.loop.env, DISPATCH_INTERVAL="0.2"),
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        def passes():
+            try:
+                with open(log) as f:
+                    return [float(t) for t in f.read().split()]
+            except (OSError, ValueError):  # not written yet, or mid-write
+                return []
         try:
-            time.sleep(1.5)
+            self.assertTrue(testenv.wait_for(lambda: len(passes()) >= 3, interval=0.05))
         finally:
             os.killpg(p.pid, signal.SIGKILL)
             p.wait()
-        with open(log) as f:
-            passes = len(f.read().split())
-        self.assertGreaterEqual(passes, 3)
-        self.assertLessEqual(passes, 9)
+        starts = passes()
+        gaps = [b - a for a, b in zip(starts, starts[1:])]
+        self.assertGreaterEqual(min(gaps), 0.2, gaps)  # sleeps the interval between passes
 
     def test_done_auditor_gets_a_curator_in_the_execute_phase(self):  # R140
         self.loop.start()
