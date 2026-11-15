@@ -400,3 +400,59 @@ class TestEdgeCases(CurateCase):
             self.assertEqual(curate.merge(self.cfg, [op])["applied"], [])
             self.assertEqual(curate.publish(self.cfg)["published"], ["project", "loop"])
         self.assertEqual(self.central("project", "x.txt"), "x")
+
+
+class TestGitCalls(CurateCase):
+    """The steps batch their git reads: one for-each-ref per repo instead of one
+    show-ref per branch check."""
+
+    def git_calls(self):
+        """A context manager recording the git command lines started inside it."""
+        calls, real = [], subprocess.run
+
+        def record(args, *a, **kw):
+            if args and args[0] == "git":
+                calls.append(args)
+            return real(args, *a, **kw)
+        patcher = mock.patch.object(subprocess, "run", side_effect=record)
+        return calls, patcher
+
+    def count(self, calls, sub):
+        return sum(1 for args in calls if sub in args)
+
+    def test_branches_lists_local_branches_only(self):  # R218
+        central = self.cfg.repo_path("project")
+        subprocess.run(["git", "-C", central, "branch", "team/feature"], check=True)
+        subprocess.run(["git", "-C", central, "tag", "v1"], check=True)
+        w = sessions.create(self.cfg, "operator", "mars")["name"]
+        self.assertEqual(gitutil.branches(self.cfg, "project"), {"main", "team/feature", w})
+        for name in ("main", "team/feature", w, "v1", "nope"):
+            self.assertEqual(name in gitutil.branches(self.cfg, "project"),
+                             gitutil.branch_exists(self.cfg, "project", name), name)
+        self.assertEqual(gitutil.branches(self.cfg, "no-such-repo"), set())
+        self.assertEqual(curate.branch_repos(self.cfg, w), self.cfg.repos())
+        self.assertEqual(curate.branch_repos(self.cfg, "nope"), [])
+
+    def test_merge_and_cleanup_read_branches_once_per_repo(self):  # R217 R221 R256
+        planner, workers = self.cycle_with_workers(
+            ("a.txt", "a"), ("b.txt", "b"), ("c.txt", "c"))
+        cur = self.curator()
+        repos = len(self.cfg.repos())
+        with self.as_session(cur):
+            curate.select(self.cfg)
+            curate.merge(self.cfg, [planner] + workers)
+            calls, patcher = self.git_calls()
+            with patcher:
+                result = curate.merge(self.cfg, [planner, workers[0], workers[2]])  # rebuilds
+            self.assertEqual(result["applied"], [planner, workers[0], workers[2]])
+            self.assertEqual(self.count(calls, "show-ref"), 0)
+            self.assertEqual(self.count(calls, "for-each-ref"), repos)
+            curate.publish(self.cfg, "r", accepted=[workers[0], workers[2]],
+                           rejected=[workers[1]])
+            calls, patcher = self.git_calls()
+            with patcher:
+                out = curate.cleanup(self.cfg)
+        self.assertEqual(self.count(calls, "for-each-ref"), repos)
+        self.assertEqual(out["unpublished_removed"],
+                         [{"session": workers[1], "repo": "project", "commits": 1}])
+        self.assertEqual(sorted(out["removed"]), sorted([planner] + workers))
