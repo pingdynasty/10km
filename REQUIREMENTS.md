@@ -373,7 +373,7 @@ If any gate fails:
 **R244** It evaluates milestones, goals and deliverables
 **R245** It may update the plan and backlog.
 **R246** It may resolve escalations.
-**R247** If the project is done, or `Loop.empty_cycles` has reached the idle limit from config.env, create a blocking operator escalation with reason `done` or `idle`.
+**R247** If the project is done, or `Loop.empty_cycles` has reached the idle limit from config.env, create a blocking operator escalation.
 **R248** If there are blocking operator escalations, notify the operator.
 
 **R249** Step 9: Publish (script `curate-publish`)
@@ -387,7 +387,7 @@ If the selection includes a Planner session:
 **R256** It removes the selected sessions with their worktrees and branches.
 
 **R257** Step 11: Exit
-**R258** If there are blocking operator escalations, it calls `loop stop blocked`.
+**R258** If there are blocking operator escalations, it calls `loop stop` with the reason.
 **R259** It sets the Curator session to done (phase = plan if the cycle is not open).
 
 ## Auditor
