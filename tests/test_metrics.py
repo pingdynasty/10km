@@ -264,5 +264,24 @@ class TestCommand(MetricsCase):
         self.assertEqual(self.run_cli("--bogus")[0], 1)
 
 
+class TestText(unittest.TestCase):
+    def test_start_is_local_clock_and_durations_are_elapsed(self):
+        """R26: the text tables read times as 10km status does (tenkm.timefmt)."""
+        from datetime import timedelta, timezone
+        usage = {"duration_ms": 45000}
+        data = {"sessions": [{"cycle": 1, "role": "worker", "session": "w", "task": "a",
+                              "outcome": "accepted", "start": "2026-11-14T22:05:00Z",
+                              "duration_s": 4320, "times_from": "db", "commits": {"p": 2},
+                              "usage": usage}],
+                "summary": [{"cycle": 1, "role": "worker", "sessions": 1, "duration_s": 187200,
+                             "untimed": 0, "commits": 2, "usage": usage}],
+                "notes": []}
+        out = metrics.text(data, now="2026-11-15T18:47:10Z",
+                           tz=timezone(timedelta(hours=1), "CET"))
+        self.assertRegex(out, r"accepted\s+Nov 14 23:05\s+1h12m\s+db\s+2\s+45s")
+        self.assertRegex(out, r"worker\s+1\s+2d4h\s+2\s+45s")
+        self.assertNotIn("2026-11-14T", out)
+
+
 if __name__ == "__main__":
     unittest.main()
