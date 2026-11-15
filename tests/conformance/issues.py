@@ -13,14 +13,17 @@ MAP = {
              "test_hanging_and_dead_workers_are_expired_their_work_backlogged",
              "tests/test_scenarios.py:TestRejection."
              "test_conflicting_and_failing_branches_are_rejected_and_backlogged"],
-    "R314": RR + "TestIssueLifecycle.test_status_goes_open_answered_resolved",
+    "R314": [RR + "TestIssueLifecycle.test_status_goes_open_answered_resolved",
+             RR + "TestIssueLifecycle.test_status_cannot_go_back"],
     "R315": RR + "TestIssueLifecycle.test_status_goes_open_answered_resolved",
     "R316": RR + "TestIssueLifecycle.test_operator_answers_operator_escalations",
     "R317": [RR + "TestIssueLifecycle.test_status_goes_open_answered_resolved",
              RR + "TestIssueLifecycle.test_assigner_role_is_set_by_msm"],
-    "R318": RR + "TestIssueLifecycle.test_assignee_may_resolve_without_answering",
-    "R319": "tests/test_requirements_msm.py:TestLoopRecord."
-            "test_resume_is_allowed_once_the_blocking_escalation_is_answered",
+    "R318": [RR + "TestIssueLifecycle.test_assignee_may_resolve_without_answering",
+             RR + "TestIssueLifecycle.test_status_cannot_go_back"],
+    "R319": ["tests/test_requirements_msm.py:TestLoopRecord."
+             "test_resume_is_allowed_once_the_blocking_escalation_is_answered",
+             RR + "TestIssueLifecycle.test_status_cannot_go_back"],
 }
 
 PENDING = set()

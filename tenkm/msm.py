@@ -113,6 +113,8 @@ RESOURCES = {
 HIDDEN = {"seq"}
 USERNAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 UNRESOLVED = ("open", "answered")
+ISSUE_STATUSES = ("open", "answered", "resolved")
+ISSUE_TRANSITIONS = {("open", "answered"), ("open", "resolved"), ("answered", "resolved")}
 
 
 class MSMError(Exception):
@@ -560,16 +562,29 @@ class MSM:
     def update(self, res, key, data):
         self.check_caller()
         self.check_fields(data, RESOURCES[res]["update"])
-        self.get_row(res, key)
+        row = self.get_row(res, key)
         if res == "cycle":
             self.check_open(key)
-        if res == "issue" and data.get("status") in ("answered", "resolved"):
-            data[f"{data['status']}_at"] = now()
+        if res == "issue" and data.get("status") in ISSUE_STATUSES:
+            if self.check_issue_status(row["status"], data["status"]):
+                data[f"{data['status']}_at"] = now()
         if res == "audit" and "period" in data:
             data["period"] = json.dumps(data["period"])
         self.update_row(res, key, data)
         self.log(f"{res} update", id=key, fields=sorted(data))
         return to_dict(self.get_row(res, key))
+
+    @staticmethod
+    def check_issue_status(old, new):
+        """Issues go open, answered, resolved, or open to resolved (R314, R318, R319).
+
+        Setting the current status again is allowed and keeps its timestamp, so a
+        rerun is safe; returns whether the status changes. Other moves are EPERM."""
+        if old == new:
+            return False
+        if (old, new) not in ISSUE_TRANSITIONS:
+            raise MSMError(EPERM, f"issue status cannot go from {old} to {new}")
+        return True
 
     def remove(self, res, key):
         self.check_caller()
@@ -705,7 +720,8 @@ USAGE = """usage: msm <command>
 A filter is a JSON object of field values, e.g. answered issues raised by Planners:
   issue list '{"status":"answered","assigner_role":"planner"}'
 An unknown field is EINVAL; an unknown value matches nothing.
-Issue status goes open, answered, resolved (R314). msm sets assigner_session
+Issue status goes open, answered, resolved, or open to resolved (R314, R318);
+other changes are EPERM. msm sets assigner_session
 and assigner_role from the caller's session (R317)."""
 
 

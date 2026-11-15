@@ -180,6 +180,22 @@ class TestIssueLifecycle(IssueCase):
         self.assertIsNone(resolved["answered_at"])
         self.assertIsNotNone(resolved["resolved_at"])
 
+    def test_status_cannot_go_back(self):  # R314 R318 R319
+        answered = self.ok("issue", "create", '{"type": "escalation", "title": "q"}')
+        answered = self.ok("issue", "update", answered["id"], '{"status": "answered"}')
+        resolved = self.ok("issue", "create", '{"type": "backlog", "title": "b"}')
+        resolved = self.ok("issue", "update", resolved["id"], '{"status": "resolved"}')
+        for issue, status in ((answered, "open"), (resolved, "open"), (resolved, "answered")):
+            with self.subTest(old=issue["status"], new=status):
+                self.fails(2, "issue", "update", issue["id"], json.dumps(
+                    {"status": status, "resolution": "again"}))
+                self.assertEqual(self.ok("issue", "get", issue["id"]), issue)
+        # Setting the same status again, as a rerun does, keeps its timestamp.
+        again = self.ok("issue", "update", answered["id"],
+                        '{"status": "answered", "resolution": "more"}')
+        self.assertEqual((again["resolution"], again["answered_at"]),
+                         ("more", answered["answered_at"]))
+
     def test_assigner_role_is_set_by_msm(self):  # R317
         own = self.as_ok(self.auditor, "issue", "create", '{"type": "backlog", "title": "a"}')
         self.assertEqual((own["assigner_session"], own["assigner_role"]),
