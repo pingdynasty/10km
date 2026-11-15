@@ -19,6 +19,11 @@ AGENT_VARS = ("LOOP_AGENT", "PLANNER_AGENT", "WORKER_AGENT", "CURATOR_AGENT",
               "AUDITOR_AGENT", "OPERATOR_AGENT")
 # Real agent harnesses: no default test may run one.
 HARNESSES = ("claude", "codex", "kiro-cli")
+# The git identity of test commits, and of the loop repos tests create.
+GIT_ID = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
+          "GIT_COMMITTER_EMAIL": "t@t"}
+# A loop repo built once per run by tests/run.py, which tests copy (loop_repo()).
+TEMPLATE_VAR = "TESTS_LOOP_TEMPLATE"
 
 LEAKY = re.compile(r"^(LOOP_|MSM_|TENKM_)|^(SESSION|PROMPT_FILE|FIRST_MESSAGE|ONE_SHOT|"
                    r"SCRATCH_DIR|PYTHONPATH|USAGE_LOG)$|_(AGENT|TIMEOUT|GATES)$")
@@ -39,6 +44,32 @@ def clean_env(env=None):
     clean = {k: v for k, v in env.items() if not LEAKY.search(k) and k not in drop}
     clean["LOOP_CONFIG"] = CONFIG
     return clean
+
+
+def make_template(dest):
+    """Build the run's template loop repo at dest (tests/run.py does, once per run)."""
+    import sys
+    sys.path.insert(0, CODE)
+    from tenkm import init
+    saved = dict(os.environ)
+    try:  # create_loop_repo reads the git identity from os.environ
+        os.environ.update(GIT_ID)
+        init.create_loop_repo(dest, source=CODE)
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+
+
+def loop_repo(dest):
+    """Create a loop repo at dest as init.create_loop_repo(dest) does, a copy of the
+    code with one commit by GIT_ID: a copy of the run's template if tests/run.py
+    made one (TEMPLATE_VAR), which is faster than a fresh repo, else a fresh repo."""
+    import shutil
+    template = os.environ.get(TEMPLATE_VAR)
+    if template and os.path.isdir(os.path.join(template, ".git")):
+        shutil.copytree(template, dest, symlinks=True)
+    else:
+        make_template(dest)
 
 
 def isolate():

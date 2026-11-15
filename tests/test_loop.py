@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import testenv  # noqa: E402,F401  (test config, no caller env: tests/testenv.py)
+import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from tenkm import config, dispatch, init, notify, sessions, msm  # noqa: E402
 
@@ -41,7 +41,7 @@ class LoopCase(unittest.TestCase):
             os.environ.pop(name, None)  # gates run the tests inside a session
         self.cfg = config.load()
         # What kickoff does: a loop repo and a project repo in central/.
-        init.create_loop_repo(self.cfg.repo_path("loop"))
+        testenv.loop_repo(self.cfg.repo_path("loop"))
         project = self.cfg.repo_path("project")
         subprocess.run(["git", "init", "-q", "-b", "main", project], check=True)
         subprocess.run(["git", "-C", project, "commit", "-q", "--allow-empty", "-m", "start"],

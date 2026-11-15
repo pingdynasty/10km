@@ -25,10 +25,8 @@ BIN = os.path.join(CODE, "bin")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
 sys.path.insert(0, CODE)
-from tenkm import init  # noqa: E402
 
-GIT_ID = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
-          "GIT_COMMITTER_EMAIL": "t@t"}
+GIT_ID = testenv.GIT_ID
 SUFFIX = r"[a-z0-9]{8}"
 # Keep the host's system and global git config (hooks, for one, which slow every
 # commit) out of test loops; tests of inherited config set their own.
@@ -64,13 +62,7 @@ class ScriptLoop:
                         LOOP_AGENT="sleep 30", KILL_GRACE="2", **HOST_GIT_OFF)
         self.env.update(settings)
         self.central = os.path.join(self.root, "central")
-        old = dict(os.environ)
-        try:  # create_loop_repo reads the git identity from os.environ
-            os.environ.update(GIT_ID)
-            init.create_loop_repo(os.path.join(self.central, "loop"), source=CODE)
-        finally:
-            os.environ.clear()
-            os.environ.update(old)
+        testenv.loop_repo(os.path.join(self.central, "loop"))
         project = os.path.join(self.central, "project")
         self.git(None, "init", "-q", "-b", "main", project)
         self.git(project, "commit", "-q", "--allow-empty", "-m", "start")
