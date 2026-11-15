@@ -64,6 +64,8 @@ MAP = {
     "R32": ("prompts/curator.md", "`empty_cycles` at `IDLE_CYCLE_LIMIT`"),
     "R33": ("prompts/planner.md", "when the open backlog reaches `BACKLOG_SIZE` from `config.env`"),
     "R34": [S + "TestGateScript.test_tiers_read_their_own_setting",
+            S + "TestGateScript.test_a_quick_gate_returns_well_under_a_second",
+            S + "TestGateWait.test_waiting_on_another_calls_run_polls_quickly_then_backs_off",
             OT + "TestOperatorGate.test_runs_in_central_worktrees_without_a_session",
             OT + "TestDoctor.test_healthy_loop_passes_every_check_and_changes_nothing"],
     "R35": L + "TestNotify.test_commands_get_variables_and_keys_send_once",
