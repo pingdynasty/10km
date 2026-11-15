@@ -4,12 +4,11 @@ A session is a record in the database, a directory, and a branch and worktree in
 every repo, all named after the session. Creation is serialised with a file lock
 and rolled back completely if any step fails.
 """
-import fcntl
 import os
 import shutil
-from contextlib import contextmanager
 
 from . import gitutil, msm
+from .locks import lock
 
 EAGAIN = 4  # the session's branch name is already taken
 EGIT = 5    # git or worktree creation failed
@@ -20,20 +19,6 @@ class SessionError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
-
-
-@contextmanager
-def lock(cfg, name, blocking=True):
-    """An exclusive file lock in the loop's state directory."""
-    os.makedirs(cfg.state_dir, exist_ok=True)
-    with open(os.path.join(cfg.state_dir, f"{name}.lock"), "w") as f:
-        flags = fcntl.LOCK_EX | (0 if blocking else fcntl.LOCK_NB)
-        try:
-            fcntl.flock(f, flags)
-        except BlockingIOError:
-            yield False
-            return
-        yield True
 
 
 def create(cfg, role, username=None):
@@ -51,17 +36,17 @@ def create(cfg, role, username=None):
         name, directory = session["name"], session["working_directory"]
         created = []
         try:
-            os.makedirs(directory, exist_ok=True)
-            for repo in cfg.repos():
-                if gitutil.branch_exists(cfg, repo, name):
-                    raise SessionError(EAGAIN, f"branch {name} exists in {repo}")
-                base = gitutil.main_branch(cfg, repo)
-                try:
+            try:
+                os.makedirs(directory, exist_ok=True)
+                for repo in cfg.repos():
+                    if gitutil.branch_exists(cfg, repo, name):
+                        raise SessionError(EAGAIN, f"branch {name} exists in {repo}")
+                    base = gitutil.main_branch(cfg, repo)
                     gitutil.git(cfg, cfg.repo_path(repo), "worktree", "add", "-q", "-b", name,
                                 os.path.join(directory, repo), base)
-                except gitutil.GitError as e:
-                    raise SessionError(EGIT, str(e))
-                created.append(repo)
+                    created.append(repo)
+            except (gitutil.GitError, OSError) as e:
+                raise SessionError(EGIT, str(e))
         except BaseException:
             _undo(cfg, name, directory, created)
             raise

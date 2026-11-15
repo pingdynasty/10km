@@ -94,10 +94,12 @@ def load(root=None):
     env.setdefault("LOOP_ROOT", "/loop")
     path = config_path(env["LOOP_ROOT"])
     if os.path.exists(path):
-        out = subprocess.run(["bash", "-c", 'set -a; . "$1" >&2; set +a; env -0', "config", path],
+        script = 'set -a; . "$1" >&2 || exit $?; set +a; printf "TENKM_CONFIG_OK=1\\0"; env -0'
+        out = subprocess.run(["bash", "-c", script, "config", path],
                              env=env, capture_output=True, check=False)
-        if out.returncode == 0:
-            env = dict(item.split("=", 1) for item in out.stdout.decode().split("\0") if "=" in item)
+        loaded = dict(item.split("=", 1) for item in out.stdout.decode().split("\0") if "=" in item)
+        if out.returncode == 0 and loaded.pop("TENKM_CONFIG_OK", None) == "1":
+            env = loaded
         else:
             # A broken config must not stop the loop; keep the environment and report.
             env["TENKM_CONFIG_ERROR"] = out.stderr.decode().strip() or "config.env failed"

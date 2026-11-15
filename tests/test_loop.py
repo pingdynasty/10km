@@ -39,12 +39,12 @@ class LoopCase(unittest.TestCase):
         try:
             with msm.transaction(self.cfg.db) as m:
                 handles = [s["handle"] for s in m.list("session") if s.get("handle")]
-        except sqlite3.DatabaseError:
+        except (sqlite3.DatabaseError, msm.MSMError):
             handles = []
         for h in handles:
             try:
                 os.killpg(int(h.split(":")[1]), 9)
-            except (ProcessLookupError, PermissionError):
+            except (ProcessLookupError, PermissionError, ValueError, IndexError):
                 pass
         self.patch.stop()
         self.tmp.cleanup()
@@ -83,7 +83,7 @@ class TestMigration(unittest.TestCase):
             db.close()
             with msm.transaction(path) as m:
                 self.assertEqual(m.loop_get()["empty_cycles"], 0)
-                self.assertEqual(m.list("session")[0]["handle"], 42)
+                self.assertEqual(m.list("session")[0]["handle"], "process:42:")
             with msm.transaction(path) as m:  # idempotent
                 self.assertEqual(m.loop_get()["current_cycle"], 3)
 
@@ -95,6 +95,27 @@ class TestConfig(LoopCase):
         self.assertEqual(self.cfg.repos(), ["loop", "project"])
         self.assertEqual(self.reload(WORKER_TIMEOUT="5").timeout("worker"), 5)
         self.assertEqual(self.cfg.timeout("planner"), 3600)
+
+
+class TestBrokenConfig(LoopCase):
+    def test_syntax_error_and_exit_are_reported(self):
+        for text in ("MAX_WORKERS=2\nif then\n", "exit 0\n"):
+            path = os.path.join(self.tmp.name, "bad.env")
+            with open(path, "w") as f:
+                f.write(text)
+            cfg = self.reload(LOOP_CONFIG=path)
+            self.assertIn("TENKM_CONFIG_ERROR", cfg)
+            self.assertEqual(cfg.root, self.root)
+            self.assertIn("PATH", cfg)
+
+
+class TestInit(LoopCase):
+    def test_loop_repo_is_on_main_and_rerun_is_safe(self):
+        self.assertEqual(subprocess.run(
+            ["git", "-C", self.cfg.repo_path("loop"), "symbolic-ref", "--short", "HEAD"],
+            capture_output=True, text=True).stdout.strip(), "main")
+        report = init.run(self.cfg)
+        self.assertEqual(report["database"], "existing")
 
 
 class TestNotify(LoopCase):
@@ -140,6 +161,13 @@ class TestSessions(LoopCase):
             self.assertEqual(m.list("session"), [])
         self.assertEqual([d for d in os.listdir(self.root) if d.startswith("operator")], [])
 
+    def test_detached_central_head_is_a_git_error(self):
+        subprocess.run(["git", "-C", self.cfg.repo_path("project"), "checkout", "-q", "--detach"],
+                       check=True)
+        with self.assertRaises(sessions.SessionError) as e:
+            sessions.create(self.cfg, "operator", "mars")
+        self.assertEqual(e.exception.code, sessions.EGIT)
+
     def test_precondition_failure_has_msm_code(self):
         with self.assertRaises(sessions.SessionError) as e:
             sessions.create(self.cfg, "planner")  # loop is stopped
@@ -179,12 +207,82 @@ class TestDispatch(LoopCase):
         statuses = sorted(s["status"] for s in self.session("curator"))
         self.assertIn("expired", statuses)
 
-    def test_orphan_session_without_handle_is_expired(self):
+    def test_session_without_handle_only_times_out(self):
         self.start_loop()
-        s = sessions.create(self.cfg, "curator")
-        dispatch.run_pass(self.reload(ORPHAN_GRACE="-1"))
+        s = sessions.create(self.cfg, "curator")  # not launched by the Dispatcher
+        dispatch.run_pass(self.cfg)
+        with self.m() as m:
+            self.assertEqual(m.get_row("session", s["name"])["status"], "active")
+        dispatch.run_pass(self.reload(CURATOR_TIMEOUT="-1"))
         with self.m() as m:
             self.assertEqual(m.get_row("session", s["name"])["status"], "expired")
+
+    def test_unstoppable_handles_are_reported_not_expired(self):
+        self.start_loop()
+        s = sessions.create(self.cfg, "curator")
+        for handle in ("pending:1", "process:42:", "nosuch:x"):
+            with self.m() as m:
+                m.session_update(s["name"], {"handle": handle})
+            dispatch.run_pass(self.reload(CURATOR_TIMEOUT="-1"))
+            with self.m() as m:
+                self.assertEqual(m.get_row("session", s["name"])["status"], "active")
+        with open(os.path.join(self.cfg.central, "loop", "NOTIFICATIONS.md")) as f:
+            self.assertIn("Can't stop timed-out session", f.read())
+
+    def test_expiring_a_session_that_just_finished_is_harmless(self):
+        self.start_loop()
+        s = sessions.create(self.cfg, "curator")
+        with self.m() as m:
+            m.session_status(s["name"], "done")
+        dispatch.Pass(self.cfg).expire(s["name"], "test")  # must not raise
+        dispatch.Pass(self.cfg).expire("no-such-session", "test")
+
+    def test_agent_children_are_found_and_stopped(self):
+        self.start_loop()
+        cfg = self.reload(LOOP_AGENT="sleep 30 & sleep 30 & exit 0")
+        dispatch.run_pass(cfg)
+        [cur] = self.session("curator")
+        time.sleep(0.5)
+        from tenkm.launchers import process
+        self.assertTrue(process.alive(cfg, cur["handle"]))  # leader gone, children alive
+        self.assertTrue(process.stop(self.reload(KILL_GRACE="2"), cur["handle"]))
+        self.assertFalse(process.alive(cfg, cur["handle"]))
+
+    def test_alive_check_ignores_timezone_and_locale(self):
+        self.start_loop()
+        dispatch.run_pass(self.cfg)
+        [cur] = self.session("curator")
+        from tenkm.launchers import process
+        with mock.patch.dict(os.environ, TZ="Asia/Tokyo", LC_ALL="fr_FR.UTF-8"):
+            self.assertTrue(process.alive(self.cfg, cur["handle"]))
+
+    def test_stop_notified_once_across_phase_changes(self):
+        self.start_loop()
+        dispatch.run_pass(self.cfg)
+        [cur] = self.session("curator")
+        with self.m() as m:
+            m.loop_stop("blocked")
+        dispatch.run_pass(self.cfg)
+        with self.m() as m:
+            m.session_status(cur["name"], "done")  # phase moves while stopped
+        dispatch.run_pass(self.cfg)
+        path = os.path.join(self.cfg.central, "loop", "NOTIFICATIONS.md")
+        with open(path) as f:
+            self.assertEqual(f.read().count("Loop stopped"), 1)
+        with self.m() as m:
+            m.loop_resume()
+        dispatch.run_pass(self.cfg)
+        with self.m() as m:
+            m.loop_stop("blocked")
+        dispatch.run_pass(self.cfg)
+        with open(path) as f:
+            self.assertEqual(f.read().count("Loop stopped"), 2)
+
+    def test_missing_database_is_notified(self):
+        os.remove(self.cfg.db)
+        dispatch.run_pass(self.cfg)
+        with open(os.path.join(self.cfg.central, "loop", "NOTIFICATIONS.md")) as f:
+            self.assertIn("database missing", f.read())
 
     def test_stop_notifies_once(self):
         self.start_loop()
@@ -225,14 +323,23 @@ class TestAuditorDue(LoopCase):
 
     def test_daily_time_in_timezone(self):
         self.close_cycle("2026-11-13T10:00:00Z")
+        with self.m() as m:
+            m.db.execute("INSERT INTO audits VALUES (1, '{}', 's', '2026-11-13T06:30:00Z')")
         madrid = {"AUDIT_TIME": "07:00", "AUDIT_TIMEZONE": "Europe/Madrid"}
         # 07:00 Madrid in November is 06:00 UTC.
         self.assertFalse(self.due(datetime(2026, 11, 14, 5, 59, tzinfo=timezone.utc), **madrid))
         self.assertTrue(self.due(datetime(2026, 11, 14, 6, 1, tzinfo=timezone.utc), **madrid))
         with self.m() as m:
-            m.db.execute("INSERT INTO audits VALUES (1, '{}', 's', '2026-11-14T06:30:00Z')")
+            m.db.execute("INSERT INTO audits VALUES (2, '{}', 's', '2026-11-14T06:30:00Z')")
         self.assertFalse(self.due(datetime(2026, 11, 14, 12, 0, tzinfo=timezone.utc), **madrid))
         self.assertTrue(self.due(datetime(2026, 11, 15, 6, 1, tzinfo=timezone.utc), **madrid))
+
+    def test_missed_trigger_from_yesterday_is_due_after_midnight(self):
+        self.close_cycle("2026-11-12T10:00:00Z")
+        with self.m() as m:
+            m.db.execute("INSERT INTO audits VALUES (1, '{}', 's', '2026-11-12T06:30:00Z')")
+        utc = {"AUDIT_TIME": "07:00", "AUDIT_TIMEZONE": "UTC"}
+        self.assertTrue(self.due(datetime(2026, 11, 14, 0, 30, tzinfo=timezone.utc), **utc))
 
     def test_cycle_limit(self):
         self.close_cycle("2026-11-13T10:00:00Z")

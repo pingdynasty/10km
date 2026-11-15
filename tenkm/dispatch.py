@@ -14,8 +14,9 @@ import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
 
-from . import config, launchers, notify, sessions, msm
+from . import config, launchers, msm, notify, sessions
 from .config import BIN, CODE_ROOT
+from .locks import lock
 
 try:
     from zoneinfo import ZoneInfo
@@ -37,6 +38,7 @@ class Pass:
         self.now = now or datetime.now(timezone.utc)
         self.launcher = launchers.get(cfg)
         self.notices = []
+        self.forget = []
 
     def notice(self, title, body="", priority="default", key=None):
         self.notices.append((title, body, priority, key))
@@ -50,25 +52,27 @@ class Pass:
                 continue
             age = (self.now - parse_time(s["created_at"])).total_seconds()
             handle = s.get("handle")
-            if not handle:
-                if age > self.cfg.int("ORPHAN_GRACE", 300):
-                    self.expire(s["name"], "no handle")
-                continue
-            launcher = launchers.for_handle(handle)
+            launcher = launchers.for_handle(handle) if handle else None
             if age > self.cfg.timeout(s["role"]):
-                if launcher.stop(self.cfg, handle):
+                if not handle:
+                    self.expire(s["name"], "timed out")  # not launched by the Dispatcher
+                elif launcher is not None and launcher.stop(self.cfg, handle):
                     self.expire(s["name"], "timed out")
                 else:
                     self.notice(f"Can't stop timed-out session {s['name']}",
                                 "The launcher cannot stop it. It stays active; stop it by hand,"
                                 f" then run: msm session expired {s['name']}",
                                 "critical", key=f"stuck:{s['name']}")
-            elif age > self.cfg.int("START_GRACE", 180) \
+            elif launcher is not None and age > self.cfg.int("START_GRACE", 180) \
                     and launcher.alive(self.cfg, handle) is False:
                 self.expire(s["name"], "not running")
 
     def expire(self, name, why):
+        """Mark a session expired, unless it finished or was removed meanwhile."""
         with msm.transaction(self.cfg.db) as m:
+            row = m.one("SELECT status FROM sessions WHERE name = ?", name)
+            if row is None or row["status"] != "active":
+                return
             m.session_status(name, "expired")
         log(f"expired {name} ({why})")
 
@@ -95,6 +99,10 @@ class Pass:
         first_message = (f"You are the 10km {role} session {name}. Your worktrees are in "
                          f"{directory}. Read your instructions in {prompt_file} and follow them.")
         env = self.agent_env(name, prompt_file, first_message)
+        # If this pass dies after launching but before recording the real handle,
+        # the pending handle makes the time-out report the session, not expire it.
+        with msm.transaction(self.cfg.db) as m:
+            m.session_update(name, {"handle": f"pending:{os.getpid()}"})
         try:
             handle = self.launcher.launch(self.cfg, session, role, env,
                                           os.path.join(directory, "agent.log"))
@@ -144,7 +152,7 @@ class Pass:
         at = self.cfg.get("AUDIT_TIME", "")
         if at:
             trigger = self.daily_trigger(at, self.cfg.get("AUDIT_TIMEZONE") or "UTC")
-            if trigger is not None and self.now >= trigger and (last is None or last < trigger):
+            if trigger is not None and (last is None or last < trigger):
                 return True
         return False
 
@@ -158,6 +166,9 @@ class Pass:
             return None
         local = self.now.astimezone(tz)
         trigger = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if trigger > local:
+            trigger = (local - timedelta(days=1)).replace(hour=hour, minute=minute,
+                                                          second=0, microsecond=0)
         return trigger.astimezone(timezone.utc)
 
     # --- the pass ----------------------------------------------------------
@@ -172,8 +183,9 @@ class Pass:
         if loop["stopped"]:
             body = "\n".join(f"- {i['title']}" for i in blocking)
             self.notice(f"Loop stopped: {loop['reason'] or 'stopped'}", body, "critical",
-                        key=f"stop:{loop['reason']}:{loop['updated_at']}")
+                        key="stop")
             return
+        self.forget.append("stop")  # running again: the next stop is notified
         if pending:
             self.launch("curator")
         phase = loop["phase"]
@@ -190,6 +202,8 @@ class Pass:
             self.launch("auditor")
 
     def flush(self):
+        for prefix in self.forget:
+            notify.forget(self.cfg, prefix)
         for title, body, priority, key in self.notices:
             notify.send(self.cfg, title, body, priority, key)
 
@@ -200,11 +214,16 @@ def run_pass(cfg=None, now=None):
     if cfg.get("TENKM_CONFIG_ERROR"):
         log(f"config error: {cfg['TENKM_CONFIG_ERROR']}")
     p = Pass(cfg, now)
-    with sessions.lock(cfg, "dispatch", blocking=False) as locked:
+    with lock(cfg, "dispatch", blocking=False) as locked:
         if not locked:
             return 0
         if not os.path.exists(cfg.db):
+            if os.path.isdir(cfg.central):
+                p.notice("Loop database missing", f"No database at {cfg.db}, but the loop "
+                         f"exists at {cfg.root}. Check MSM_DB.", "critical", key="db-missing")
+                p.flush()
             return 0
+        notify.forget(cfg, "db-missing")
         try:
             p.run()
             notify.forget(cfg, "db-unreadable")

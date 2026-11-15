@@ -369,6 +369,7 @@ class MSM:
         t = now()
         for row in verdicts:
             tid = row.get("id") or self.task_for_session(row["session"])["id"]
+            self.get_row("task", tid)
             status = row["status"]
             if status not in ("accepted", "rejected"):
                 raise MSMError(EINVAL, f"bad verdict {status}")
@@ -524,6 +525,10 @@ def migrate(db):
     session_cols = {r[1] for r in db.execute("PRAGMA table_info(sessions)")}
     if "pid" in session_cols:
         db.execute("ALTER TABLE sessions RENAME COLUMN pid TO handle")
+        # Old values are bare pids; without a start time the launcher can't tell
+        # whether they are alive, so only the time-out applies to them.
+        db.execute("UPDATE sessions SET handle = 'process:' || handle || ':' "
+                   "WHERE handle IS NOT NULL")
     loop_cols = {r[1] for r in db.execute("PRAGMA table_info(loop)")}
     if "empty_cycles" not in loop_cols:
         db.execute("ALTER TABLE loop ADD COLUMN empty_cycles INTEGER NOT NULL DEFAULT 0")
@@ -698,8 +703,11 @@ def main(argv):
     except MSMError as e:
         print(json.dumps({"code": e.code, "message": e.message}), file=sys.stderr)
         return e.code
-    except (ValueError, sqlite3.IntegrityError) as e:
-        print(json.dumps({"code": EINVAL, "message": str(e)}), file=sys.stderr)
+    except (ValueError, KeyError, TypeError, AttributeError, sqlite3.IntegrityError) as e:
+        print(json.dumps({"code": EINVAL, "message": f"invalid input: {e!r}"}), file=sys.stderr)
+        return EINVAL
+    except sqlite3.Error as e:
+        print(json.dumps({"code": EINVAL, "message": f"database error: {e}"}), file=sys.stderr)
         return EINVAL
     print(json.dumps(result))
     return 0

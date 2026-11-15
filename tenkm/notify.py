@@ -13,6 +13,8 @@ import os
 import subprocess
 from datetime import datetime, timezone
 
+from .locks import lock
+
 PRIORITIES = ("critical", "default", "passive")
 
 
@@ -38,14 +40,20 @@ def _save(cfg, sent):
 
 def forget(cfg, prefix):
     """Forget keys starting with prefix, so their notifications can be sent again."""
-    sent = _load(cfg)
-    kept = {k: v for k, v in sent.items() if not k.startswith(prefix)}
-    if kept != sent:
-        _save(cfg, kept)
+    with lock(cfg, "notify"):
+        sent = _load(cfg)
+        kept = {k: v for k, v in sent.items() if not k.startswith(prefix)}
+        if kept != sent:
+            _save(cfg, kept)
 
 
 def send(cfg, title, body="", priority="default", key=None):
     """Notify the operator. Returns True if sent (or already sent for this key)."""
+    with lock(cfg, "notify"):
+        return _send(cfg, title, body, priority, key)
+
+
+def _send(cfg, title, body, priority, key):
     if priority not in PRIORITIES:
         priority = "default"
     sent = _load(cfg)

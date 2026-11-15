@@ -131,6 +131,10 @@ class MsmTest(unittest.TestCase):
         self.assertEqual(self.phase(), "execute")  # cycle still open: phase unchanged
         self.assertEqual(self.ok("task", "list")[0]["status"], "waiting")
 
+    def test_task_batch_with_unknown_task_is_not_found(self):
+        self.fails(3, "task", "batch", '[{"id": "nope", "status": "accepted"}]')
+        self.fails(1, "task", "batch", '[{"status": "accepted"}]')
+
     def test_stop_and_resume(self):
         self.start_and_curate_kickoff()
         self.ok("loop", "stop", "blocked")

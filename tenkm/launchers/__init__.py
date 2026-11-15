@@ -24,5 +24,12 @@ def kind(handle):
 
 
 def for_handle(handle):
-    """The launcher module that issued a handle."""
-    return get({"LAUNCHER": kind(handle)})
+    """The launcher module that issued a handle, or None if there is none.
+
+    A handle from an unknown launcher (or "pending:", recorded before a launch
+    completes) can't be checked or stopped; only the time-out applies to it.
+    """
+    try:
+        return get({"LAUNCHER": kind(handle)})
+    except ImportError:
+        return None

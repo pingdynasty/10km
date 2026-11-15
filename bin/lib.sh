@@ -39,5 +39,11 @@ remove_session() {
   "$MSM" session remove "$name" >/dev/null 2>&1 || true
 }
 
+# A repo's default branch: MAIN_BRANCH, else the central worktree's branch.
+main_branch() {
+  if [ -n "${MAIN_BRANCH:-}" ]; then echo "$MAIN_BRANCH"
+  else git -C "$CENTRAL/$1" symbolic-ref --short HEAD; fi
+}
+
 # The current cycle as JSON, or null before the first cycle.
 current_cycle() { "$MSM" cycle get 2>/dev/null || echo null; }

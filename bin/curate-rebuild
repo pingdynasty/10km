@@ -16,8 +16,7 @@ done
 [ "$#" -gt 0 ] || die "usage: curate-rebuild [--without <s>...] -- <s>..."
 
 for repo in $(repos); do
-  git -C "$dir/$repo" reset --hard "origin/main" 2>/dev/null \
-    || git -C "$dir/$repo" reset --hard main
+  git -C "$dir/$repo" reset --hard "$(main_branch "$repo")"
 done
 
 for name in "$@"; do

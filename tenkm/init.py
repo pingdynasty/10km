@@ -18,6 +18,7 @@ def _clone_or_create_loop(cfg):
     if subprocess.run(["git", "-C", CODE_ROOT, "rev-parse", "--git-dir"],
                       capture_output=True).returncode == 0:
         subprocess.run(["git", "clone", "-q", CODE_ROOT, dest], check=True)
+        gitutil.git(cfg, dest, "checkout", "-q", "-B", cfg.get("MAIN_BRANCH") or "main")
         return "cloned"
     shutil.copytree(CODE_ROOT, dest, symlinks=True,
                     ignore=shutil.ignore_patterns("__pycache__", "*.db*", ".#*", "*~"))
@@ -39,6 +40,11 @@ def _project(cfg, name, url):
         return "existing"
     if url:
         subprocess.run(["git", "clone", "-q", url, dest], check=True)
+        branch = cfg.get("MAIN_BRANCH")
+        if branch:  # else keep the remote's default branch
+            start = f"origin/{branch}" if gitutil.ok(cfg, dest, "rev-parse", "--verify",
+                                                    f"origin/{branch}") else "HEAD"
+            gitutil.git(cfg, dest, "checkout", "-q", "-B", branch, start)
         return "cloned"
     branch = cfg.get("MAIN_BRANCH") or "main"
     subprocess.run(["git", "init", "-q", "-b", branch, dest], check=True)
@@ -47,8 +53,7 @@ def _project(cfg, name, url):
 
 
 def run(cfg):
-    with msm.transaction(cfg.db, create=True) as m:
-        m.init()
+    """Create what is missing. Safe to rerun after a partial failure."""
     os.makedirs(cfg.central, exist_ok=True)
     report = {"loop": _clone_or_create_loop(cfg)}
     for name, url in cfg.projects():
@@ -56,4 +61,10 @@ def run(cfg):
     hooks = os.path.join(cfg.repo_path("loop"), "hooks")
     for repo in cfg.repos():
         gitutil.git(cfg, cfg.repo_path(repo), "config", "core.hooksPath", hooks)
+    with msm.transaction(cfg.db, create=True) as m:
+        if m.one("SELECT name FROM sqlite_master WHERE name = 'loop'"):
+            report["database"] = "existing"
+        else:
+            m.init()
+            report["database"] = "created"
     return report

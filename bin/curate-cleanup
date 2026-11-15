@@ -8,7 +8,7 @@ selection="$LOOP_ROOT/$self/selection.json"
 
 for repo in $(repos); do
   branch=$(git -C "$CENTRAL/$repo" symbolic-ref --short HEAD 2>/dev/null || echo detached)
-  [ "$branch" = main ] || echo "warning: central/$repo is on $branch, not main" >&2
+  [ "$branch" = "$(main_branch "$repo")" ] || echo "warning: central/$repo is on $branch" >&2
   [ -z "$(git -C "$CENTRAL/$repo" status --porcelain)" ] ||
     echo "warning: central/$repo has uncommitted changes" >&2
 done

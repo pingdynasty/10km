@@ -13,6 +13,7 @@
 """
 import json
 import os
+import shlex
 import subprocess
 import sys
 
@@ -57,7 +58,7 @@ def _session(argv, cfg):
         command = cfg.get("SESSION_COMMAND") or "kiro-cli chat"
         env = dict(os.environ, LOOP_SESSION=s["name"], SESSION=s["name"], **cfg.git_env())
         if message:
-            command += " " + " ".join(f"'{m}'" for m in message)
+            command += " " + " ".join(shlex.quote(m) for m in message)
         return subprocess.call(["bash", "-c", command], cwd=loop_dir, env=env)
     print(__doc__, file=sys.stderr)
     return 1
@@ -67,6 +68,9 @@ def _notify(argv, cfg):
     priority, key, rest = "default", None, []
     i = 0
     while i < len(argv):
+        if argv[i] in ("--priority", "--key") and i + 1 == len(argv):
+            print(f"{argv[i]} needs a value", file=sys.stderr)
+            return 1
         if argv[i] == "--priority":
             priority, i = argv[i + 1], i + 2
         elif argv[i] == "--key":

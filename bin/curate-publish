@@ -18,7 +18,8 @@ ordered+=(loop)
 
 for repo in "${ordered[@]}"; do
   worktree="$CENTRAL/$repo"
-  [ "$(git -C "$worktree" symbolic-ref --short HEAD)" = main ] || die "$repo not on main"
+  [ "$(git -C "$worktree" symbolic-ref --short HEAD)" = "$(main_branch "$repo")" ] ||
+    die "$repo not on its main branch"
   if ! git -C "$worktree" merge --ff-only "$self" >/dev/null 2>&1; then
     git -C "$worktree" merge-base --is-ancestor "$self" HEAD || die "$repo cannot fast-forward"
   fi
