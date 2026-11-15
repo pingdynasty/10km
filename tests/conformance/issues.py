@@ -10,9 +10,9 @@ MAP = {
     "R175": [("prompts/common.md", "`branch`: the branch holding unmerged work (expired, "
                                    "incomplete or rejected), if any."),
              "tests/test_scenarios.py:TestExpiry."
-             "test_hanging_worker_is_expired_its_work_backlogged_and_the_loop_goes_on",
+             "test_hanging_and_dead_workers_are_expired_their_work_backlogged",
              "tests/test_scenarios.py:TestRejection."
-             "test_branch_failing_validation_is_rejected_and_backlogged"],
+             "test_conflicting_and_failing_branches_are_rejected_and_backlogged"],
     "R314": RR + "TestIssueLifecycle.test_status_goes_open_answered_resolved",
     "R315": RR + "TestIssueLifecycle.test_status_goes_open_answered_resolved",
     "R316": RR + "TestIssueLifecycle.test_operator_answers_operator_escalations",

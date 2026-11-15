@@ -15,8 +15,7 @@ SCHEMA = ["tests/test_schema.py:TestSchema.test_committed_schema_is_current",
 SESSION_CALLS = RM + "TestSessions.test_update_get_and_list_with_a_filter"
 SM = "tests/test_scenarios_more.py:"
 IDLE = SM + "TestIdleStop.test_idle_limit_of_empty_cycles_stops_the_loop"
-OFF_OPERATOR = SM + "TestOffPhaseCurator.test_done_operator_work_is_curated_mid_execute"
-OFF_AUDITOR = SM + "TestOffPhaseCurator.test_done_auditor_work_is_curated_outside_the_curate_phase"
+OFF_PHASE = SM + "TestOffPhaseCurator.test_done_auditor_and_operator_work_is_curated_outside_the_curate_phase"
 
 MAP = {
     "R36": RM + "TestTransactions.test_a_failing_call_changes_nothing",
@@ -89,7 +88,7 @@ MAP = {
     # Role preconditions
     "R90": [M + "test_preconditions", M + "test_stop_and_resume"],
     "R91": [M + "test_curator_runs_in_any_phase_for_contributions", M + "test_preconditions",
-            OFF_OPERATOR, OFF_AUDITOR],
+            OFF_PHASE],
     "R92": M + "test_full_cycle",
     "R93": M + "test_audits_and_auditor_naming",
     "R94": RM + "TestSessions.test_operator_sessions_need_no_precondition",
@@ -114,7 +113,7 @@ MAP = {
     "R109": [M + "test_full_cycle", M + "test_empty_cycle_goes_to_curate", IDLE],
     "R110": M + "test_full_cycle",
     "R111": [M + "test_full_cycle", M + "test_curator_runs_in_any_phase_for_contributions",
-             IDLE, OFF_OPERATOR],
+             IDLE, OFF_PHASE],
     "R112": [M + "test_preconditions", RM + "TestLoopRecord.test_start_clears_reason_and_goes_to_plan"],
     "R113": [M + "test_stop_and_resume", RM + "TestLoopRecord.test_resume_outside_plan_keeps_the_phase"],
 }
