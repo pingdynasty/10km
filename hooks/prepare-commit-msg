@@ -1,5 +1,9 @@
 #!/bin/sh
-# Add a Loop-Session trailer to every commit, from LOOP_SESSION or the branch.
-session=${LOOP_SESSION:-$(git symbolic-ref --quiet --short HEAD)} || exit 0
-[ -n "$session" ] && [ "$session" != main ] || exit 0
-git interpret-trailers --in-place --if-exists doNothing --trailer "Loop-Session: $session" "$1"
+# Add a Loop-Session trailer to every commit, from LOOP_SESSION or the branch,
+# then run the inherited hook of the same name, if any.
+session=${LOOP_SESSION:-$(git symbolic-ref --quiet --short HEAD)}
+if [ -n "$session" ] && [ "$session" != main ]; then
+  git interpret-trailers --in-place --if-exists doNothing \
+    --trailer "Loop-Session: $session" "$1" || exit 1
+fi
+. "${0%/*}/chain"
