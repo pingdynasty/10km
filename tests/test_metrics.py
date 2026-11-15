@@ -141,6 +141,41 @@ class TestCollect(MetricsCase):
         self.assertTrue(any("No usage records" in n for n in data["notes"]))
         self.assertEqual(metrics.collect(self.cfg, cycle=7)["sessions"], [])
 
+    def test_outcomes_do_not_change_when_sessions_are_removed(self):
+        """A Planner or Curator the cycle names is planned or curated, and other
+        sessions keep their status, with or without their session rows."""
+        self.start_loop()
+        with self.m() as m:
+            planner = m.session_create("planner")["name"]
+        with msm.transaction(self.cfg.db, caller=planner) as m:
+            m.cycle_create({"planner_session": planner, "headline": "h", "tasks": [
+                {"shortname": "a", "instructions": "i", "branch": planner}]})
+            m.session_status(planner, "done")
+        with self.m() as m:
+            lost = m.session_create("curator")["name"]
+            m.session_status(lost, "expired")
+            curator = m.session_create("curator")["name"]
+            auditor = m.session_create("auditor")["name"]
+            m.session_status(auditor, "done")
+            op = m.session_create("operator", "mars")["name"]
+            m.session_status(op, "done")
+        with msm.transaction(self.cfg.db, caller=curator) as m:
+            task = m.cycle_get()["tasks"][0]
+            m.cycle_curate({"curator_session": curator, "report": "r", "tasks": [
+                {"id": task["id"], "status": "accepted"}]})
+            m.session_status(curator, "done")
+        expected = {planner: "planned", curator: "curated", lost: "expired",
+                    auditor: "done", op: "done"}
+
+        def outcomes():
+            return {r["session"]: r["outcome"] for r in metrics.collect(self.cfg)["sessions"]
+                    if r["session"] in expected}
+        self.assertEqual(outcomes(), expected)
+        with self.m() as m:
+            for name in expected:
+                m.session_remove(name)
+        self.assertEqual(outcomes(), expected)
+
     def test_operator_session_gets_the_cycle_planned_before_it(self):
         self.one_cycle()
         with self.m() as m:

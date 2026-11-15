@@ -68,17 +68,17 @@ class TestMetricsOfACuratedLoop(ScenarioCase):
 
         data = json.loads(self.metrics("--json", "--cycle", "1"))
         by_name = {r["session"]: r for r in data["sessions"]}
-        # A Planner's or Curator's outcome is its session status while the row
-        # lasts, then what it did for the cycle.
-        expected = {cycle["planner_session"]: ("planner", None, ("done", "planned")),
-                    good: ("worker", verdicts["accepted"]["shortname"], ("accepted",)),
-                    bad: ("worker", verdicts["rejected"]["shortname"], ("rejected",)),
-                    cycle["curator_session"]: ("curator", None, ("done", "curated"))}
+        # A Planner's or Curator's outcome is what it did for the cycle, whether
+        # or not its session row is still there.
+        expected = {cycle["planner_session"]: ("planner", None, "planned"),
+                    good: ("worker", verdicts["accepted"]["shortname"], "accepted"),
+                    bad: ("worker", verdicts["rejected"]["shortname"], "rejected"),
+                    cycle["curator_session"]: ("curator", None, "curated")}
         self.assertEqual(set(by_name), set(expected), self.describe())
-        for name, (role, task, outcomes) in expected.items():
+        for name, (role, task, outcome) in expected.items():
             r = by_name[name]
             self.assertEqual((r["role"], r["cycle"], r["task"]), (role, 1, task), r)
-            self.assertIn(r["outcome"], outcomes, r)
+            self.assertEqual(r["outcome"], outcome, r)
             self.assertEqual(r["usage"], FAKE, r)
             self.assertIn("duration_s", r)
             self.assertIn("times_from", r)

@@ -17,6 +17,11 @@ together from what survives, in this order of preference:
 The last two are activity windows, not the session's start and end; the text
 output marks them with "~".
 
+A session's outcome is its task status for a Worker, "planned" or "curated" for
+a session a cycle row names as its Planner or Curator, else its session status
+(from the row, or the done or expired line in the action log). These all
+survive removal, so an outcome doesn't change when the Curator removes a session.
+
 Commits are counted by their `Loop-Session:` trailer on each repo's main branch.
 
     from tenkm import metrics
@@ -115,6 +120,8 @@ def session_event(get, action, at):
     if not s.role and isinstance(action.get("role"), str):
         s.role = action["role"]
     s.logged[slot] = s.logged[slot] or at
+    if slot == 1 and not s.logged_outcome:
+        s.logged_outcome = action["command"].split()[1]
 
 
 class _Session:
@@ -128,7 +135,8 @@ class _Session:
             self.cycle = int(m.group("cycle")) if m.group("cycle") else None
         self.status = None      # session status, if the row survives
         self.task = None        # (shortname, status) for Workers
-        self.cycle_outcome = None
+        self.cycle_outcome = None  # "planned" or "curated" if a cycle row names it
+        self.logged_outcome = None  # "done" or "expired" from the action log
         self.times = {}         # source -> [start, end]
         self.actions = []       # times of logged state changes
         self.logged = [None, None, None]  # logged create, done or expired, remove
@@ -150,9 +158,12 @@ class _Session:
         return None, None, None
 
     def outcome(self):
+        """The task status for a Worker; "planned" or "curated" for a session a cycle
+        row names; else the session status, from its row or the action log. Each
+        source survives the session's removal, so the outcome doesn't change then."""
         if self.task:
             return self.task[1]
-        return self.status or self.cycle_outcome or "unknown"
+        return self.cycle_outcome or self.status or self.logged_outcome or "unknown"
 
     def usage_totals(self):
         totals = {}
