@@ -5,8 +5,6 @@ which every agent command fails loudly unless the test sets its own fake. These
 tests shadow claude, codex and kiro-cli on PATH with stubs that record any call,
 launch agents without a fake, and check that the test config's failing command
 ran and no harness did.
-
-Run: python3 -m unittest discover tests
 """
 import glob
 import os
@@ -17,7 +15,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
-from test_scripts import ScriptCase, wait_for  # noqa: E402
+from test_scripts import ScriptCase  # noqa: E402
 from tenkm import config  # noqa: E402
 
 ROLES = ("planner", "worker", "curator", "auditor", "operator")
@@ -75,18 +73,13 @@ class TestNoHarness(ScriptCase):
 
     def test_dispatcher_launches_the_failing_command(self):
         self.loop.start()
-        p = self.loop.run("dispatch")
-        self.assertEqual(p.returncode, 0, p.stderr)
+        self.dispatch()
         planner = self.loop.sessions("planner")[0]
         log = os.path.join(planner["working_directory"], "agent.log")
 
-        def failed():
-            try:
-                with open(log) as f:
-                    return "10km tests: PLANNER_AGENT is not set" in f.read()
-            except OSError:
-                return False
-        self.assertTrue(wait_for(failed), "the test config's command did not run")
+        self.assertTrue(testenv.wait_for(
+            lambda: "10km tests: PLANNER_AGENT is not set" in (testenv.read(log) or "")),
+            "the test config's command did not run")
         self.assertNoHarness()
 
     def test_kickoff_runs_the_failing_operator_command(self):
