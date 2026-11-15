@@ -54,18 +54,24 @@ class Pass:
             handle = s.get("handle")
             launcher = launchers.for_handle(handle) if handle else None
             if age > self.cfg.timeout(s["role"]):
-                if not handle:
-                    self.expire(s["name"], "timed out")  # not launched by the Dispatcher
-                elif launcher is not None and launcher.stop(self.cfg, handle):
-                    self.expire(s["name"], "timed out")
-                else:
-                    self.notice(f"Can't stop timed-out session {s['name']}",
-                                "The launcher cannot stop it. It stays active; stop it by hand,"
-                                f" then run: msm session expired {s['name']}",
-                                "critical", key=f"stuck:{s['name']}")
+                stopped = not handle or (launcher is not None and launcher.stop(self.cfg, handle))
+                self.expire(s["name"], "timed out")
+                if not stopped:
+                    self.escalate_unstopped(s, handle)
             elif launcher is not None and age > self.cfg.int("START_GRACE", 180) \
                     and launcher.alive(self.cfg, handle) is False:
                 self.expire(s["name"], "not running")
+
+    def escalate_unstopped(self, s, handle):
+        """The agent may still be running: tell the operator, without blocking the loop."""
+        with msm.transaction(self.cfg.db) as m:
+            m.create("issue", {
+                "type": "escalation", "title": f"Agent may still be running: {s['name']}",
+                "description": f"Session {s['name']} timed out and was expired, but its "
+                               f"launcher could not confirm the agent stopped (handle "
+                               f"{handle}). Stop it by hand if it is still running.",
+                "owner_session": None, "assignee_role": "operator", "severity": "high"})
+        log(f"escalated {s['name']}: agent may still be running")
 
     def expire(self, name, why):
         """Mark a session expired, unless it finished or was removed meanwhile."""
@@ -176,16 +182,10 @@ class Pass:
         self.expire_sessions()
         with msm.transaction(self.cfg.db) as m:
             loop = m.loop_get()
-            blocking = [i for i in m.list("issue", '{"status": "open"}')
-                        if i["type"] == "escalation" and i["severity"] == "blocking"]
             pending = m.pending_contributions()
             auditor = not loop["stopped"] and self.auditor_due(m)
         if loop["stopped"]:
-            body = "\n".join(f"- {i['title']}" for i in blocking)
-            self.notice(f"Loop stopped: {loop['reason'] or 'stopped'}", body, "critical",
-                        key="stop")
             return
-        self.forget.append("stop")  # running again: the next stop is notified
         if pending:
             self.launch("curator")
         phase = loop["phase"]
@@ -210,6 +210,7 @@ class Pass:
 
 def run_pass(cfg=None, now=None):
     """One Dispatcher pass. Returns an exit status."""
+    os.environ.pop("LOOP_SESSION", None)  # the Dispatcher acts for the operator
     cfg = cfg or config.load()
     if cfg.get("TENKM_CONFIG_ERROR"):
         log(f"config error: {cfg['TENKM_CONFIG_ERROR']}")

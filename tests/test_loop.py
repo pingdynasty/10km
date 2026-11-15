@@ -217,17 +217,19 @@ class TestDispatch(LoopCase):
         with self.m() as m:
             self.assertEqual(m.get_row("session", s["name"])["status"], "expired")
 
-    def test_unstoppable_handles_are_reported_not_expired(self):
+    def test_unstoppable_sessions_are_expired_with_an_escalation(self):
         self.start_loop()
-        s = sessions.create(self.cfg, "curator")
         for handle in ("pending:1", "process:42:", "nosuch:x"):
             with self.m() as m:
-                m.session_update(s["name"], {"handle": handle})
-            dispatch.run_pass(self.reload(CURATOR_TIMEOUT="-1"))
+                m.db.execute("DELETE FROM sessions WHERE role = 'curator'")
+            s = sessions.create(self.cfg, "curator")
             with self.m() as m:
-                self.assertEqual(m.get_row("session", s["name"])["status"], "active")
-        with open(os.path.join(self.cfg.central, "loop", "NOTIFICATIONS.md")) as f:
-            self.assertIn("Can't stop timed-out session", f.read())
+                m.session_update(s["name"], {"handle": handle})
+            dispatch.run_pass(self.reload(CURATOR_TIMEOUT="-1", LOOP_AGENT=""))
+            with self.m() as m:
+                self.assertEqual(m.get_row("session", s["name"])["status"], "expired")
+                [issue] = [i for i in m.list("issue") if s["name"] in i["title"]]
+                self.assertEqual((issue["severity"], issue["assignee_role"]), ("high", "operator"))
 
     def test_expiring_a_session_that_just_finished_is_harmless(self):
         self.start_loop()
@@ -256,43 +258,19 @@ class TestDispatch(LoopCase):
         with mock.patch.dict(os.environ, TZ="Asia/Tokyo", LC_ALL="fr_FR.UTF-8"):
             self.assertTrue(process.alive(self.cfg, cur["handle"]))
 
-    def test_stop_notified_once_across_phase_changes(self):
-        self.start_loop()
-        dispatch.run_pass(self.cfg)
-        [cur] = self.session("curator")
-        with self.m() as m:
-            m.loop_stop("blocked")
-        dispatch.run_pass(self.cfg)
-        with self.m() as m:
-            m.session_status(cur["name"], "done")  # phase moves while stopped
-        dispatch.run_pass(self.cfg)
-        path = os.path.join(self.cfg.central, "loop", "NOTIFICATIONS.md")
-        with open(path) as f:
-            self.assertEqual(f.read().count("Loop stopped"), 1)
-        with self.m() as m:
-            m.loop_resume()
-        dispatch.run_pass(self.cfg)
-        with self.m() as m:
-            m.loop_stop("blocked")
-        dispatch.run_pass(self.cfg)
-        with open(path) as f:
-            self.assertEqual(f.read().count("Loop stopped"), 2)
-
     def test_missing_database_is_notified(self):
         os.remove(self.cfg.db)
         dispatch.run_pass(self.cfg)
         with open(os.path.join(self.cfg.central, "loop", "NOTIFICATIONS.md")) as f:
             self.assertIn("database missing", f.read())
 
-    def test_stop_notifies_once(self):
+    def test_stopped_loop_starts_nothing_and_notifies_nothing(self):
         self.start_loop()
         with self.m() as m:
             m.loop_stop("blocked")
         dispatch.run_pass(self.cfg)
-        dispatch.run_pass(self.cfg)
-        with open(os.path.join(self.cfg.central, "loop", "NOTIFICATIONS.md")) as f:
-            self.assertEqual(f.read().count("Loop stopped: blocked"), 1)
         self.assertEqual(self.session("curator"), [])
+        self.assertFalse(os.path.exists(os.path.join(self.cfg.central, "loop", "NOTIFICATIONS.md")))
 
     def test_unreadable_database_notifies_and_starts_nothing(self):
         with open(self.cfg.db, "wb") as f:

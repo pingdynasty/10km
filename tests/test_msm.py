@@ -131,9 +131,49 @@ class MsmTest(unittest.TestCase):
         self.assertEqual(self.phase(), "execute")  # cycle still open: phase unchanged
         self.assertEqual(self.ok("task", "list")[0]["status"], "waiting")
 
-    def test_task_batch_with_unknown_task_is_not_found(self):
-        self.fails(3, "task", "batch", '[{"id": "nope", "status": "accepted"}]')
-        self.fails(1, "task", "batch", '[{"status": "accepted"}]')
+    def test_cycle_curate_sets_verdicts_and_closed_cycle_is_frozen(self):
+        self.start_and_curate_kickoff()
+        planner = self.plan(["a"])
+        self.ok("session", "done", planner)
+        w = self.ok("session", "create", "worker")["name"]
+        self.ok("session", "done", w)
+        cur = self.ok("session", "create", "curator")["name"]
+        task = self.ok("task", "get", "--session", w)
+        self.fails(3, "cycle", "curate", json.dumps({"tasks": [{"id": "nope", "status": "accepted"}]}))
+        self.fails(1, "cycle", "curate", json.dumps({"tasks": [{"id": task["id"]}]}))
+        c = self.ok("cycle", "curate", json.dumps({"curator_session": cur, "report": "r",
+                                                   "tasks": [{"id": task["id"], "status": "accepted"}]}))
+        self.assertEqual((c["status"], c["tasks"][0]["status"]), ("closed", "accepted"))
+        self.fails(2, "cycle", "curate", json.dumps({"report": "again"}))
+        self.fails(2, "task", "update", task["id"], '{"report": "late"}')
+        self.fails(2, "cycle", "update", "1", '{"report": "late"}')
+
+    def test_expired_or_removed_caller_cannot_change_state(self):
+        self.start_and_curate_kickoff()
+        planner = self.plan(["a"])
+        self.ok("session", "expired", planner)
+        self.env["LOOP_SESSION"] = planner
+        self.fails(2, "session", "done", planner)
+        self.fails(2, "issue", "create", '{"type": "backlog", "title": "t"}')
+        self.ok("loop", "get")  # reading is fine
+        self.env["LOOP_SESSION"] = "cycle9-worker1-gone"
+        self.fails(2, "issue", "create", '{"type": "backlog", "title": "t"}')
+
+    def test_agents_cannot_restart_a_stopped_loop(self):
+        self.start_and_curate_kickoff()
+        planner = self.ok("session", "create", "planner")["name"]
+        self.ok("loop", "stop", "blocked")
+        self.env["LOOP_SESSION"] = planner
+        self.fails(2, "loop", "resume")
+        self.fails(2, "loop", "update", '{"reason": "x"}')
+        del self.env["LOOP_SESSION"]
+        self.ok("loop", "resume")
+
+    def test_changes_are_appended_to_the_action_log(self):
+        self.ok("issue", "create", '{"type": "backlog", "title": "t"}')
+        with open(os.path.join(self.tmp.name, "actions.log")) as f:
+            line = json.loads(f.read().splitlines()[-1])
+        self.assertEqual((line["command"], line["session"]), ("issue create", None))
 
     def test_stop_and_resume(self):
         self.start_and_curate_kickoff()

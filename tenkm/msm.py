@@ -152,8 +152,50 @@ def parse_json(text, kind=dict):
 
 
 class MSM:
-    def __init__(self, db):
+    """The state machine over an open transaction.
+
+    caller is the calling agent's session name (LOOP_SESSION), or None for the
+    operator and the Dispatcher. Changes from an expired or removed session are
+    refused, and agents can't start, resume or update a stopped loop.
+    """
+
+    def __init__(self, db, caller=None):
         self.db = db
+        self.caller = caller or None
+        self.actions = []  # action log lines, written after the transaction commits
+
+    # --- callers -----------------------------------------------------------
+    def caller_session(self):
+        if self.caller is None:
+            return None
+        return self.one("SELECT * FROM sessions WHERE name = ?", self.caller)
+
+    def check_caller(self):
+        """Refuse changes from an expired or removed session."""
+        if self.caller is None:
+            return
+        s = self.caller_session()
+        if s is None or s["status"] == "expired":
+            raise MSMError(EPERM, f"session {self.caller} is no longer active; stop")
+
+    def is_agent(self):
+        s = self.caller_session() if self.caller else None
+        return s is not None and s["role"] != "operator"
+
+    def check_loop_record(self):
+        """While the loop is stopped, only the operator changes the loop record."""
+        if self.loop()["stopped"] and (self.is_agent() or
+                                       (self.caller and self.caller_session() is None)):
+            raise MSMError(EPERM, "only the operator can change a stopped loop")
+
+    def log(self, command, **detail):
+        self.actions.append(json.dumps({"at": now(), "session": self.caller,
+                                        "command": command, **detail}))
+
+    def check_open(self, cycle_id):
+        row = self.one("SELECT status FROM cycles WHERE id = ?", cycle_id)
+        if row is not None and row["status"] == "closed":
+            raise MSMError(EPERM, f"cycle {cycle_id} is closed and can't be changed")
 
     # --- helpers -----------------------------------------------------------
     def one(self, sql, *args):
@@ -217,12 +259,16 @@ class MSM:
         return to_dict(self.loop())
 
     def loop_start(self):
+        self.check_caller()
+        self.check_loop_record()
         if not self.loop()["stopped"]:
             raise MSMError(EPERM, "loop is not stopped")
         self.set_loop(stopped=0, reason=None, phase="curate")
         return to_dict(self.loop())
 
     def loop_resume(self):
+        self.check_caller()
+        self.check_loop_record()
         loop = self.loop()
         if not loop["stopped"]:
             raise MSMError(EPERM, "loop is not stopped")
@@ -231,11 +277,14 @@ class MSM:
         return to_dict(self.loop())
 
     def loop_stop(self, reason=None):
+        self.check_caller()
         self.loop()
         self.set_loop(stopped=1, reason=reason)
         return to_dict(self.loop())
 
     def loop_update(self, data):
+        self.check_caller()
+        self.check_loop_record()
         self.loop()
         self.check_fields(data, ("reason",))
         self.set_loop(**data)
@@ -251,6 +300,7 @@ class MSM:
                         "AND status != 'active'")
 
     def session_create(self, role, username=None, root=None):
+        self.check_caller()
         if role not in ROLES:
             raise MSMError(EINVAL, f"unknown role {role}")
         if (username is not None) != (role == "operator"):
@@ -301,11 +351,13 @@ class MSM:
         if task is not None:
             self.db.execute("UPDATE tasks SET session = ?, started_at = ?, status = 'active' "
                             "WHERE id = ?", (name, t, task["id"]))
+            self.log("task claim", task=task["id"], worker=name)
         return to_dict(self.get_row("session", name))
 
     def session_status(self, name, status):
         if status not in ("done", "expired"):
             raise MSMError(EINVAL, "status must be done or expired")
+        self.check_caller()
         s = self.get_row("session", name)
         if s["status"] == status:
             return to_dict(s)
@@ -315,8 +367,11 @@ class MSM:
         self.update_row("session", name, {"status": status, "updated_at": t})
         role = s["role"]
         if role == "worker":
-            self.db.execute("UPDATE tasks SET status = ?, done_at = ? "
-                            "WHERE session = ? AND status = 'active'", (status, t, name))
+            changed = self.db.execute("UPDATE tasks SET status = ?, done_at = ? "
+                                      "WHERE session = ? AND status = 'active'",
+                                      (status, t, name)).rowcount
+            if changed:
+                self.log(f"task {status}", worker=name)
         # Phase transitions.
         loop, cur = self.loop(), self.current_cycle()
         is_open = cur is not None and cur["status"] == "open"
@@ -333,6 +388,7 @@ class MSM:
         return to_dict(self.get_row("session", name))
 
     def session_update(self, name, data):
+        self.check_caller()
         self.check_fields(data, RESOURCES["session"]["update"])
         self.get_row("session", name)
         status = data.pop("status", None)
@@ -344,43 +400,36 @@ class MSM:
         return to_dict(self.get_row("session", name))
 
     def session_remove(self, name):
+        self.check_caller()
         self.get_row("session", name)
-        self.db.execute("UPDATE tasks SET status = 'waiting', session = NULL, started_at = NULL "
-                        "WHERE session = ? AND status = 'active'", (name,))
+        if self.db.execute("UPDATE tasks SET status = 'waiting', session = NULL, started_at = NULL "
+                           "WHERE session = ? AND status = 'active'", (name,)).rowcount:
+            self.log("task returned", worker=name)
         self.db.execute("DELETE FROM sessions WHERE name = ?", (name,))
         return {"removed": name}
 
     # --- tasks -------------------------------------------------------------
     def task_update(self, task, data):
+        self.check_caller()
         self.check_fields(data, RESOURCES["task"]["update"])
+        self.check_open(task["cycle"])
         if data.get("status") in ("accepted", "rejected"):
             data["curated_at"] = now()
         self.update_row("task", task["id"], data)
+        self.log("task update", task=task["id"], fields=sorted(data))
         return to_dict(self.get_row("task", task["id"]))
 
     def task_remove(self, task):
+        self.check_caller()
         if task["cycle"] == self.loop()["current_cycle"]:
             raise MSMError(EPERM, "tasks of the current cycle cannot be removed")
         self.db.execute("DELETE FROM tasks WHERE id = ?", (task["id"],))
+        self.log("task remove", task=task["id"])
         return {"removed": task["id"]}
-
-    def task_batch_update(self, verdicts, curate=None):
-        """Atomic: update tasks to accepted|rejected, optionally curate the cycle."""
-        t = now()
-        for row in verdicts:
-            tid = row.get("id") or self.task_for_session(row["session"])["id"]
-            self.get_row("task", tid)
-            status = row["status"]
-            if status not in ("accepted", "rejected"):
-                raise MSMError(EINVAL, f"bad verdict {status}")
-            self.db.execute("UPDATE tasks SET status = ?, curated_at = ? WHERE id = ?",
-                            (status, t, tid))
-        if curate is not None:
-            self.cycle_curate(curate)
-        return {"updated": len(verdicts), "curated": curate is not None}
 
     # --- cycles ------------------------------------------------------------
     def cycle_create(self, data):
+        self.check_caller()
         self.check_fields(data, ("planner_session", "headline", "tasks"))
         tasks = data.get("tasks")
         if not isinstance(data.get("headline"), str) or not isinstance(tasks, list):
@@ -415,16 +464,34 @@ class MSM:
             self.set_loop(empty_cycles=0)
         else:
             self.set_loop(empty_cycles=loop["empty_cycles"] + 1)
+        self.log("cycle create", cycle=cycle_id, tasks=[t["shortname"] for t in tasks])
         return self.cycle_get(cycle_id)
 
     def cycle_curate(self, data):
-        self.check_fields(data, ("curator_session", "report"))
+        """Close the current cycle and set the verdict of each listed task."""
+        self.check_caller()
+        self.check_fields(data, ("curator_session", "report", "tasks"))
         cur = self.current_cycle()
         if cur is None or cur["status"] != "open":
             raise MSMError(EPERM, "no open cycle")
+        verdicts = data.get("tasks") or []
+        if not isinstance(verdicts, list):
+            raise MSMError(EINVAL, "tasks must be a list of {id, status}")
+        t = now()
+        for v in verdicts:
+            if not isinstance(v, dict) or set(v) != {"id", "status"} \
+                    or v["status"] not in ("accepted", "rejected"):
+                raise MSMError(EINVAL, "each task verdict needs id and status accepted|rejected")
+            task = self.get_row("task", v["id"])
+            if task["cycle"] != cur["id"]:
+                raise MSMError(EINVAL, f"task {v['id']} is not in cycle {cur['id']}")
+            self.db.execute("UPDATE tasks SET status = ?, curated_at = ? WHERE id = ?",
+                            (v["status"], t, v["id"]))
         self.db.execute("UPDATE cycles SET status = 'closed', curator_session = ?, report = ?, "
                         "curated_at = ? WHERE id = ?",
-                        (data.get("curator_session"), data.get("report"), now(), cur["id"]))
+                        (data.get("curator_session"), data.get("report"), t, cur["id"]))
+        self.log("cycle curate", cycle=cur["id"],
+                 verdicts={v["id"]: v["status"] for v in verdicts})
         return self.cycle_get(cur["id"])
 
     def cycle_get(self, cycle_id=None):
@@ -436,16 +503,19 @@ class MSM:
         return c
 
     def cycle_remove(self, cycle_id):
+        self.check_caller()
         cycle_id = int(cycle_id)
         self.get_row("cycle", cycle_id)
         if cycle_id == self.loop()["current_cycle"]:
             raise MSMError(EPERM, "the current cycle cannot be removed")
         self.db.execute("DELETE FROM tasks WHERE cycle = ?", (cycle_id,))
         self.db.execute("DELETE FROM cycles WHERE id = ?", (cycle_id,))
+        self.log("cycle remove", cycle=cycle_id)
         return {"removed": cycle_id}
 
     # --- issues and audits -------------------------------------------------
     def create(self, res, data):
+        self.check_caller()
         spec = RESOURCES[res]
         self.check_fields(data, spec["create"])
         missing = [f for f in spec["required"] if f not in data]
@@ -467,24 +537,31 @@ class MSM:
                             tuple(row.values()))
         except sqlite3.IntegrityError as e:
             raise MSMError(EINVAL, str(e))
+        self.log(f"{res} create", id=row["id"])
         return to_dict(self.get_row(res, row["id"]))
 
     def update(self, res, key, data):
+        self.check_caller()
         self.check_fields(data, RESOURCES[res]["update"])
         self.get_row(res, key)
+        if res == "cycle":
+            self.check_open(key)
         if res == "issue" and data.get("status") == "resolved":
             data["resolved_at"] = now()
         if res == "audit" and "period" in data:
             data["period"] = json.dumps(data["period"])
         self.update_row(res, key, data)
+        self.log(f"{res} update", id=key, fields=sorted(data))
         return to_dict(self.get_row(res, key))
 
     def remove(self, res, key):
+        self.check_caller()
         row = self.get_row(res, key)
         if res == "issue" and row["status"] == "open":
             raise MSMError(EPERM, "open issues cannot be removed")
         spec = RESOURCES[res]
         self.db.execute(f"DELETE FROM {spec['table']} WHERE {spec['key']} = ?", (key,))
+        self.log(f"{res} remove", id=key)
         return {"removed": key}
 
     def list(self, res, filt=None):
@@ -547,23 +624,36 @@ def connect(path=None, create=False):
 
 
 @contextmanager
-def transaction(path=None, create=False):
-    """Open the database and yield an Msm in one IMMEDIATE transaction.
+def transaction(path=None, create=False, caller=None):
+    """Open the database and yield an MSM in one IMMEDIATE transaction.
 
-    Commits on success, rolls back on any exception.
+    caller defaults to LOOP_SESSION. Commits on success, rolls back on any
+    exception, and appends the transaction's actions to the action log.
     """
+    path = path or db_path()
     db = connect(path, create)
+    m = None
     try:
         db.execute("BEGIN IMMEDIATE")
         migrate(db)
+        m = MSM(db, caller if caller is not None else os.environ.get("LOOP_SESSION"))
         try:
-            yield MSM(db)
+            yield m
         except BaseException:
             db.execute("ROLLBACK")
             raise
         db.execute("COMMIT")
     finally:
         db.close()
+    if m.actions:
+        with open(action_log_path(path), "a") as f:
+            f.write("".join(line + "\n" for line in m.actions))
+
+
+def action_log_path(db=None):
+    """The action log: MSM_LOG, or actions.log next to the database."""
+    return os.environ.get("MSM_LOG") or os.path.join(os.path.dirname(
+        os.path.abspath(db or db_path())), "actions.log")
 
 
 USAGE = """usage: msm <command>
@@ -580,7 +670,6 @@ USAGE = """usage: msm <command>
   task get|remove <id> | --session <name>
   task update <id> | --session <name> <json>
   task list [filter]
-  task batch <verdicts-json> [<cycle-curate-json>]
   cycle create|curate <json>
   cycle get [id]
   cycle list [filter]
@@ -637,11 +726,6 @@ def run(m, argv):
         if verb == "list":
             need(0, 1)
             return m.list("task", *args)
-        if verb == "batch":
-            need(1, 2)
-            data = parse_json(args[0], list)
-            curate = parse_json(args[1]) if len(args) == 2 else None
-            return m.task_batch_update(data, curate)
         if verb in ("get", "remove", "update"):
             if args[:1] == ["--session"]:
                 need(2, 3)
