@@ -4,6 +4,7 @@ checks.
 
 Run: python3 -m unittest discover tests
 """
+import json
 import os
 import subprocess
 import sys
@@ -12,8 +13,9 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from test_requirements_msm import MsmCase  # noqa: E402
-from tenkm import config  # noqa: E402
+from test_loop import LoopCase  # noqa: E402
+from test_requirements_msm import MSM, MsmCase  # noqa: E402
+from tenkm import config, dispatch, msm  # noqa: E402
 
 
 class TestReplacedCycleCount(MsmCase):
@@ -86,6 +88,42 @@ class TestHarnessSessionName(unittest.TestCase):
         self.assertNamed(argv, "operator1-mars")
         self.assertEqual(argv[-2:], ["-p", "hi"])
         self.assertEqual(self.run_default("operator"), [])
+
+
+class TestStatePathSettings(LoopCase):
+    """MSM_DB and MSM_LOG are config.env settings that agents' msm calls follow."""
+
+    def set_in_config(self, old, new):
+        path = os.path.join(self.cfg.central, "loop", "config.env")
+        with open(path) as f:
+            text = f.read()
+        self.assertIn(old, text)
+        with open(path, "w") as f:
+            f.write(text.replace(old, new))
+
+    def test_defaults_are_unchanged(self):  # R27
+        self.assertEqual(self.cfg.db, os.path.join(self.root, ".10km", "loop.db"))
+        self.assertEqual(self.cfg.action_log, os.path.join(self.root, ".10km", "actions.log"))
+        env = dispatch.Pass(self.cfg).agent_env("s", "p", "m")
+        self.assertEqual((env["MSM_DB"], env["MSM_LOG"]), (self.cfg.db, self.cfg.action_log))
+
+    def test_config_env_paths_reach_agents_and_this_process(self):  # R27
+        log = os.path.join(self.tmp.name, "custom.log")
+        self.set_in_config('MSM_LOG="${MSM_LOG-}"', f'MSM_LOG="${{MSM_LOG-{log}}}"')
+        cfg = config.load()
+        self.assertEqual(cfg.action_log, log)
+        self.assertEqual(self.reload(MSM_LOG="/x/env.log").action_log, "/x/env.log")
+        cfg = config.load()
+        env = dispatch.Pass(cfg).agent_env("cycle1-worker1-x", "p", "m")
+        self.assertEqual((env["MSM_DB"], env["MSM_LOG"]), (cfg.db, log))
+        env.pop("LOOP_SESSION")  # act as the operator
+        subprocess.run([MSM, "issue", "create", '{"type": "backlog", "title": "agent"}'],
+                       env=env, check=True, capture_output=True)
+        with msm.transaction(cfg.db) as m:  # a script in this process, e.g. a curate step
+            m.create("issue", {"type": "backlog", "title": "script"})
+        with open(log) as f:
+            commands = [json.loads(line)["command"] for line in f.read().splitlines()]
+        self.assertEqual(commands, ["issue create", "issue create"])
 
 
 if __name__ == "__main__":

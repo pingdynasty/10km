@@ -33,7 +33,8 @@ class LoopCase(unittest.TestCase):
         self.patch = mock.patch.dict(os.environ, dict(base, **self.env))
         self.patch.start()
         os.environ.pop("MSM_DB")
-        os.environ.pop("LOOP_SESSION", None)  # gates run the tests inside a session
+        for name in ("LOOP_SESSION", "MSM_LOG"):
+            os.environ.pop(name, None)  # gates run the tests inside a session
         self.cfg = config.load()
         # What kickoff does: a loop repo and a project repo in central/.
         init.create_loop_repo(self.cfg.repo_path("loop"))
