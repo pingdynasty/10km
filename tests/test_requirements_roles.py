@@ -15,7 +15,17 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from test_loop import LoopCase  # noqa: E402
 from test_requirements_msm import MSM, MsmCase  # noqa: E402
+from test_scripts import CODE, ScriptCase, wait_for  # noqa: E402
 from tenkm import config, dispatch, msm  # noqa: E402
+
+
+def read(path):
+    """A file's text, or "" if it doesn't exist yet."""
+    try:
+        with open(path) as f:
+            return f.read()
+    except FileNotFoundError:
+        return ""
 
 
 class TestReplacedCycleCount(MsmCase):
@@ -88,6 +98,62 @@ class TestHarnessSessionName(unittest.TestCase):
         self.assertNamed(argv, "operator1-mars")
         self.assertEqual(argv[-2:], ["-p", "hi"])
         self.assertEqual(self.run_default("operator"), [])
+
+
+class TestIssueTypes(MsmCase):
+    def as_session(self, name, *args):
+        """Run msm as session name; return (exit code, output)."""
+        env, self.env = self.env, dict(self.env, LOOP_SESSION=name)
+        try:
+            rc, out, _ = self.run_msm(*args)
+        finally:
+            self.env = env
+        return rc, out
+
+    def test_issues_are_escalations_or_backlog_items(self):  # R174
+        for kind in ("escalation", "backlog"):
+            issue = self.ok("issue", "create", json.dumps({"type": kind, "title": kind}))
+            self.assertEqual(issue["type"], kind)
+        for kind in ("bug", "", None):
+            self.fails(1, "issue", "create", json.dumps({"type": kind, "title": "t"}))
+        self.assertEqual(sorted(i["type"] for i in self.ok("issue", "list")),
+                         ["backlog", "escalation"])
+
+    def test_agents_and_operators_create_backlog_items(self):  # R179
+        self.ok("loop", "start")
+        self.plan("a")
+        worker = self.ok("session", "create", "worker")["name"]
+        operator = self.ok("session", "create", "operator", "mars")["name"]
+        for name in (worker, operator):
+            rc, issue = self.as_session(name, "issue", "create", json.dumps(
+                {"type": "backlog", "title": f"from {name}", "owner_session": name,
+                 "urgent_if": "later"}))
+            self.assertEqual(rc, 0)
+            self.assertEqual((issue["owner_session"], issue["status"]), (name, "open"))
+        self.ok("issue", "create", '{"type": "backlog", "title": "from the operator\'s shell"}')
+        self.assertEqual(len(self.ok("issue", "list", '{"type": "backlog"}')), 3)
+
+
+class TestWorkerLaunch(ScriptCase):
+    def test_worker_is_launched_with_its_session_name_and_prompt(self):  # R197
+        self.loop.start()
+        planner = self.loop.plan("a")
+        p = self.loop.run("dispatch", env={"LOOP_AGENT": "env > env.txt"})
+        self.assertEqual(p.returncode, 0, p.stderr)
+        [worker] = self.loop.sessions("worker")
+        name, directory = worker["name"], worker["working_directory"]
+        path = os.path.join(directory, "env.txt")
+        self.assertTrue(wait_for(lambda: "FIRST_MESSAGE=" in read(path)))
+        env = dict(line.split("=", 1) for line in read(path).splitlines() if "=" in line)
+        self.assertEqual((env["SESSION"], env["LOOP_SESSION"]), (name, name))
+        self.assertIn(name, env["FIRST_MESSAGE"])
+        with open(os.path.join(directory, "prompt.txt")) as f:
+            text = f.read()
+        self.assertIn(f"Session: {name}", text)
+        with open(os.path.join(CODE, "prompts", "worker.md")) as f:
+            self.assertIn(f.read(), text)
+        task = self.loop.msm("task", "get", "--session", name)
+        self.assertEqual((task["shortname"], task["branch"]), ("a", planner))
 
 
 class TestStatePathSettings(LoopCase):
