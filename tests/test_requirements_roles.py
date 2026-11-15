@@ -13,6 +13,7 @@ import unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import testenv  # noqa: E402,F401  (test config, no caller env: tests/testenv.py)
 from test_loop import LoopCase  # noqa: E402
 from test_requirements_msm import MSM, MsmCase  # noqa: E402
 from test_scripts import CODE, ScriptCase, wait_for  # noqa: E402

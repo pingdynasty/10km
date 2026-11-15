@@ -12,6 +12,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import testenv  # noqa: E402,F401  (test config, no caller env: tests/testenv.py)
 from test_curate import CurateCase  # noqa: E402
 from test_loop import LoopCase  # noqa: E402
 from tenkm import config, curate, dispatch, sessions, status  # noqa: E402
@@ -34,9 +35,11 @@ class TestStatus(LoopCase):
 class TestCentralConfig(LoopCase):
     def test_scripts_read_config_env_from_the_central_loop_worktree(self):  # R14 R15
         path = os.path.join(self.cfg.central, "loop", "config.env")
-        self.assertEqual(config.load()["LOOP_CONFIG_PATH"], path)
         with open(path, "a") as f:
             f.write('TENKM_TEST_SETTING="from central"\n')
+        self.assertEqual(config.load()["TENKM_TEST_SETTING"], "from central")  # via the test config
+        os.environ.pop("LOOP_CONFIG")  # without it, as the loop runs (LoopCase restores it)
+        self.assertEqual(config.load()["LOOP_CONFIG_PATH"], path)
         self.assertEqual(config.load()["TENKM_TEST_SETTING"], "from central")
 
     def test_agent_command_per_role_falls_back_to_loop_agent(self):  # R28

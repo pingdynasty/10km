@@ -8,6 +8,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import testenv  # noqa: E402,F401  (test config, no caller env: tests/testenv.py)
 import conformance  # noqa: E402
 
 TEST = "tests/test_conformance.py:TestChecker.test_reports_each_kind_of_problem"

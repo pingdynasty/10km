@@ -15,6 +15,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import testenv  # noqa: E402,F401  (test config, no caller env: tests/testenv.py)
 from test_scripts import ScriptCase  # noqa: E402
 
 STEPS = ("prepare", "select", "merge", "publish", "cleanup")

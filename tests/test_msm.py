@@ -2,8 +2,12 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import testenv  # noqa: E402,F401  (test config, no caller env: tests/testenv.py)
 
 MSM = os.path.join(os.path.dirname(__file__), "..", "bin", "msm")
 

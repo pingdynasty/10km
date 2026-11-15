@@ -5,13 +5,16 @@
 #   make smoke-host   # tests/smoke.sh
 # It runs in a temporary directory, removed on exit, with this checkout's bin/
 # and tests/ first on PATH, and ignores the settings of any loop it runs inside.
+# It uses the test config (tests/config.env): agents other than the fake fail.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/10km-smoke.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
-unset LOOP_SESSION SESSION LOOP_CONFIG PROMPT_FILE FIRST_MESSAGE MSM_LOG PYTHONPATH "${!TENKM_@}"
+unset SESSION PROMPT_FILE FIRST_MESSAGE ONE_SHOT PYTHONPATH "${!LOOP_@}" "${!MSM_@}" "${!TENKM_@}"
+unset PLANNER_AGENT WORKER_AGENT CURATOR_AGENT AUDITOR_AGENT OPERATOR_AGENT
 mkdir "$tmp/loop" "$tmp/data"
 export LOOP_ROOT="$tmp/loop" MSM_DB="$tmp/data/loop.db"
+export LOOP_CONFIG="$here/tests/config.env"
 export LOOP_AGENT=fake-agent DISPATCH_INTERVAL=1 PATH="$here/bin:$here/tests:$PATH"
 
 # Ignore the host's system and global git config, so the test does not depend
@@ -28,7 +31,6 @@ from tenkm.init import create_loop_repo; create_loop_repo(sys.argv[2], source=sy
 git init -q -b main "$LOOP_ROOT/central/project"
 git -C "$LOOP_ROOT/central/project" commit -q --allow-empty -m "Initial commit"
 "$here/bin/10km" init >/dev/null
-export LOOP_CONFIG="$LOOP_ROOT/central/loop/config.env"
 . "$here/bin/lib.sh"
 echo "Goal: say hello" >"$CENTRAL/loop/GOALS.md"
 git -C "$CENTRAL/loop" add GOALS.md
