@@ -107,7 +107,7 @@ MAP = {
     "R244": (P, "Assess milestones, goals and deliverables"),
     "R245": (P, "update the plan and backlog"),
     "R246": (P, "resolve escalations you can"),
-    "R247": [(P, "create a blocking operator escalation with reason `done` or `idle`"),
+    "R247": [(P, "create a blocking operator escalation whose title starts with its reason"),
              RC + "TestIdleLimit.test_the_idle_limit_and_empty_cycle_count_the_prompt_names_exist",
              IDLE],
     "R248": (P, "If there are blocking operator escalations, `notify"),
@@ -126,7 +126,7 @@ MAP = {
              OFF_OPERATOR, OFF_AUDITOR, TWO_REPOS],
     # Step 11: Exit
     "R257": (P, "Exit: if there are blocking operator escalations"),
-    "R258": [(P, "if there are blocking operator escalations, `msm loop stop blocked`"), IDLE],
+    "R258": [(P, "if there are blocking operator escalations, `msm loop stop <reason>` with the escalation's reason"), IDLE],
     "R259": [(P, "`msm session done $LOOP_SESSION`"), CLEANUP],
 }
 

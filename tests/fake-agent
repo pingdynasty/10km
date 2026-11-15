@@ -16,7 +16,8 @@
 # The Curator merges done sessions one by one, rejects a Worker whose merge
 # conflicts or fails `gate validation`, and backlogs rejected and expired Workers
 # with their branch. At Assess it escalates `idle` once `empty_cycles` reaches
-# IDLE_CYCLE_LIMIT, and at Exit stops the loop if a blocking escalation is open.
+# IDLE_CYCLE_LIMIT, and at Exit stops the loop if a blocking escalation is open,
+# with that escalation's reason (the first word of its title), else `blocked`.
 set -euo pipefail
 . "$(dirname "$0")/../bin/lib.sh"
 s=$SESSION
@@ -126,7 +127,11 @@ case $s in
     # shellcheck disable=SC2086
     curate-publish --report smoke --accepted $accepted --rejected $rejected >/dev/null
     curate-cleanup >/dev/null
-    blocking=$("$MSM" issue list '{"status": "open", "severity": "blocking", "assignee_role": "operator"}' | jq length)
-    [ "$blocking" -gt 0 ] && "$MSM" loop stop blocked >/dev/null
+    # Stop reason: none without a blocking operator escalation, else done or idle
+    # if a title starts with it, else blocked.
+    reason=$("$MSM" issue list '{"status": "open", "severity": "blocking", "assignee_role": "operator"}' \
+      | jq -r 'if length == 0 then "" else
+          ([.[].title | split(":")[0] | select(. == "done" or . == "idle")][0] // "blocked") end')
+    [ -n "$reason" ] && "$MSM" loop stop "$reason" >/dev/null
     "$MSM" session done "$s" >/dev/null ;;
 esac
