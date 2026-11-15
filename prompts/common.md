@@ -19,6 +19,14 @@ own worktrees; never commit in `$LOOP_ROOT/central/`.
 - Only the operator decides when cycles, tasks, audits and issues are archived or
   removed, and may delegate this to an agent. Don't remove them unless delegated.
 
+## Shortnames
+
+Goals, deliverables, escalations and plan phases have numbered shortnames: G1,
+G2, ...; DEL1, ...; ESC1, ...; PH1, .... Use them consistently in `GOALS.md`,
+`PLAN.md`, escalations and reports; never renumber. When writing to the operator
+(escalations, notifications, cycle and status reports), spell out what each
+shortname means on first use: "DEL2 (status report)".
+
 ## Issues
 
 Issues are escalations (a request for help or a decision) or backlog items (work

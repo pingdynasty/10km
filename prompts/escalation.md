@@ -20,7 +20,8 @@ similar escalation is open, update it instead of creating another
 (`msm issue update <id> '<json>'`).
 
 Create with `msm issue create '<json>'`:
-- `type`: `escalation`; `title`: the question, in one line.
+- `type`: `escalation`; `title`: the next free ESCn, then the question, in one
+  line (`ESC3: ...`).
 - `owner_session`: your session; `assignee_role`: who must answer (`planner`,
   `curator`, `auditor` or `operator`).
 - `severity`: `low`, `high` or `blocking`.
@@ -29,7 +30,8 @@ Create with `msm issue create '<json>'`:
   settle it, with evidence: commits, logs, test names), the options, and your
   recommendation.
 
-Write for a reader without the loop's files open: say what each id or name is.
+Write for a reader without the loop's files open: say what each id or name is,
+and spell out each shortname on first use (`prompts/common.md`).
 
 ## Severity
 

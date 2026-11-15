@@ -30,7 +30,8 @@ conflict (it prints what to do next). Backlogged unmerged work is an issue with
    `empty_cycles` at `IDLE_CYCLE_LIMIT`, create a blocking operator escalation
    with reason `done` or `idle` (start its title with it). If there are blocking
    operator escalations, `notify "<title>" "<body>"`. Commit.
-9. Publish: `curate-publish --report-file <file> --accepted <worker>... --rejected <worker>...`.
+9. Publish: write the report with shortnames spelled out on first use
+   (`prompts/common.md`), then `curate-publish --report-file <file> --accepted <worker>... --rejected <worker>...`.
    It fast-forwards main and, if a Planner session was selected, closes the cycle
    with your verdicts. Every done Worker needs a verdict.
 10. Clean up: `curate-cleanup`. Its `unpublished_removed` must be work you dropped.

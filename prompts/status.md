@@ -17,7 +17,7 @@ it with `msm session done "$LOOP_SESSION"` is the one change you make.
    1. **State**: running or stopped, the phase and cycle, and one line of why
       (which sessions are active; or the stop reason, its detail and since when).
    2. **Deliverables**: a table `Deliverable | Status | Pending`, one row per
-      deliverable in `GOALS.md`. Status: `not started`, `in progress`, `done` or
+      deliverable in `GOALS.md`, named `DELn (name)`. Status: `not started`, `in progress`, `done` or
       `failed`, from measured evidence (cycle reports, gates, tests). Pending:
       what is left, in a few words, or `-`.
    3. **Recent cycles**: one line per cycle since the last audit, oldest first:
