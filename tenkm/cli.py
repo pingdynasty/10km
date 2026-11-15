@@ -3,6 +3,8 @@
   10km init                       create the database; register the central repos
   10km kickoff [-- message]       set up the loop with OPERATOR_AGENT
   10km status                     status report
+  10km metrics [--cycle N] [--json]
+                                  sessions, times, commits and usage per cycle and role
   10km dispatch                   one Dispatcher pass
   10km session start <username> [--no-agent] [-- message]
                                   start an operator session
@@ -17,7 +19,7 @@ import os
 import subprocess
 import sys
 
-from . import config, dispatch, init, notify, sessions, msm, status
+from . import config, dispatch, init, metrics, notify, sessions, msm, status
 
 
 def _session(argv, cfg):
@@ -126,6 +128,25 @@ def _notify(argv, cfg):
     return 0 if notify.send(cfg, rest[0], " ".join(rest[1:]), priority, key) else 1
 
 
+def _metrics(argv, cfg):
+    as_json, cycle, i = False, None, 0
+    while i < len(argv):
+        if argv[i] == "--json":
+            as_json, i = True, i + 1
+        elif argv[i] == "--cycle" and i + 1 < len(argv) and argv[i + 1].isdigit():
+            cycle, i = int(argv[i + 1]), i + 2
+        else:
+            print("usage: 10km metrics [--cycle N] [--json]", file=sys.stderr)
+            return 1
+    try:
+        data = metrics.collect(cfg, cycle)
+    except msm.MSMError as e:
+        print(f"{e.code}: {e.message}", file=sys.stderr)
+        return e.code
+    print(json.dumps(data, indent=1) if as_json else metrics.text(data))
+    return 0
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     if not argv or argv[0] in ("-h", "--help"):
@@ -145,6 +166,8 @@ def main(argv=None):
     if command == "status":
         print(status.report(cfg))
         return 0
+    if command == "metrics":
+        return _metrics(args, cfg)
     if command == "dispatch":
         return dispatch.run_pass(cfg)
     if command == "session":
