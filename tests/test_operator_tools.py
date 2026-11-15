@@ -4,6 +4,7 @@ commands), R34 (worker and validation gates)."""
 import glob
 import json
 import os
+import shutil
 import subprocess
 import sys
 import unittest
@@ -48,9 +49,9 @@ class TestDoctor(OperatorCase):
         self.assertExit(p, 0)
         checks = self.lines(p)
         for name in ("bash", "git", "python", "git version", "config.env", "repo loop",
-                     "repo project main branch", "repo project worktreeConfig",
-                     "repo project hooks", "database", "launcher", "worker agent",
-                     "operator agent", "worker gate 1", "worker gate 2", "validation gates"):
+                     "repo project main branch", "repo project hooks", "database",
+                     "launcher", "worker agent", "operator agent", "worker gate 1",
+                     "worker gate 2"):
             self.assertIn(name, checks, p.stdout)
             self.assertTrue(checks[name][0], p.stdout)
         self.assertIn("sleep", checks["worker agent"][1])
@@ -68,7 +69,7 @@ class TestDoctor(OperatorCase):
         self.assertExit(p, 1)
         checks = self.lines(p)
         failed = {name for name, (good, _) in checks.items() if not good}
-        self.assertEqual(failed, {"repo project worktreeConfig", "database", "launcher",
+        self.assertEqual(failed, {"repo project hooks", "database", "launcher",
                                   "worker agent", "validation gate 1"}, p.stdout)
         self.assertIn("no-such-agent-cmd: not found", checks["worker agent"][1])
         self.assertTrue(checks["planner agent"][0])  # LOOP_AGENT still resolves
@@ -84,6 +85,12 @@ class TestDoctor(OperatorCase):
         self.assertFalse(checks["repo project hooks"][0])
         self.assertIn("run 10km init", checks["repo project hooks"][1])
         self.assertEqual(checks["repo project main branch"], (False, "gone: no such branch"))
+
+    def test_own_hooks_path_is_left_alone(self):
+        self.loop.git(self.loop.repo("project"), "config", "core.hooksPath", "my-hooks")
+        checks = self.lines(self.tenkm("doctor"))
+        self.assertEqual(checks["repo project hooks"],
+                         (True, "repo sets its own core.hooksPath; loop hooks not installed"))
 
     def test_broken_config_and_old_git_fail(self):
         fake = os.path.join(self.tmp, "fakebin")
@@ -103,6 +110,19 @@ class TestDoctor(OperatorCase):
         self.assertFalse(checks["git version"][0])
         self.assertIn("needs 2.26", checks["git version"][1])
         self.assertFalse(checks["config.env"][0])
+
+    def test_database_path_with_uri_characters_is_opened_as_is(self):
+        odd = os.path.join(self.tmp, "a?b#c%41d")
+        os.makedirs(odd)
+        db = os.path.join(odd, "msm.db")
+        shutil.copy(self.loop.db, db)
+        p = self.tenkm("doctor", MSM_DB=db)
+        checks = self.lines(p)
+        self.assertTrue(checks["database"][0], p.stdout)
+        self.assertTrue(checks["database"][1].startswith(db + " "), p.stdout)
+
+    def test_usage_error_exits_2(self):
+        self.assertExit(self.tenkm("doctor", "--all"), 2)
 
 
 class TestLaunchTest(OperatorCase):
@@ -145,9 +165,10 @@ class TestLaunchTest(OperatorCase):
         self.assertExit(p, 1)
         self.assertIn("timed out after 2s", p.stdout)
 
-    def test_bad_role_is_refused(self):
-        self.assertExit(self.tenkm("launch-test", "operator"), 1)
-        self.assertExit(self.tenkm("launch-test", "worker", "planner"), 1)
+    def test_usage_errors_exit_2(self):
+        for args in (("operator",), ("worker", "planner"), ("--timeout",),
+                     ("--timeout", "soon")):
+            self.assertExit(self.tenkm("launch-test", *args), 2)
 
 
 class TestOperatorGate(OperatorCase):
