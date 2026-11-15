@@ -10,16 +10,18 @@
 #   die       exit 1 without setting the session done (a Worker commits first)
 #   conflict  Worker: write its session name to shared.txt instead of <task>.txt
 #   broken    Worker: also commit broken.txt
-# FAKE_TASKS: the Planner's task shortnames, space-separated (default "hello").
+# FAKE_TASKS: the Planner's task shortnames, space-separated (default "hello";
+# set but empty plans an empty cycle). A Worker commits in every project repo.
 # FAKE_USAGE=1: on exit, print a Claude-like JSON result (as --output-format json).
 # The Curator merges done sessions one by one, rejects a Worker whose merge
 # conflicts or fails `gate validation`, and backlogs rejected and expired Workers
-# with their branch.
+# with their branch. At Assess it escalates `idle` once `empty_cycles` reaches
+# IDLE_CYCLE_LIMIT, and at Exit stops the loop if a blocking escalation is open.
 set -euo pipefail
 . "$(dirname "$0")/../bin/lib.sh"
 s=$SESSION
 dir="$LOOP_ROOT/$s"
-project=$(repos | sed -n 2p)
+projects=$(repos | sed 1d)
 
 key=$(tr 'a-z-' 'A-Z_' <<<"${s%-*}")  # CYCLE1_WORKER2, AUDITOR1
 numbered=${key#CYCLE*_}               # WORKER2
@@ -63,25 +65,27 @@ usage_result() {  # a Claude-like JSON result
 case $s in
   *-planner-*)
     give_up
-    "$MSM" cycle create "$(jq -n --arg s "$s" --arg names "${FAKE_TASKS:-hello}" \
+    "$MSM" cycle create "$(jq -n --arg s "$s" --arg names "${FAKE_TASKS-hello}" \
       '{planner_session: $s, headline: "smoke",
         tasks: [$names | split(" ")[] | select(. != "")
                 | {shortname: ., instructions: "add \(.)", branch: $s}]}')" >/dev/null
     "$MSM" session done "$s" >/dev/null ;;
   *-worker*)
     task=$("$MSM" task get --session "$s")
-    git -C "$dir/$project" rebase -q "$(jq -r .branch <<<"$task")"
-    "$MSM" task update --session "$s" "{\"branch\": \"$s\"}" >/dev/null
     name=$(jq -r .shortname <<<"$task")
     file=$name.txt text=$name
     [ "$mode" = conflict ] && file=shared.txt text=$s
-    echo "$text" >"$dir/$project/$file"
-    git -C "$dir/$project" add "$file"
-    if [ "$mode" = broken ]; then
-      echo broken >"$dir/$project/broken.txt"
-      git -C "$dir/$project" add broken.txt
-    fi
-    git -C "$dir/$project" commit -q -m "Add $name"
+    for project in $projects; do
+      git -C "$dir/$project" rebase -q "$(jq -r .branch <<<"$task")"
+      echo "$text" >"$dir/$project/$file"
+      git -C "$dir/$project" add "$file"
+      if [ "$mode" = broken ]; then
+        echo broken >"$dir/$project/broken.txt"
+        git -C "$dir/$project" add broken.txt
+      fi
+      git -C "$dir/$project" commit -q -m "Add $name"
+    done
+    "$MSM" task update --session "$s" "{\"branch\": \"$s\"}" >/dev/null
     give_up
     "$MSM" task update --session "$s" "{\"report\": \"added $name\"}" >/dev/null
     "$MSM" session done "$s" >/dev/null ;;
@@ -113,8 +117,16 @@ case $s in
     for w in $(names '.role == "worker" and .status == "expired"'); do
       backlog "$w" Expired
     done
+    empty=$("$MSM" loop get | jq .empty_cycles)
+    if [ -n "${IDLE_CYCLE_LIMIT-}" ] && [ "$empty" -ge "$IDLE_CYCLE_LIMIT" ]; then
+      "$MSM" issue create "$(jq -n --arg s "$s" --arg n "$empty" \
+        '{type: "escalation", title: "idle: \($n) empty cycles", description: "idle",
+          owner_session: $s, assignee_role: "operator", severity: "blocking"}')" >/dev/null
+    fi
     # shellcheck disable=SC2086
     curate-publish --report smoke --accepted $accepted --rejected $rejected >/dev/null
     curate-cleanup >/dev/null
+    blocking=$("$MSM" issue list '{"status": "open", "severity": "blocking", "assignee_role": "operator"}' | jq length)
+    [ "$blocking" -gt 0 ] && "$MSM" loop stop blocked >/dev/null
     "$MSM" session done "$s" >/dev/null ;;
 esac
