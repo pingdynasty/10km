@@ -13,6 +13,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
@@ -420,12 +421,8 @@ class TestGateWait(unittest.TestCase):
                 with open(run["rc"], "w") as f:
                     f.write("0\n")
 
-        real = gate.time.sleep
-        gate.time.sleep = sleep
-        try:
+        with mock.patch.object(gate.time, "sleep", sleep):
             self.assertTrue(gate._wait(run, None, 60))
-        finally:
-            gate.time.sleep = real
         self.assertEqual(steps, [0.05, 0.1, 0.2, 0.4, 0.8, 1.0, 1.0, 1.0])
 
 

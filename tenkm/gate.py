@@ -18,12 +18,9 @@ but its result isn't reused.
 
     10km gate worker|validation
 
-The operator's run, outside any session (LOOP_SESSION is ignored): the gates run
-in the central worktrees, as they are, and `10km gate` waits until they finish
-(interrupting it leaves the run going; rerun to wait for it). Its logs, pass
-cache and SCRATCH_DIR are in <state dir>/evidence/operator/, apart from the
-sessions' evidence, so an operator run never stands in for a session's gate and
-is recorded against no session.
+The operator's run, outside any session: the gates run in the central worktrees
+and it waits until they finish. Its logs, pass cache and SCRATCH_DIR are in
+<state dir>/evidence/operator/, so it never stands in for a session's gate.
 
 Exit status: 0 all passed, 1 a gate failed, 2 refused, 3 still running (rerun to wait).
 """
@@ -43,6 +40,13 @@ OPERATOR = "operator"  # the name and evidence subdir of `10km gate` runs
 POLL_FIRST, POLL_MAX = 0.05, 1.0  # seconds between checks on a run, backing off
 
 
+def recording(command, rc_path):
+    """A bash script running command in a subshell, so its own exit or set -e can't
+    skip recording its exit status in rc_path; it exits with that status."""
+    return (f'(\n{command}\n)\nrc=$?\n'
+            f'echo "$rc" > "{rc_path}.tmp" && mv "{rc_path}.tmp" "{rc_path}"\nexit "$rc"\n')
+
+
 def gates(cfg, tier):
     setting = {"worker": "WORKER_GATES", "validation": "VALIDATION_GATES"}[tier]
     projects = cfg.projects()
@@ -58,7 +62,7 @@ def gates(cfg, tier):
 
 
 def _evidence(cfg, *sub):
-    """The evidence dir, <state dir>/evidence, or a dir in it."""
+    """<state dir>/evidence, or a dir in it."""
     path = os.path.join(cfg.state_dir, "evidence", *sub)
     os.makedirs(path, exist_ok=True)
     return path
@@ -94,9 +98,8 @@ def _new_log(evidence, name):
 
 def run_gate(cfg, session, repo, command, wait, evidence=None, scratch=None):
     """Run one gate in <session working_directory>/<repo>. Returns (status, log):
-    status 'passed', 'skipped', 'failed', 'running'. evidence (default: the
-    sessions' evidence dir) holds the logs and the pass cache; scratch (default:
-    the session's scratch dir) is the gate's SCRATCH_DIR."""
+    status 'passed', 'skipped', 'failed', 'running'. evidence and scratch default
+    to the sessions' evidence dir and the session's scratch dir."""
     cwd = os.path.join(session["working_directory"], repo)
     cacheable = not gitutil.git(cwd, "status", "--porcelain")
     tree = gitutil.git(cwd, "rev-parse", "HEAD^{tree}")
@@ -117,15 +120,12 @@ def run_gate(cfg, session, repo, command, wait, evidence=None, scratch=None):
             rc_path = log[:-4] + ".rc"
             scratch = scratch or os.path.join(session["working_directory"], "scratch")
             os.makedirs(scratch, exist_ok=True)
-            # The command runs in a subshell, so its own exit or set -e can't skip
-            # recording its status.
-            script = (f'(\n{command}\n)\nrc=$?\n'
-                      f'echo "$rc" > "{rc_path}.tmp" && mv "{rc_path}.tmp" "{rc_path}"\n')
             with open(log, "ab") as f:
                 f.write(f"$ {command}\n# repo {repo}, tree {tree}\n".encode())
                 f.flush()
-                child = subprocess.Popen(["bash", "-c", script], cwd=cwd, stdout=f, stderr=f,
-                                         stdin=subprocess.DEVNULL, start_new_session=True,
+                child = subprocess.Popen(["bash", "-c", recording(command, rc_path)], cwd=cwd,
+                                         stdout=f, stderr=f, stdin=subprocess.DEVNULL,
+                                         start_new_session=True,
                                          env=dict(os.environ, SCRATCH_DIR=scratch))
             run = {"log": log, "rc": rc_path, "command": command, "repo": repo,
                    "pgid": child.pid}
@@ -133,28 +133,23 @@ def run_gate(cfg, session, repo, command, wait, evidence=None, scratch=None):
     if not _wait(run, child, wait):
         return "running", run["log"]
     with lock(cfg, "gate"):
-        if _rc(run) == 0:
-            if cacheable:
-                passed = _load(passed_path, {})
-                passed[key] = run["log"]
-                _save(passed_path, passed)
-            try:
-                os.remove(running_path)
-            except FileNotFoundError:
-                pass
-            return "passed", run["log"]
         try:
             os.remove(running_path)  # a failed run is retried on the next call
         except FileNotFoundError:
             pass
-        return "failed", run["log"]
+        if _rc(run) != 0:
+            return "failed", run["log"]
+        if cacheable:
+            passed = _load(passed_path, {})
+            passed[key] = run["log"]
+            _save(passed_path, passed)
+        return "passed", run["log"]
 
 
 def _wait(run, child, wait):
     """Wait up to wait seconds for the run to record its status; True once it has.
     A run whose process group is gone without a status was killed: record 137.
-    Waits on the child when this call started it, so a quick gate returns as soon
-    as it ends; otherwise polls, from POLL_FIRST seconds backing off to POLL_MAX."""
+    Waits on child (the run, if this call started it), else polls with back-off."""
     deadline = time.monotonic() + wait
     interval = POLL_FIRST
     while not os.path.exists(run["rc"]):
@@ -185,7 +180,8 @@ def _rc(run):
         return 1
 
 
-def _tail(path, n=40):
+def tail(path, n=40):
+    """The last n lines of a log, or "" if it can't be read."""
     try:
         with open(path, errors="replace") as f:
             return "".join(f.readlines()[-n:])
@@ -207,12 +203,11 @@ def main(argv):
     return run_tier(cfg, argv[0], dict(session), cfg.int("GATE_WAIT", 540))
 
 
-def operator_main(argv):
-    """`10km gate <tier>`: the operator's run, outside any session (see the module doc)."""
+def operator_main(cfg, argv):
+    """`10km gate <tier>`: the operator's run (see the module doc)."""
     if len(argv) != 1 or argv[0] not in ("worker", "validation"):
         print("usage: 10km gate worker|validation", file=sys.stderr)
         return 2
-    cfg = config.load()
     evidence = _evidence(cfg, OPERATOR)
     place = {"name": OPERATOR, "working_directory": cfg.central}
     try:
@@ -235,7 +230,7 @@ def run_tier(cfg, tier, session, wait, evidence=None, scratch=None):
             break
         if state == "failed":
             print(f"gate failed: {command} (in {repo})\n--- last lines of {log} ---\n"
-                  f"{_tail(log)}", file=sys.stderr)
+                  f"{tail(log)}", file=sys.stderr)
             status = EXIT_FAILED
             break
     print(json.dumps(results, indent=1))
