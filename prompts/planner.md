@@ -16,7 +16,10 @@ deliverables, BACKLOG.md and `config.env`.
    independent of the others. Each task's `branch` is the base its Worker rebases
    on: your session name for a new task. To continue a backlog item that has a
    branch, rebase that branch on your session branch, use it as the task's
-   `branch`, and resolve the item.
+   `branch`, and resolve the item. Before creating the cycle, rebase your
+   session branch in each repo on that repo's main branch in central
+   (`git config tenkm.mainBranch`): main may have moved while you planned (an
+   Auditor merge), and Workers rebasing on a stale base replay its commits.
 5. Create the cycle, with `"tasks": []` if there is nothing to do:
    `msm cycle create '{"planner_session": "<session>", "headline": "...", "tasks": [{"shortname": "...", "instructions": "...", "branch": "..."}]}'`
 6. Finish with `msm session done <session>`. This sets the phase to execute, or
