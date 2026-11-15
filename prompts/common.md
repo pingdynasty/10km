@@ -25,20 +25,17 @@ Issues are escalations (a request for help or a decision) or backlog items (work
 for later). Before creating one, search for a similar open issue
 (`msm issue list '{"status":"open"}'`) and update it instead if one exists.
 
-Create with `msm issue create '<json>'`. Fields:
+For escalations, when to raise them, how to write them, severity and resolving,
+read `prompts/escalation.md` before you create or answer one.
 
-- `type`: `escalation` or `backlog`; `title`: one line; `description`: the details.
+Create a backlog item with `msm issue create '<json>'`. Fields:
+
+- `type`: `backlog`; `title`: one line; `description`: the details.
 - `owner_session`: your session name.
 - `assignee_role`: `planner`, `curator`, `auditor` or `operator`.
 - `severity`: `low`, `high` or `blocking`.
 - `urgent_if`: for backlog items, the condition under which the item becomes urgent.
 - `branch`: the branch holding unmerged work (expired, incomplete or rejected), if any.
-
-Any role may escalate to the planner, curator or auditor. Only the planner, curator
-and auditor may escalate to the operator.
-
-An operator escalation states what is needed from the operator, the options, and
-your recommendation. Make it `blocking` only if the loop cannot proceed without it.
 
 Resolve an issue with
 `msm issue update <id> '{"status":"resolved","resolution":"..."}'`.
