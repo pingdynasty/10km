@@ -16,11 +16,12 @@ Status: Get a project status report
 
 ## Git Repositories and File System
 There is one loop repo, and one or more project repos configured at kickoff.
-The loop repo contains its scripts and prompts, the plan, goals, deliverables, BACKLOG.md, LEARNINGS.md, NOTIFICATIONS.md. The database is in a container volume.
-Configuration (project repos, agent commands, time-outs, auditor cycles and interval, notification action, backlog size, max workers, validation gates, idle cycle limit) is in `config.env` in the loop repo. Scripts read it from the central loop worktree.
+The loop repo contains its scripts and prompts, the plan, goals, deliverables, BACKLOG.md, LEARNINGS.md, NOTIFICATIONS.md. The database is a file at a configured path, outside the repos.
+Configuration (project repos, main branch, launcher, agent commands, time-outs, auditor time, timezone and cycles, notification action, backlog size, max workers, validation gates, idle cycle limit) is in `config.env` in the loop repo. Scripts read it from the central loop worktree.
 The operator may provide one or more pre-existing project repos for the loop to work on.
 If not, a new project repo is created during kickoff.
 Each session has a directory with git worktrees and scratch files.
+In this document, main means each repo's default branch.
 Under normal operation, all worktrees and branches are merged into main and removed by the Curator.
 If sessions expire, the Curator will attempt to fix them up but stale branches may remain.
 There are central worktrees that the Curator keeps up to date.
@@ -123,7 +124,7 @@ Loop    { current_cycle: number,
 Session { name: string,
           role: planner|worker|curator|auditor|operator,
           status: active|done|expired,
-          pid: number|null,
+          handle: string|null,
           working_directory: string,
           created_at: time, 
 		  updated_at: time }
@@ -227,11 +228,11 @@ Then, by phase:
   execute -> launch Workers while launches succeed, up to max workers active
   curate  -> launch Curator
 Launches fail harmlessly if the role's preconditions are not met.
-It launches an Auditor if the number of cycles closed since the last audit has reached the limit in config.env, or more than the configured time has passed since the last audit. The first Auditor runs only after a cycle has been curated.
+It launches an Auditor when the configured daily time, in the configured timezone, has passed and no audit has run since then, or when the configured number of cycles have been curated since the last audit. Either trigger can be disabled. The first Auditor runs only after a cycle has been curated.
 To launch a role, it attempts to create a session. If it fails with EAGAIN (4) it tries again, up to 3 times.
 If it succeeds it reads the role prompt.
-It writes the role prompt to a file in the session directory, launches a non-interactive agent session with the prompt file path and session name in the environment, and records the process pid in the session.
-The agent command can be configured for the loop, or specialised for each role:
+It writes the role prompt to a file in the session directory, launches the agent through the configured launcher with the session name and prompt file path in its first message, and records the launcher's handle in the session.
+The launcher is configured for the loop. The default process launcher runs an agent command, configured for the loop or specialised for each role:
 `LOOP|PLANNER|WORKER|CURATOR|AUDITOR_AGENT=...`
 `LOOP_AGENT="pi --no-session --name $SESSION -p $PROMPT"`
 `LOOP_AGENT="claude --no-session-persistence --dangerously-skip-permissions -n $SESSION -p $PROMPT"`
@@ -240,8 +241,8 @@ The agent command can be configured for the loop, or specialised for each role:
 
 ### Session Time-out
 The Dispatcher times out sessions that have run longer than the configured limit. Operator sessions are never timed out.
-It sends the process SIGTERM, waits a short grace period, then sends SIGKILL if it is still running, and sets the session status to expired.
-The Dispatcher may also expire sessions whose recorded pid is no longer running. Sessions not launched by the Dispatcher may have no pid.
+It asks the launcher to stop the agent (process launcher: SIGTERM, a short grace period, then SIGKILL) and sets the session status to expired. If the launcher cannot stop it, the Dispatcher notifies the operator and leaves the session active.
+The Dispatcher may also expire sessions whose launcher reports them not running, after a start grace period. Sessions not launched by the Dispatcher have no handle.
 
 Notes:
 Expired Planners and Curators need no special rule. The phase hasn't moved, so the next dispatcher run relaunches them. The next Planner's `cycle create` replaces an open cycle.
