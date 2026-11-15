@@ -7,7 +7,6 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 import warnings
 from datetime import datetime, timezone
@@ -205,6 +204,13 @@ class TestSessions(LoopCase):
         self.assertEqual(e.exception.code, msm.EPERM)
 
 
+def exited(pid):
+    """True if process pid is gone or a zombie."""
+    stat = subprocess.run(["ps", "-p", str(pid), "-o", "stat="],
+                          capture_output=True, text=True).stdout.strip()
+    return stat[:1] in ("", "Z")
+
+
 class TestDispatch(LoopCase):
     def test_launches_curator_with_handle_and_prompt(self):
         self.start_loop()
@@ -220,10 +226,7 @@ class TestDispatch(LoopCase):
         pid = int(cur["handle"].split(":")[1])
         dispatch.run_pass(self.reload(CURATOR_TIMEOUT="-1", KILL_GRACE="2"))
         self.assertEqual(self.sessions("curator")[0]["status"], "expired")
-        time.sleep(0.2)
-        self.assertNotEqual(subprocess.run(["ps", "-p", str(pid), "-o", "stat="],
-                                           capture_output=True, text=True).stdout.strip()[:1],
-                            "S")
+        self.assertTrue(testenv.wait_for(lambda: exited(pid)))
 
     def test_dead_agent_is_expired_after_start_grace(self):
         self.start_loop()
@@ -304,7 +307,7 @@ class TestDispatch(LoopCase):
         cfg = self.reload(LOOP_AGENT="sleep 30 & sleep 30 & exit 0")
         dispatch.run_pass(cfg)
         [cur] = self.sessions("curator")
-        time.sleep(0.5)
+        self.assertTrue(testenv.wait_for(lambda: exited(int(cur["handle"].split(":")[1]))))
         from tenkm.launchers import process
         self.assertTrue(process.alive(cfg, cur["handle"]))  # leader gone, children alive
         self.assertTrue(process.stop(self.reload(KILL_GRACE="2"), cur["handle"]))
