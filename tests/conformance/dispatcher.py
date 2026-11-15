@@ -6,6 +6,7 @@ L = "tests/test_loop.py:TestDispatch."
 A = "tests/test_loop.py:TestAuditorDue."
 RD = "tests/test_requirements_dispatch.py:"
 SC = "tests/test_scenarios.py:"
+RM = "tests/test_requirements_msm.py:"
 LAUNCHES = D + "test_launches_agent_with_prompt_handle_and_environment"
 TIME_OUT = D + "test_time_out_sends_sigterm_first_and_relaunches_the_role"
 STOP_RESUME = SC + "TestStopAndResume.test_stop_mid_cycle_then_resume_continues_the_same_cycle"
@@ -77,12 +78,17 @@ MAP = {
     # Resume
     "R169": [STOP_RESUME, "tests/test_msm.py:MsmTest.test_agents_cannot_restart_a_stopped_loop"],
     "R170": STOP_RESUME,
+    "R171": [RM + "TestLoopRecord."
+             "test_resume_is_refused_while_a_blocking_operator_escalation_is_open",
+             RM + "TestLoopRecord.test_resume_is_allowed_once_the_blocking_escalation_is_resolved",
+             ("prompts/session.md", "resolve each with the operator's decision as its "
+              "resolution")],
     "R172": STOP_RESUME,
     "R173": [STOP_RESUME, "tests/test_msm.py:MsmTest.test_stop_and_resume"],
     "R312": ("prompts/session.md", "**Goals and plan.** Change `GOALS.md`, `PLAN.md`"),
+    "R313": [RM + "TestLoopRecord."
+             "test_resume_is_refused_while_a_blocking_operator_escalation_is_open",
+             RM + "TestLoopRecord.test_resume_is_allowed_once_the_blocking_escalation_is_resolved"],
 }
 
-# R171 (the operator resolves blocking escalations before resuming) is the
-# operator's own judgement: nothing enforces it, and it is stated in README.md,
-# which the map can't cite.
-PENDING = {"R171"}
+PENDING = set()

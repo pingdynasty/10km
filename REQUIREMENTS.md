@@ -284,6 +284,8 @@ Notes:
 - **R172** set the operator session to done
 - **R173** call `loop resume`
 
+**R313** `msm loop resume` refuses with EPERM while a blocking escalation assigned to the operator is open.
+
 ## Issues
 **R174** There are two types of issues: Escalation, and Backlog.
 **R175** Issues from unmerged work (expired, incomplete, or rejected) should reference its branch.

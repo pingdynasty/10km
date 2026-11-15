@@ -56,8 +56,8 @@ run-loop                         # the Dispatcher every DISPATCH_INTERVAL second
 Keep `run-loop` running (in `tmux`, or as a service), or call `10km dispatch` from
 cron instead. `10km status` shows where the loop is. `msm loop stop` pauses it:
 nothing new is launched, and running sessions finish or time out. `msm loop
-resume` carries on. Stopping `run-loop` itself only stops the Dispatcher; resume
-by starting it again.
+resume` carries on, once no blocking operator escalation is open. Stopping
+`run-loop` itself only stops the Dispatcher; resume by starting it again.
 
 ## Kickoff
 
@@ -93,7 +93,8 @@ Also in `config.env`: `SESSION_TIMEOUT` (and per-role `PLANNER_TIMEOUT` etc.), `
 10km status                        # phase, cycle, tasks, sessions, escalations, main
 10km metrics [--cycle N] [--json]  # per cycle and role: sessions, times, commits, usage
 msm loop stop [reason]             # stop: the Dispatcher launches nothing new
-msm loop resume                    # resume a stopped loop
+msm loop resume                    # resume a stopped loop (refused while a blocking
+                                   # operator escalation is open)
 10km session start <username>      # operator session with OPERATOR_AGENT
 10km session start <username> --no-agent      # worktrees only; work by hand
 10km session start <username> -- "<message>"  # one-shot instruction
@@ -142,9 +143,11 @@ it first if it wasn't yet.
 To resume:
 
 1. Start an operator session: `10km session start <username>`.
-2. Resolve the blocking escalations, or update the goals and plan; commit.
+2. Resolve the blocking escalations (`msm issue update <id> '{"status": "resolved",
+   "resolution": "..."}'`); you may also update the goals and plan. Commit.
 3. `10km session done <name>`.
-4. `msm loop resume`.
+4. `msm loop resume`. msm refuses it (EPERM) while a blocking escalation assigned
+   to the operator is still open.
 
 The next Curator merges your session, then the loop carries on from its phase.
 
