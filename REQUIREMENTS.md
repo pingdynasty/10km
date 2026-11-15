@@ -279,7 +279,8 @@ Notes:
 ### Resume
 **R169** Only the operator can resume a stopped loop: 
 - **R170** start an operator session
-- **R171** resolve blocking escalations, or update the goals
+- **R171** resolves blocking escalations
+- **R312** may update the goals
 - **R172** set the operator session to done
 - **R173** call `loop resume`
 

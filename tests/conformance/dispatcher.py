@@ -79,9 +79,10 @@ MAP = {
     "R170": STOP_RESUME,
     "R172": STOP_RESUME,
     "R173": [STOP_RESUME, "tests/test_msm.py:MsmTest.test_stop_and_resume"],
+    "R312": ("prompts/session.md", "**Goals and plan.** Change `GOALS.md`, `PLAN.md`"),
 }
 
-# R171 (the operator resolves blocking escalations or updates the goals before
-# resuming) is the operator's own judgement: nothing enforces it, and it is stated
-# in README.md, which the map can't cite.
+# R171 (the operator resolves blocking escalations before resuming) is the
+# operator's own judgement: nothing enforces it, and it is stated in README.md,
+# which the map can't cite.
 PENDING = {"R171"}
