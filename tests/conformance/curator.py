@@ -1,13 +1,124 @@
-"""Conformance map: Curator. See tests/conformance.py."""
+"""Conformance map: Curator. See tests/conformance.py.
+
+Steps run by the agent (Triage to Assess, Exit) map to the prompt phrase that
+carries them, and to the scenario or script tests where the fake agent or a test
+plays them through the scripts."""
 SECTION = "Curator"
 
-MAP = {}
+P = "prompts/curator.md"
+CS = "tests/test_curate_scripts.py:"
+C = "tests/test_curate.py:"
+RC = "tests/test_requirements_curator.py:"
+SC = "tests/test_scenarios.py:"
 
-PENDING = {
-    "R203", "R204", "R205", "R206", "R207", "R208", "R209", "R210", "R211", "R212", "R213",
-    "R214", "R215", "R216", "R217", "R218", "R219", "R220", "R221", "R222", "R223", "R224",
-    "R225", "R226", "R227", "R228", "R229", "R230", "R231", "R232", "R233", "R234", "R235",
-    "R236", "R237", "R238", "R239", "R240", "R241", "R242", "R243", "R244", "R245", "R246",
-    "R247", "R248", "R249", "R250", "R251", "R252", "R253", "R254", "R255", "R256", "R257",
-    "R258", "R259",
+STEPS = RC + "TestPromptSteps.test_the_prompt_runs_eleven_steps_in_order_calling_the_scripts"
+FULL_PASS = CS + "TestFullPass.test_every_step_twice_in_a_row_gives_the_same_result"
+EXPIRED_HANGING = SC + "TestExpiry.test_hanging_worker_is_expired_its_work_backlogged_and_the_loop_goes_on"
+EXPIRED_DEAD = SC + "TestExpiry.test_dead_worker_is_expired_after_the_start_grace"
+REJECT_GATE = SC + "TestRejection.test_branch_failing_validation_is_rejected_and_backlogged"
+REJECT_CONFLICT = SC + "TestRejection.test_conflicting_branch_is_rejected_and_backlogged"
+VALIDATE = CS + "TestValidate.test_failing_work_is_left_out_and_revalidated"
+PUBLISH = CS + "TestPublish.test_fast_forwards_main_and_closes_the_cycle_with_verdicts"
+CLEANUP = CS + "TestCleanup.test_removes_selected_sessions_and_reports_unpublished_work"
+SELECT = CS + "TestSelect.test_contributions_first_then_the_cycle"
+
+MAP = {
+    "R203": [STEPS, FULL_PASS, CS + "TestRefusals.test_steps_out_of_order_are_errors"],
+    "R204": STEPS,
+    "R205": [CS + "TestRefusals.test_every_step_refuses_without_an_active_curator",
+             CS + "TestRefusals.test_done_curator_is_refused",
+             CS + "TestRefusals.test_curator_expired_mid_pass_removes_nothing",
+             C + "TestRefusals.test_steps_refuse_an_inactive_curator"],
+    "R206": [CS + "TestPrepare.test_keeps_branches_of_open_issues",
+             CS + "TestCleanup.test_keeps_branches_of_open_issues"],
+    # Step 1: Prepare
+    "R207": [STEPS, CS + "TestPrepare.test_removes_old_curators_and_closed_cycle_sessions",
+             CS + "TestPrepare.test_rerun_after_a_crash_mid_removal_finishes"],
+    "R208": [C + "TestRefusals.test_prepare_removes_leftover_sessions",
+             CS + "TestPrepare.test_removes_old_curators_and_closed_cycle_sessions",
+             CS + "TestPrepare.test_keeps_the_open_cycles_sessions"],
+    "R209": [CS + "TestPrepare.test_removes_old_curators_and_closed_cycle_sessions",
+             CS + "TestPrepare.test_keeps_the_open_cycles_sessions"],
+    # Step 2: Select
+    "R210": [STEPS, SELECT],
+    "R211": SELECT,
+    "R212": [SELECT, RC + "TestSelectRoles.test_a_done_auditor_is_selected_before_the_cycle"],
+    "R213": [SELECT, CS + "TestSelect.test_expired_workers_are_selected_too",
+             RC + "TestSelectRoles.test_done_workers_are_not_selected_before_the_curate_phase"],
+    "R214": [CS + "TestSelect.test_nothing_outside_the_curate_phase",
+             RC + "TestSelectRoles.test_done_workers_are_not_selected_before_the_curate_phase"],
+    "R215": [(P, "If it is empty, skip to step 8"),
+             CS + "TestPublish.test_publishes_own_commits_with_nothing_selected"],
+    # Step 3: Merge
+    "R216": [STEPS, CS + "TestMerge.test_merges_sessions_and_reports_json"],
+    "R217": CS + "TestMerge.test_merges_sessions_and_reports_json",
+    "R218": [CS + "TestMerge.test_merges_sessions_and_reports_json",
+             CS + "TestMerge.test_unknown_and_ambiguous_items_are_errors",
+             C + "TestDeclarativeMerge.test_partial_acceptance_by_commit"],
+    "R219": [CS + "TestMerge.test_merges_sessions_and_reports_json",
+             CS + "TestValidate.test_curator_fix_is_kept_and_published"],
+    "R220": [(P, "Always pass the full list"),
+             CS + "TestMerge.test_leaving_a_session_out_rejects_its_work"],
+    "R221": [CS + "TestMerge.test_leaving_a_session_out_rejects_its_work",
+             C + "TestDeclarativeMerge.test_leaving_an_item_out_rebuilds_and_keeps_own_commits_and_resolutions"],
+    "R222": CS + "TestMerge.test_conflict_exits_3_with_instructions_then_rerun_completes",
+    "R223": [CS + "TestMerge.test_conflict_exits_3_with_instructions_then_rerun_completes",
+             CS + "TestMerge.test_rerun_after_a_crash_mid_step_does_not_merge_twice",
+             C + "TestDeclarativeMerge.test_agent_can_finish_the_merge_itself"],
+    # Step 4: Triage
+    "R224": (P, "Triage: merge the done sessions"),
+    "R225": [(P, "Triage: merge the done sessions, Planner first. Of expired sessions"),
+             CS + "TestSelect.test_expired_workers_are_selected_too", EXPIRED_HANGING],
+    "R226": [(P, "add complete work (unless its conflicts aren't worth it)"), REJECT_CONFLICT],
+    "R227": [(P, "backlog or discard the rest"), EXPIRED_HANGING, EXPIRED_DEAD,
+             CS + "TestPublish.test_expired_task_needs_no_verdict"],
+    # Step 5: Read
+    "R228": (P, "Read the plan, goals, open escalations"),
+    "R229": (P, "Read the plan, goals, open escalations (`msm issue list '{\"status\":\"open\"}'`), "
+                "the cycle (`msm cycle get`) and audits since it was planned"),
+    # Step 6: Evaluate
+    "R230": (P, "Evaluate each included Worker session's commits and diffs"),
+    "R231": (P, "against its task"),
+    "R232": (P, "Evaluate each included Worker session's commits and diffs against its task and "
+                "the goals"),
+    "R233": [(P, "accept or reject it, in whole or in part"), REJECT_GATE, REJECT_CONFLICT,
+             C + "TestDeclarativeMerge.test_partial_acceptance_by_commit"],
+    "R234": [(P, "Rerun `curate-merge` with only the accepted sessions and commits"),
+             CS + "TestMerge.test_leaving_a_session_out_rejects_its_work"],
+    # Step 7: Validate
+    "R235": VALIDATE,
+    "R236": [(P, "Validate: `gate validation`"), VALIDATE,
+             "tests/test_curate.py:TestGate.test_repo_prefix_selects_repo"],
+    "R237": [(P, "If a gate fails, find the responsible work"), VALIDATE],
+    "R238": [(P, "commit small fixes"), CS + "TestValidate.test_curator_fix_is_kept_and_published"],
+    "R239": [(P, "rerun `curate-merge` without it"), VALIDATE, REJECT_GATE],
+    "R240": [(P, "validate again"), VALIDATE],
+    "R241": (P, "Escalate rejected operator work to the operator"),
+    "R242": [(P, "backlog or discard other rejected work"), REJECT_GATE, REJECT_CONFLICT,
+             CS + "TestCleanup.test_keeps_branches_of_open_issues"],
+    # Step 8: Assess
+    "R243": (P, "Assess milestones, goals and deliverables"),
+    "R244": (P, "Assess milestones, goals and deliverables"),
+    "R245": (P, "update the plan and backlog"),
+    "R246": (P, "resolve escalations you can"),
+    "R247": [(P, "create a blocking operator escalation with reason `done` or `idle`"),
+             RC + "TestIdleLimit.test_the_idle_limit_and_empty_cycle_count_the_prompt_names_exist"],
+    "R248": (P, "If there are blocking operator escalations, `notify"),
+    # Step 9: Publish
+    "R249": [STEPS, PUBLISH],
+    "R250": [PUBLISH, CS + "TestPublish.test_rerun_after_a_crash_before_closing_the_cycle",
+             CS + "TestPublish.test_moved_main_is_an_error_until_merge_is_rerun"],
+    "R251": [PUBLISH, CS + "TestPublish.test_bad_verdicts_are_errors_and_publish_nothing"],
+    "R252": [PUBLISH, CS + "TestPublish.test_bad_verdicts_are_errors_and_publish_nothing"],
+    "R253": CS + "TestPublish.test_publishes_own_commits_with_nothing_selected",
+    # Step 10: Cleanup
+    "R254": [STEPS, CLEANUP],
+    "R255": [CLEANUP, CS + "TestCleanup.test_warns_about_a_dirty_central_repo"],
+    "R256": [CLEANUP, CS + "TestCleanup.test_rerun_after_a_crash_mid_cleanup_finishes"],
+    # Step 11: Exit
+    "R257": (P, "Exit: if there are blocking operator escalations"),
+    "R258": (P, "if there are blocking operator escalations, `msm loop stop blocked`"),
+    "R259": [(P, "`msm session done $LOOP_SESSION`"), CLEANUP],
 }
+
+PENDING = set()
