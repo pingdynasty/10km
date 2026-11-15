@@ -15,7 +15,7 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 
-from . import gitutil, msm, usage
+from . import gitutil, msm, timefmt, usage
 
 ROLE_ORDER = {r: i for i, r in enumerate(("planner", "worker", "curator", "auditor", "operator"))}
 TRAILER = "Loop-Session"
@@ -285,22 +285,25 @@ def notes(records, upath, have_usage, earlier=None):
 
 
 def _minutes(seconds):
-    return "-" if seconds is None else f"{seconds / 60:.0f}m"
+    """A duration as tenkm.timefmt elapsed text ("45s", "1h12m"), or "-"."""
+    return "-" if seconds is None else timefmt.elapsed(seconds)
 
 
 def _num(value, fmt="{:,}"):
     return "-" if value is None else fmt.format(value)
 
 
-def text(data):
-    """The metrics as readable text tables."""
+def text(data, now=None, tz=None):
+    """The metrics as readable text tables, with local start times (tenkm.timefmt;
+    `now` and `tz` fix the clock and zone, for tests)."""
     head = ("cycle", "role", "session", "task", "outcome", "start", "time", "from",
             "commits", "agent", "turns", "in tok", "out tok", "cost", "credits")
     rows = []
     for r in data["sessions"]:
         u = r["usage"]
         rows.append((_num(r["cycle"], "{}"), r["role"], r["session"], r["task"] or "",
-                     r["outcome"], r["start"] or "-", _minutes(r["duration_s"]),
+                     r["outcome"], timefmt.clock(r["start"], now, tz) if r["start"] else "-",
+                     _minutes(r["duration_s"]),
                      r["times_from"] or "-", str(sum(r["commits"].values())),
                      _minutes(u["duration_ms"] / 1000) if "duration_ms" in u else "-",
                      _num(u.get("num_turns")), _num(u.get("input_tokens")),
