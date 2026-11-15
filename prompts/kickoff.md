@@ -9,7 +9,8 @@ the loop repo (`central/loop`). Commit straight to each repo's main branch.
 
 1. **Goals, deliverables, plan.** Write `GOALS.md` (what the loop is for, with
    numbered deliverables and how each is judged done), `PLAN.md` (high-level plan)
-   and `BACKLOG.md` (known work) in `central/loop`. If the operator has little to
+   and `BACKLOG.md` (known work) in `central/loop`. Number goals G1, ...,
+   deliverables DEL1, ... and plan phases PH1, ... (`prompts/common.md`). If the operator has little to
    give, ask what they want and draft these for them to confirm.
 2. **Project repos.** Every git repo in `central/` other than `loop` is a project
    repo; the directory name is the repo name. Agree which repos the loop works on,

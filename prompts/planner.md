@@ -11,7 +11,9 @@ deliverables, BACKLOG.md and `config.env`.
    Consolidate, reprioritise or prune the backlog; when the open backlog reaches
    `BACKLOG_SIZE` from `config.env`, you must prioritise or prune it.
 3. Decide the headline: the focus of this cycle. Update the plan and BACKLOG.md,
-   and commit to your session branch.
+   and commit to your session branch. Keep the shortnames (G1, DEL1, PH1; see
+   `prompts/common.md`) in the plan and goals; a task's `shortname` in
+   `msm cycle create` is a different thing, a label for the task.
 4. Plan the tasks. Up to `MAX_WORKERS` run in parallel, so make each task
    independent of the others. Each task's `branch` is the base its Worker rebases
    on: your session name for a new task. To continue a backlog item that has a

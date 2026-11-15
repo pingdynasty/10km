@@ -33,6 +33,7 @@ prompts, scripts, plan, goals, deliverables, BACKLOG.md and LEARNINGS.md.
    - update role prompts, and clarify definitions of done for deliverables,
      milestones and goals;
    - trim files that grew too large by summarising, culling or archiving;
+   - keep the shortnames (G1, DEL1, ESC1, PH1; `prompts/common.md`) consistent;
    - add scripts to bin/ that automate common agent tasks;
    - remove branches merged into main (`git branch --merged main`), except main,
      branches of active sessions and branches referenced by open issues.
