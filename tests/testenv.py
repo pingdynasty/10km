@@ -22,6 +22,9 @@ HARNESSES = ("claude", "codex", "kiro-cli")
 # The git identity of test commits, and of the loop repos tests create.
 GIT_ID = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
           "GIT_COMMITTER_EMAIL": "t@t"}
+# Seconds a test waits for a condition or a script before it fails: generous, so a
+# loaded host (Workers gating at once) makes tests slower, not failing.
+DEADLINE = 300
 # A loop repo built once per run by tests/run.py, which tests copy (loop_repo()).
 TEMPLATE_VAR = "TESTS_LOOP_TEMPLATE"
 

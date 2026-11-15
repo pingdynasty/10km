@@ -39,7 +39,7 @@ def clean_env():
     return testenv.clean_env()
 
 
-def wait_for(predicate, timeout=30, interval=0.1):
+def wait_for(predicate, timeout=testenv.DEADLINE, interval=0.1):
     deadline = time.time() + timeout
     while time.time() < deadline:
         if predicate():
@@ -69,7 +69,7 @@ class ScriptLoop:
         self.ok("init")
 
     # --- running scripts ---------------------------------------------------
-    def run(self, script, *args, session=None, env=None, timeout=120):
+    def run(self, script, *args, session=None, env=None, timeout=testenv.DEADLINE):
         """Run bin/<script> with the loop's environment. session sets LOOP_SESSION."""
         e = dict(self.env, **(env or {}))
         if session:

@@ -3,8 +3,13 @@ run a temporary loop through whole cycles, on the host or in the container.
 
 `ScenarioCase` drives Dispatcher passes until a condition holds. A scenario sets
 the fake agent's behaviour per session with FAKE_* settings (see tests/fake-agent),
-small time-outs, then checks the loop state, the repos and the issues. Add a
-scenario as a test method or a ScenarioCase subclass with its own `settings`.
+then checks the loop state, the repos and the issues. Add a scenario as a test
+method or a ScenarioCase subclass with its own `settings`.
+
+Scenarios wait on conditions, not on time: session time-outs are long and each
+drive() has a generous deadline, so a loaded host makes them slower, not failing.
+To time out a hanging Worker, drive until it has committed (`committed()`), then
+drive with a short WORKER_TIMEOUT.
 
 Each requirement checked is cited by ID in the test's docstring.
 
@@ -19,7 +24,7 @@ import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import testenv  # noqa: E402,F401  (test config, no caller env: tests/testenv.py)
+import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
 from test_scripts import CODE, ScriptCase  # noqa: E402
 
 FAKE_AGENT = os.path.join(CODE, "tests", "fake-agent")
@@ -35,11 +40,11 @@ class ScenarioCase(ScriptCase):
     settings = {
         "LOOP_AGENT": FAKE_AGENT,
         "AUDIT_TIME": "", "AUDIT_CYCLES_LIMIT": "0",  # no Auditor unless a scenario asks
-        "SESSION_TIMEOUT": "60", "START_GRACE": "60", "KILL_GRACE": "1",
+        "SESSION_TIMEOUT": "900", "START_GRACE": "300", "KILL_GRACE": "1",
         "GATE_WAIT": "30",
         "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
     }
-    timeout = 60  # seconds per drive(): generous, for parallel runs (tests/run.py)
+    timeout = testenv.DEADLINE  # seconds per drive(): a loaded host only makes it slower
 
     # --- driving -----------------------------------------------------------
     def dispatch(self, **env):
@@ -86,6 +91,11 @@ class ScenarioCase(ScriptCase):
         """The cycle's tasks by shortname."""
         return {t["shortname"]: t for t in self.loop.msm("task", "list", json.dumps({"cycle": cycle}))}
 
+    def committed(self, shortname, cycle=1):
+        """True once the task's Worker has committed and recorded its branch."""
+        task = self.tasks(cycle).get(shortname)
+        return bool(task and task["session"] and task["branch"] == task["session"])
+
     def active(self, role=None):
         return [s for s in self.loop.sessions(role) if s["status"] == "active"]
 
@@ -124,9 +134,11 @@ class TestExpiry(ScenarioCase):
 
         R29, R138, R155, R157, R67, R110, R225, R227, R175, R206, R73, R111, R141.
         """
+        settings = dict(FAKE_TASKS="a b", FAKE_WORKER2="hang", MAX_WORKERS="2")
         self.loop.start()
-        self.drive(self.cycle_planned(2), FAKE_TASKS="a b", FAKE_WORKER2="hang",
-                   WORKER_TIMEOUT="10", MAX_WORKERS="2")  # time to commit, under load
+        self.drive(lambda: self.committed("b") and self.tasks(1)["a"]["status"] == "done",
+                   **settings)
+        self.drive(self.cycle_planned(2), WORKER_TIMEOUT="1", **settings)
         tasks = self.tasks(1)
         self.assertEqual((tasks["a"]["status"], tasks["b"]["status"]), ("accepted", "expired"))
         self.assertRegex(tasks["b"]["session"], r"^cycle1-worker2-")
@@ -219,11 +231,13 @@ class TestStopAndResume(ScenarioCase):
         R212, R213, R110, R111.
         """
         settings = dict(FAKE_TASKS="a b c", MAX_WORKERS="2", FAKE_WORKER1="slow",
-                        FAKE_DELAY="2", FAKE_WORKER2="hang", WORKER_TIMEOUT="12")
+                        FAKE_DELAY="2", FAKE_WORKER2="hang")
         self.loop.start()
         self.drive(lambda: len(self.active("worker")) == 2, **settings)
         self.loop.msm("loop", "stop", "test")
-        self.drive(lambda: not self.active(), **settings)
+        self.drive(lambda: self.committed("b") and self.tasks(1)["a"]["status"] == "done",
+                   **settings)
+        self.drive(lambda: not self.active(), WORKER_TIMEOUT="1", **settings)
         workers = {s["name"][:len("cycle1-workerN")]: s for s in self.loop.sessions("worker")}
         self.assertEqual({k: s["status"] for k, s in workers.items()},
                          {"cycle1-worker1": "done", "cycle1-worker2": "expired"})
