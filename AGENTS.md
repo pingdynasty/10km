@@ -11,7 +11,7 @@ change `REQUIREMENTS.md` without the operator.
 
 ## Layout
 
-- `tenkm/`: the Python library. State (the `msm` state machine), config, git,
+- `tenkm/`: the Python library. `msm` (the state machine), config, git,
   sessions, launchers, notifications, dispatch. Rules live here, not in the CLI.
 - `bin/`: entry points. Python entry points are thin wrappers over `tenkm`; Bash is
   only for light scripts.
@@ -24,7 +24,7 @@ change `REQUIREMENTS.md` without the operator.
 
 - Python standard library only; Python 3.9+. Code must run on Linux and macOS.
 - Bash only for short scripts and hooks: no JSON handling, no state logic.
-- Every state change goes through `tenkm.state`, one transaction per call.
+- Every state change goes through `tenkm.msm`, one transaction per call.
 - Scripts are safe to rerun after a crash at any point.
 - Keep functions small and documented; agents script against `tenkm`.
 - Use inclusive terms (allowlist, primary/replica, main).

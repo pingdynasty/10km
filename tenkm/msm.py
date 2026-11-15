@@ -1,14 +1,15 @@
-"""tenkm.state: the loop state machine (msm).
+"""tenkm.msm: the loop state machine.
 
 Manages only the database (SQLite). Every call runs in one transaction:
 
-    from tenkm import state
-    with state.transaction() as m:
+    from tenkm import msm
+    with msm.transaction() as m:
         print(m.loop_get())
 
 The rules (preconditions, side effects, phase transitions) live here, so the
-CLI and ad-hoc scripts behave the same. `msm` is the command-line front end.
-Errors raise MsmError with code 1 EINVAL, 2 EPERM or 3 ENOENT.
+CLI and ad-hoc scripts behave the same. `main()` is the `msm` command: JSON on
+stdout, errors as JSON {"code", "message"} on stderr. Errors raise MSMError with
+code 1 EINVAL, 2 EPERM or 3 ENOENT.
 """
 import json
 import os
@@ -111,7 +112,7 @@ HIDDEN = {"seq"}
 USERNAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 
-class MsmError(Exception):
+class MSMError(Exception):
     def __init__(self, code, message):
         super().__init__(message)
         self.code = code
@@ -144,13 +145,13 @@ def parse_json(text, kind=dict):
     try:
         value = json.loads(text)
     except (TypeError, json.JSONDecodeError) as e:
-        raise MsmError(EINVAL, f"invalid JSON: {e}")
+        raise MSMError(EINVAL, f"invalid JSON: {e}")
     if not isinstance(value, kind):
-        raise MsmError(EINVAL, f"expected a JSON {kind.__name__}")
+        raise MSMError(EINVAL, f"expected a JSON {kind.__name__}")
     return value
 
 
-class Msm:
+class MSM:
     def __init__(self, db):
         self.db = db
 
@@ -161,7 +162,7 @@ class Msm:
     def loop(self):
         row = self.one("SELECT * FROM loop WHERE id = 1")
         if row is None:
-            raise MsmError(ENOENT, "loop not initialised; run `msm init`")
+            raise MSMError(ENOENT, "loop not initialised; run `msm init`")
         return row
 
     def set_loop(self, **fields):
@@ -176,7 +177,7 @@ class Msm:
         spec = RESOURCES[res]
         row = self.one(f"SELECT * FROM {spec['table']} WHERE {spec['key']} = ?", key)
         if row is None:
-            raise MsmError(ENOENT, f"{res} {key} not found")
+            raise MSMError(ENOENT, f"{res} {key} not found")
         return row
 
     def update_row(self, res, key, fields):
@@ -188,23 +189,23 @@ class Msm:
             self.db.execute(f"UPDATE {spec['table']} SET {cols} WHERE {spec['key']} = ?",
                             (*fields.values(), key))
         except sqlite3.IntegrityError as e:
-            raise MsmError(EINVAL, str(e))
+            raise MSMError(EINVAL, str(e))
 
     def task_for_session(self, name):
         row = self.one("SELECT * FROM tasks WHERE session = ?", name)
         if row is None:
-            raise MsmError(ENOENT, f"no task for session {name}")
+            raise MSMError(ENOENT, f"no task for session {name}")
         return row
 
     def check_fields(self, data, allowed):
         bad = set(data) - set(allowed)
         if bad:
-            raise MsmError(EINVAL, f"fields not allowed: {', '.join(sorted(bad))}")
+            raise MSMError(EINVAL, f"fields not allowed: {', '.join(sorted(bad))}")
 
     # --- init and loop -----------------------------------------------------
     def init(self):
         if self.one("SELECT name FROM sqlite_master WHERE name = 'loop'"):
-            raise MsmError(EPERM, "database already exists")
+            raise MSMError(EPERM, "database already exists")
         for statement in SCHEMA.split(";"):
             if statement.strip():
                 self.db.execute(statement)
@@ -217,14 +218,14 @@ class Msm:
 
     def loop_start(self):
         if not self.loop()["stopped"]:
-            raise MsmError(EPERM, "loop is not stopped")
+            raise MSMError(EPERM, "loop is not stopped")
         self.set_loop(stopped=0, reason=None, phase="curate")
         return to_dict(self.loop())
 
     def loop_resume(self):
         loop = self.loop()
         if not loop["stopped"]:
-            raise MsmError(EPERM, "loop is not stopped")
+            raise MSMError(EPERM, "loop is not stopped")
         phase = "curate" if loop["phase"] == "plan" else loop["phase"]
         self.set_loop(stopped=0, reason=None, phase=phase)
         return to_dict(self.loop())
@@ -251,44 +252,44 @@ class Msm:
 
     def session_create(self, role, username=None, root=None):
         if role not in ROLES:
-            raise MsmError(EINVAL, f"unknown role {role}")
+            raise MSMError(EINVAL, f"unknown role {role}")
         if (username is not None) != (role == "operator"):
-            raise MsmError(EINVAL, "a username is required for, and only for, operator sessions")
+            raise MSMError(EINVAL, "a username is required for, and only for, operator sessions")
         loop = self.loop()
         stopped, phase, current = loop["stopped"], loop["phase"], loop["current_cycle"]
         cycle, task = None, None
         if role == "planner":
             if phase != "plan" or stopped or self.active("planner"):
-                raise MsmError(EPERM, "planner needs phase = plan, not stopped, no active planner")
+                raise MSMError(EPERM, "planner needs phase = plan, not stopped, no active planner")
             cur = self.current_cycle()
             cycle = current if cur and cur["status"] == "open" else current + 1
             base = f"cycle{cycle}-planner"
         elif role == "curator":
             if stopped or self.active("curator"):
-                raise MsmError(EPERM, "curator needs not stopped and no active curator")
+                raise MSMError(EPERM, "curator needs not stopped and no active curator")
             if phase != "curate" and not self.pending_contributions():
-                raise MsmError(EPERM, "curator needs phase = curate, or inactive operator "
+                raise MSMError(EPERM, "curator needs phase = curate, or inactive operator "
                                       "or auditor work")
             cycle = current
             base = f"cycle{cycle}-curator"
         elif role == "worker":
             if phase != "execute" or stopped:
-                raise MsmError(EPERM, "worker needs phase = execute, not stopped")
+                raise MSMError(EPERM, "worker needs phase = execute, not stopped")
             task = self.one("SELECT * FROM tasks WHERE cycle = ? AND status = 'waiting' "
                             "ORDER BY seq LIMIT 1", current)
             if task is None:
-                raise MsmError(EPERM, "no waiting task")
+                raise MSMError(EPERM, "no waiting task")
             cycle = current
             n = self.one("SELECT COUNT(*) FROM sessions WHERE role = 'worker' AND cycle = ?",
                          cycle)[0]
             base = f"cycle{cycle}-worker{n + 1}"
         elif role == "auditor":
             if stopped or self.one("SELECT 1 FROM sessions WHERE role = 'auditor'"):
-                raise MsmError(EPERM, "auditor needs not stopped, no auditor session")
+                raise MSMError(EPERM, "auditor needs not stopped, no auditor session")
             base = f"auditor{loop['last_audit'] + 1}"
         else:
             if not USERNAME.match(username):
-                raise MsmError(EINVAL, "username must match [a-z0-9]+(-[a-z0-9]+)*")
+                raise MSMError(EINVAL, "username must match [a-z0-9]+(-[a-z0-9]+)*")
             base = f"operator-{username}"
         name = f"{base}-{suffix()}"
         while self.one("SELECT 1 FROM sessions WHERE name = ?", name):
@@ -304,12 +305,12 @@ class Msm:
 
     def session_status(self, name, status):
         if status not in ("done", "expired"):
-            raise MsmError(EINVAL, "status must be done or expired")
+            raise MSMError(EINVAL, "status must be done or expired")
         s = self.get_row("session", name)
         if s["status"] == status:
             return to_dict(s)
         if s["status"] != "active":
-            raise MsmError(EPERM, f"session {name} is {s['status']}")
+            raise MSMError(EPERM, f"session {name} is {s['status']}")
         t = now()
         self.update_row("session", name, {"status": status, "updated_at": t})
         role = s["role"]
@@ -359,7 +360,7 @@ class Msm:
 
     def task_remove(self, task):
         if task["cycle"] == self.loop()["current_cycle"]:
-            raise MsmError(EPERM, "tasks of the current cycle cannot be removed")
+            raise MSMError(EPERM, "tasks of the current cycle cannot be removed")
         self.db.execute("DELETE FROM tasks WHERE id = ?", (task["id"],))
         return {"removed": task["id"]}
 
@@ -370,7 +371,7 @@ class Msm:
             tid = row.get("id") or self.task_for_session(row["session"])["id"]
             status = row["status"]
             if status not in ("accepted", "rejected"):
-                raise MsmError(EINVAL, f"bad verdict {status}")
+                raise MSMError(EINVAL, f"bad verdict {status}")
             self.db.execute("UPDATE tasks SET status = ?, curated_at = ? WHERE id = ?",
                             (status, t, tid))
         if curate is not None:
@@ -382,14 +383,14 @@ class Msm:
         self.check_fields(data, ("planner_session", "headline", "tasks"))
         tasks = data.get("tasks")
         if not isinstance(data.get("headline"), str) or not isinstance(tasks, list):
-            raise MsmError(EINVAL, "cycle create needs headline and tasks")
+            raise MSMError(EINVAL, "cycle create needs headline and tasks")
         for t in tasks:
             if not isinstance(t, dict) or set(t) != {"shortname", "instructions", "branch"} \
                     or not all(isinstance(v, str) for v in t.values()):
-                raise MsmError(EINVAL, "each task needs exactly shortname, instructions, branch")
+                raise MSMError(EINVAL, "each task needs exactly shortname, instructions, branch")
         loop = self.loop()
         if loop["phase"] != "plan" or loop["stopped"]:
-            raise MsmError(EPERM, "cycle create needs phase = plan and not stopped")
+            raise MSMError(EPERM, "cycle create needs phase = plan and not stopped")
         t = now()
         cur = self.current_cycle()
         if cur is not None and cur["status"] == "open":
@@ -419,7 +420,7 @@ class Msm:
         self.check_fields(data, ("curator_session", "report"))
         cur = self.current_cycle()
         if cur is None or cur["status"] != "open":
-            raise MsmError(EPERM, "no open cycle")
+            raise MSMError(EPERM, "no open cycle")
         self.db.execute("UPDATE cycles SET status = 'closed', curator_session = ?, report = ?, "
                         "curated_at = ? WHERE id = ?",
                         (data.get("curator_session"), data.get("report"), now(), cur["id"]))
@@ -437,7 +438,7 @@ class Msm:
         cycle_id = int(cycle_id)
         self.get_row("cycle", cycle_id)
         if cycle_id == self.loop()["current_cycle"]:
-            raise MsmError(EPERM, "the current cycle cannot be removed")
+            raise MSMError(EPERM, "the current cycle cannot be removed")
         self.db.execute("DELETE FROM tasks WHERE cycle = ?", (cycle_id,))
         self.db.execute("DELETE FROM cycles WHERE id = ?", (cycle_id,))
         return {"removed": cycle_id}
@@ -448,13 +449,13 @@ class Msm:
         self.check_fields(data, spec["create"])
         missing = [f for f in spec["required"] if f not in data]
         if missing:
-            raise MsmError(EINVAL, f"missing fields: {', '.join(missing)}")
+            raise MSMError(EINVAL, f"missing fields: {', '.join(missing)}")
         t = now()
         if res == "issue":
             row = dict(data, id=str(uuid.uuid4()), status="open", created_at=t)
         else:
             if not isinstance(data["period"], dict) or set(data["period"]) != {"from", "to"}:
-                raise MsmError(EINVAL, "period must be {from, to}")
+                raise MSMError(EINVAL, "period must be {from, to}")
             audit_id = self.loop()["last_audit"] + 1
             row = dict(data, id=audit_id, period=json.dumps(data["period"]), created_at=t)
             self.set_loop(last_audit=audit_id)
@@ -464,7 +465,7 @@ class Msm:
             self.db.execute(f"INSERT INTO {spec['table']} ({cols}) VALUES ({marks})",
                             tuple(row.values()))
         except sqlite3.IntegrityError as e:
-            raise MsmError(EINVAL, str(e))
+            raise MSMError(EINVAL, str(e))
         return to_dict(self.get_row(res, row["id"]))
 
     def update(self, res, key, data):
@@ -480,7 +481,7 @@ class Msm:
     def remove(self, res, key):
         row = self.get_row(res, key)
         if res == "issue" and row["status"] == "open":
-            raise MsmError(EPERM, "open issues cannot be removed")
+            raise MSMError(EPERM, "open issues cannot be removed")
         spec = RESOURCES[res]
         self.db.execute(f"DELETE FROM {spec['table']} WHERE {spec['key']} = ?", (key,))
         return {"removed": key}
@@ -491,7 +492,7 @@ class Msm:
         cols = {r[1] for r in self.db.execute(f"PRAGMA table_info({spec['table']})")} - HIDDEN
         bad = set(filt) - cols
         if bad:
-            raise MsmError(EINVAL, f"unknown filter fields: {', '.join(sorted(bad))}")
+            raise MSMError(EINVAL, f"unknown filter fields: {', '.join(sorted(bad))}")
         where, args = [], []
         for k, v in filt.items():
             if v is None:
@@ -532,7 +533,7 @@ def migrate(db):
 def connect(path=None, create=False):
     path = path or db_path()
     if not create and not os.path.exists(path):
-        raise MsmError(ENOENT, f"no database at {path}")
+        raise MSMError(ENOENT, f"no database at {path}")
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     db = sqlite3.connect(path, isolation_level=None, timeout=30)
     db.row_factory = sqlite3.Row
@@ -551,10 +552,158 @@ def transaction(path=None, create=False):
         db.execute("BEGIN IMMEDIATE")
         migrate(db)
         try:
-            yield Msm(db)
+            yield MSM(db)
         except BaseException:
             db.execute("ROLLBACK")
             raise
         db.execute("COMMIT")
     finally:
         db.close()
+
+
+USAGE = """usage: msm <command>
+  init
+  loop start|resume|get
+  loop stop [reason]
+  loop update <json>
+  session create <role> [username]
+  session update <name> <json>
+  session get <name>
+  session list [filter]
+  session done|expired <name>
+  session remove <name>
+  task get|remove <id> | --session <name>
+  task update <id> | --session <name> <json>
+  task list [filter]
+  task batch <verdicts-json> [<cycle-curate-json>]
+  cycle create|curate <json>
+  cycle get [id]
+  cycle list [filter]
+  cycle update <id> <json>
+  cycle remove <id>
+  issue|audit create <json>
+  issue|audit get|remove <id>
+  issue|audit list [filter]
+  issue|audit update <id> <json>"""
+
+
+def run(m, argv):
+    if not argv:
+        raise MSMError(EINVAL, USAGE)
+    res, verb, args = argv[0], (argv[1] if len(argv) > 1 else None), argv[2:]
+
+    def need(n_min, n_max=None):
+        n_max = n_min if n_max is None else n_max
+        if not n_min <= len(args) <= n_max:
+            raise MSMError(EINVAL, USAGE)
+
+    if res == "init" and verb is None:
+        return m.init()
+    if res == "loop":
+        if verb in ("start", "resume", "get"):
+            need(0)
+            return {"start": m.loop_start, "resume": m.loop_resume, "get": m.loop_get}[verb]()
+        if verb == "stop":
+            need(0, 1)
+            return m.loop_stop(*args)
+        if verb == "update":
+            need(1)
+            return m.loop_update(parse_json(args[0]))
+    if res == "session":
+        if verb == "create":
+            need(1, 2)
+            return m.session_create(*args)
+        if verb == "update":
+            need(2)
+            return m.session_update(args[0], parse_json(args[1]))
+        if verb == "get":
+            need(1)
+            return to_dict(m.get_row("session", args[0]))
+        if verb == "list":
+            need(0, 1)
+            return m.list("session", *args)
+        if verb in ("done", "expired"):
+            need(1)
+            return m.session_status(args[0], verb)
+        if verb == "remove":
+            need(1)
+            return m.session_remove(args[0])
+    if res == "task":
+        if verb == "list":
+            need(0, 1)
+            return m.list("task", *args)
+        if verb == "batch":
+            need(1, 2)
+            data = parse_json(args[0], list)
+            curate = parse_json(args[1]) if len(args) == 2 else None
+            return m.task_batch_update(data, curate)
+        if verb in ("get", "remove", "update"):
+            if args[:1] == ["--session"]:
+                need(2, 3)
+                task, rest = m.task_for_session(args[1]), args[2:]
+            else:
+                need(1, 2)
+                task, rest = m.get_row("task", args[0]), args[1:]
+            if verb == "update":
+                if len(rest) != 1:
+                    raise MSMError(EINVAL, USAGE)
+                return m.task_update(task, parse_json(rest[0]))
+            if rest:
+                raise MSMError(EINVAL, USAGE)
+            return to_dict(task) if verb == "get" else m.task_remove(task)
+    if res == "cycle":
+        if verb in ("create", "curate"):
+            need(1)
+            data = parse_json(args[0])
+            return m.cycle_create(data) if verb == "create" else m.cycle_curate(data)
+        if verb == "get":
+            need(0, 1)
+            return m.cycle_get(*args)
+        if verb == "list":
+            need(0, 1)
+            return m.list("cycle", *args)
+        if verb == "update":
+            need(2)
+            return m.update("cycle", int(args[0]), parse_json(args[1]))
+        if verb == "remove":
+            need(1)
+            return m.cycle_remove(args[0])
+    if res in ("issue", "audit"):
+        key = (lambda k: int(k)) if res == "audit" else (lambda k: k)
+        if verb == "create":
+            need(1)
+            return m.create(res, parse_json(args[0]))
+        if verb == "get":
+            need(1)
+            return to_dict(m.get_row(res, key(args[0])))
+        if verb == "list":
+            need(0, 1)
+            return m.list(res, *args)
+        if verb == "update":
+            need(2)
+            return m.update(res, key(args[0]), parse_json(args[1]))
+        if verb == "remove":
+            need(1)
+            return m.remove(res, key(args[0]))
+    raise MSMError(EINVAL, USAGE)
+
+
+def main(argv):
+    if argv[:1] in ([], ["-h"], ["--help"]):
+        print(USAGE)
+        return 0
+    try:
+        with transaction(create=argv[:1] == ["init"]) as m:
+            result = run(m, argv)
+    except MSMError as e:
+        print(json.dumps({"code": e.code, "message": e.message}), file=sys.stderr)
+        return e.code
+    except (ValueError, sqlite3.IntegrityError) as e:
+        print(json.dumps({"code": EINVAL, "message": str(e)}), file=sys.stderr)
+        return EINVAL
+    print(json.dumps(result))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

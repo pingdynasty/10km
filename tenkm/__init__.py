@@ -1,7 +1,7 @@
 """tenkm: the 10km agent loop library.
 
 Modules:
-  state      the loop state machine (msm), one transaction per call
+  msm        the loop state machine, one transaction per call
   config     loop settings from config.env and the environment
   gitutil    git helpers
   sessions   session creation and removal (records, branches, worktrees)

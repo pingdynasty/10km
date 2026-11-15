@@ -7,7 +7,7 @@ import os
 import shutil
 import subprocess
 
-from . import gitutil, state
+from . import gitutil, msm
 from .config import CODE_ROOT
 
 
@@ -47,7 +47,7 @@ def _project(cfg, name, url):
 
 
 def run(cfg):
-    with state.transaction(cfg.db, create=True) as m:
+    with msm.transaction(cfg.db, create=True) as m:
         m.init()
     os.makedirs(cfg.central, exist_ok=True)
     report = {"loop": _clone_or_create_loop(cfg)}

@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from tenkm import config, dispatch, init, notify, sessions, state  # noqa: E402
+from tenkm import config, dispatch, init, notify, sessions, msm  # noqa: E402
 
 
 class LoopCase(unittest.TestCase):
@@ -37,7 +37,7 @@ class LoopCase(unittest.TestCase):
 
     def tearDown(self):
         try:
-            with state.transaction(self.cfg.db) as m:
+            with msm.transaction(self.cfg.db) as m:
                 handles = [s["handle"] for s in m.list("session") if s.get("handle")]
         except sqlite3.DatabaseError:
             handles = []
@@ -54,7 +54,7 @@ class LoopCase(unittest.TestCase):
             return config.load()
 
     def m(self):
-        return state.transaction(self.cfg.db)
+        return msm.transaction(self.cfg.db)
 
     def start_loop(self):
         op = sessions.create(self.cfg, "operator", "mars")["name"]
@@ -81,10 +81,10 @@ class TestMigration(unittest.TestCase):
             """)
             db.commit()
             db.close()
-            with state.transaction(path) as m:
+            with msm.transaction(path) as m:
                 self.assertEqual(m.loop_get()["empty_cycles"], 0)
                 self.assertEqual(m.list("session")[0]["handle"], 42)
-            with state.transaction(path) as m:  # idempotent
+            with msm.transaction(path) as m:  # idempotent
                 self.assertEqual(m.loop_get()["current_cycle"], 3)
 
 
@@ -143,7 +143,7 @@ class TestSessions(LoopCase):
     def test_precondition_failure_has_msm_code(self):
         with self.assertRaises(sessions.SessionError) as e:
             sessions.create(self.cfg, "planner")  # loop is stopped
-        self.assertEqual(e.exception.code, state.EPERM)
+        self.assertEqual(e.exception.code, msm.EPERM)
 
 
 class TestDispatch(LoopCase):

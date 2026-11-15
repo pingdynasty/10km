@@ -1,16 +1,16 @@
 """tenkm.status: a plain-text status report from the database and git."""
 import os
 
-from . import gitutil, state
+from . import gitutil, msm
 
 
 def report(cfg):
     lines = []
-    with state.transaction(cfg.db) as m:
+    with msm.transaction(cfg.db) as m:
         loop = m.loop_get()
         try:
             cycle = m.cycle_get()
-        except state.MsmError:
+        except msm.MSMError:
             cycle = None
         active = m.list("session", '{"status": "active"}')
         inactive = [s for s in m.list("session") if s["status"] != "active"]

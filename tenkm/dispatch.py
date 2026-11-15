@@ -14,7 +14,7 @@ import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
 
-from . import config, launchers, notify, sessions, state
+from . import config, launchers, notify, sessions, msm
 from .config import BIN, CODE_ROOT
 
 try:
@@ -43,7 +43,7 @@ class Pass:
 
     # --- expiry ------------------------------------------------------------
     def expire_sessions(self):
-        with state.transaction(self.cfg.db) as m:
+        with msm.transaction(self.cfg.db) as m:
             active = m.list("session", '{"status": "active"}')
         for s in active:
             if s["role"] == "operator":
@@ -68,7 +68,7 @@ class Pass:
                 self.expire(s["name"], "not running")
 
     def expire(self, name, why):
-        with state.transaction(self.cfg.db) as m:
+        with msm.transaction(self.cfg.db) as m:
             m.session_status(name, "expired")
         log(f"expired {name} ({why})")
 
@@ -83,7 +83,7 @@ class Pass:
             except sessions.SessionError as e:
                 if e.code == sessions.EAGAIN:
                     continue
-                if e.code != state.EPERM:
+                if e.code != msm.EPERM:
                     log(f"launch {role} failed: {e.code} {e.message}")
                 return False
         if session is None:
@@ -102,7 +102,7 @@ class Pass:
             log(f"launch {role} failed: {e}")
             sessions.remove(self.cfg, name)
             return False
-        with state.transaction(self.cfg.db) as m:
+        with msm.transaction(self.cfg.db) as m:
             m.session_update(name, {"handle": handle})
         log(f"launched {name} ({handle})")
         return True
@@ -163,7 +163,7 @@ class Pass:
     # --- the pass ----------------------------------------------------------
     def run(self):
         self.expire_sessions()
-        with state.transaction(self.cfg.db) as m:
+        with msm.transaction(self.cfg.db) as m:
             loop = m.loop_get()
             blocking = [i for i in m.list("issue", '{"status": "open"}')
                         if i["type"] == "escalation" and i["severity"] == "blocking"]
@@ -182,7 +182,7 @@ class Pass:
         elif phase == "curate":
             self.launch("curator")
         elif phase == "execute":
-            with state.transaction(self.cfg.db) as m:
+            with msm.transaction(self.cfg.db) as m:
                 active = len(m.list("session", '{"role": "worker", "status": "active"}'))
             while active < self.cfg.int("MAX_WORKERS", 4) and self.launch("worker"):
                 active += 1
@@ -208,8 +208,8 @@ def run_pass(cfg=None, now=None):
         try:
             p.run()
             notify.forget(cfg, "db-unreadable")
-        except (sqlite3.DatabaseError, state.MsmError) as e:
-            if isinstance(e, state.MsmError) and e.code in (1, 2, 3):
+        except (sqlite3.DatabaseError, msm.MSMError) as e:
+            if isinstance(e, msm.MSMError) and e.code in (1, 2, 3):
                 raise
             p.notice("Loop database unreadable", f"{cfg.db}: {e}. The Dispatcher starts "
                      "nothing until it can read the database.", "critical", key="db-unreadable")

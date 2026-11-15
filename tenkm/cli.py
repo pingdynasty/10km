@@ -16,7 +16,7 @@ import os
 import subprocess
 import sys
 
-from . import config, dispatch, init, msm_cli, notify, sessions, state, status
+from . import config, dispatch, init, notify, sessions, msm, status
 
 
 def _session(argv, cfg):
@@ -33,7 +33,7 @@ def _session(argv, cfg):
         print(json.dumps(s))
         return 0
     if verb == "done":
-        return msm_cli.main(["session", "done", *args])
+        return msm.main(["session", "done", *args])
     if verb == "start":
         message = []
         if "--" in args:
@@ -87,12 +87,12 @@ def main(argv=None):
         return 0
     command, args = argv[0], argv[1:]
     if command == "msm":
-        return msm_cli.main(args)
+        return msm.main(args)
     cfg = config.load()
     if command == "init":
         try:
             print(json.dumps(init.run(cfg)))
-        except state.MsmError as e:
+        except msm.MSMError as e:
             print(f"{e.code}: {e.message}", file=sys.stderr)
             return e.code
         return 0

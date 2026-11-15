@@ -9,7 +9,7 @@ import os
 import shutil
 from contextlib import contextmanager
 
-from . import gitutil, state
+from . import gitutil, msm
 
 EAGAIN = 4  # the session's branch name is already taken
 EGIT = 5    # git or worktree creation failed
@@ -44,9 +44,9 @@ def create(cfg, role, username=None):
     """
     with lock(cfg, "session"):
         try:
-            with state.transaction(cfg.db) as m:
+            with msm.transaction(cfg.db) as m:
                 session = m.session_create(role, username, cfg.root)
-        except state.MsmError as e:
+        except msm.MSMError as e:
             raise SessionError(e.code, e.message)
         name, directory = session["name"], session["working_directory"]
         created = []
@@ -75,9 +75,9 @@ def _undo(cfg, name, directory, repos):
         gitutil.ok(cfg, cfg.repo_path(repo), "branch", "-D", name)
     shutil.rmtree(directory, ignore_errors=True)
     try:
-        with state.transaction(cfg.db) as m:
+        with msm.transaction(cfg.db) as m:
             m.session_remove(name)
-    except state.MsmError:
+    except msm.MSMError:
         pass
 
 
@@ -99,7 +99,7 @@ def remove(cfg, name, protected=()):
         gitutil.ok(cfg, path, "worktree", "prune")
     shutil.rmtree(directory, ignore_errors=True)
     try:
-        with state.transaction(cfg.db) as m:
+        with msm.transaction(cfg.db) as m:
             m.session_remove(name)
-    except state.MsmError:
+    except msm.MSMError:
         pass
