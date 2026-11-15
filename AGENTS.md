@@ -37,7 +37,10 @@ change `REQUIREMENTS.md` without the operator. Each requirement has a stable ID
 - End to end, on the host (Linux or macOS): `make smoke-host` (runs `tests/smoke.sh`)
 
 Run the unit tests before every commit; run the smoke test when changing scripts,
-the Dispatcher or the Curator flow. `tests/smoke.sh` works in a temporary
+the Dispatcher or the Curator flow. To map a requirement ID, add it to `MAP` in its
+section's file in `tests/conformance/` (a `tests/<file>.py:Class.method` that
+checks it, or a `prompts/<file>.md` with a phrase for agent-only behaviour) and drop
+it from `PENDING`; `python3 tests/conformance.py` lists what is left. `tests/smoke.sh` works in a temporary
 directory and ignores a live loop's environment, so it is safe to run inside a loop
 session.
 
