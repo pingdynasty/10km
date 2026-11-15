@@ -159,6 +159,13 @@ class TestLoopRecord(MsmCase):
         loop = self.ok("loop", "stop", "idle")
         self.assertEqual((loop["stopped"], loop["reason"]), (True, "idle"))
 
+    def test_stop_without_a_reason_is_refused(self):  # R41 R76
+        self.ok("loop", "start")
+        for args in ((), ("",), ("  ",)):
+            with self.subTest(args=args):
+                self.fails(1, "loop", "stop", *args)
+        self.assertFalse(self.loop()["stopped"])
+
     def test_update_changes_fields_but_not_the_protected_ones(self):  # R43 R61
         self.ok("loop", "start")
         self.assertEqual(self.ok("loop", "update", '{"reason": "note"}')["reason"], "note")

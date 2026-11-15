@@ -54,7 +54,7 @@ run-loop                         # the Dispatcher every DISPATCH_INTERVAL second
 ```
 
 Keep `run-loop` running (in `tmux`, or as a service), or call `10km dispatch` from
-cron instead. `10km status` shows where the loop is. `msm loop stop` pauses it:
+cron instead. `10km status` shows where the loop is. `msm loop stop <reason>` pauses it:
 nothing new is launched, and running sessions finish or time out. `msm loop
 resume` carries on, once no blocking operator escalation is open. Stopping
 `run-loop` itself only stops the Dispatcher; resume by starting it again.
@@ -92,7 +92,7 @@ Also in `config.env`: `SESSION_TIMEOUT` (and per-role `PLANNER_TIMEOUT` etc.), `
 ```sh
 10km status                        # phase, cycle, tasks, sessions, escalations, main
 10km metrics [--cycle N] [--json]  # per cycle and role: sessions, times, commits, usage
-msm loop stop [reason]             # stop: the Dispatcher launches nothing new
+msm loop stop <reason>             # stop: the Dispatcher launches nothing new
 msm loop resume                    # resume a stopped loop (refused while a blocking
                                    # operator escalation is open)
 10km session start <username>      # operator session with OPERATOR_AGENT

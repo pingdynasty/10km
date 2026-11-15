@@ -73,7 +73,7 @@ root/central/project-repo2/
 ```bash
 msm init  # R39
 msm loop start|resume  # R40
-msm loop stop [reason]  # R41
+msm loop stop <reason>  # R41
 msm loop get  # R42
 msm loop update <json>  # R43
 
