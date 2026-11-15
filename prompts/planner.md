@@ -15,7 +15,8 @@ deliverables, BACKLOG.md and `config.env`.
    `prompts/common.md`) in the plan and goals; a task's `shortname` in
    `msm cycle create` is a different thing, a label for the task.
 4. Plan the tasks. Up to `MAX_WORKERS` run in parallel, so make each task
-   independent of the others. Each task's `branch` is the base its Worker rebases
+   independent of the others. For the full test suite, task instructions name
+   `gate worker`, never a direct suite run. Each task's `branch` is the base its Worker rebases
    on: your session name for a new task. To continue a backlog item that has a
    branch, rebase that branch on your session branch, use it as the task's
    `branch`, and resolve the item. Before creating the cycle, rebase your
