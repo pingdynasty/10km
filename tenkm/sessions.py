@@ -7,7 +7,7 @@ and rolled back completely if any step fails.
 import os
 import shutil
 
-from . import faults, gitutil, msm
+from . import faults, gitutil, msm, usage
 from .locks import lock
 
 EAGAIN = 4  # the session's branch name is already taken
@@ -76,10 +76,14 @@ def protected_branches(m):
 def remove(cfg, name, protected=()):
     """Remove a session's worktrees, unprotected branches, directory and record.
 
-    Checks the caller first, so an expired caller removes nothing.
+    Checks the caller first, so an expired caller removes nothing. Records the
+    session's usage first, if the Dispatcher hasn't yet.
     """
     with msm.transaction(cfg.db) as m:
         m.check_caller()
+        session = m.one("SELECT * FROM sessions WHERE name = ?", name)
+    if session is not None:
+        usage.safe_record(cfg, dict(session))
     directory = os.path.join(cfg.root, name)
     for repo in cfg.repos():
         path = cfg.repo_path(repo)

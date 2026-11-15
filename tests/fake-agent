@@ -11,6 +11,7 @@
 #   conflict  Worker: write its session name to shared.txt instead of <task>.txt
 #   broken    Worker: also commit broken.txt
 # FAKE_TASKS: the Planner's task shortnames, space-separated (default "hello").
+# FAKE_USAGE=1: on exit, print a Claude-like JSON result (as --output-format json).
 # The Curator merges done sessions one by one, rejects a Worker whose merge
 # conflicts or fails `gate validation`, and backlogs rejected and expired Workers
 # with their branch.
@@ -48,6 +49,14 @@ validate() {  # gate validation, waiting while it runs
   while [ "$rc" = 3 ]; do rc=0; gate validation >/dev/null 2>&1 || rc=$?; done
   [ "$rc" = 0 ]
 }
+
+usage_result() {  # a Claude-like JSON result
+  jq -cn --arg s "$s" '{type: "result", subtype: "success", is_error: false,
+    duration_ms: 1500, num_turns: 3, session_id: "fake-\($s)", total_cost_usd: 0.25,
+    usage: {input_tokens: 100, output_tokens: 50, cache_read_input_tokens: 1000,
+            cache_creation_input_tokens: 200}}'
+}
+[ "${FAKE_USAGE-}" = 1 ] && trap usage_result EXIT
 
 [ "$mode" = slow ] && sleep "${FAKE_DELAY:-2}"
 

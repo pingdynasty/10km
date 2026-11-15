@@ -43,6 +43,13 @@ class Config(dict):
         return self.get("MSM_LOG") or os.path.join(os.path.dirname(os.path.abspath(self.db)),
                                                    "actions.log")
 
+    @property
+    def usage_log(self):
+        """The usage log, one JSON line per agent run: USAGE_LOG, else usage.jsonl
+        next to the database."""
+        return self.get("USAGE_LOG") or os.path.join(os.path.dirname(os.path.abspath(self.db)),
+                                                     "usage.jsonl")
+
     def int(self, name, default):
         value = self.get(name, "")
         try:
