@@ -52,6 +52,10 @@ class Curation:
     def worktree(self, repo):
         return os.path.join(self.dir, repo)
 
+    def repos(self):
+        """The repos the Curator has a worktree in (not those added to central/ since)."""
+        return [r for r in self.cfg.repos() if os.path.isdir(self.worktree(r))]
+
     def load(self):
         try:
             with open(self.state_path) as f:
@@ -254,10 +258,9 @@ def merge(cfg, words):
 
 
 def behind_main(cfg, c):
-    """True if main has moved past the Curator branch in some repo (someone else
-    published since the merge): the branch must be rebuilt on the new main."""
+    """True if main has moved past the Curator branch in some repo."""
     return any(not gitutil.ok(cfg, c.worktree(r), "merge-base", "--is-ancestor",
-                              gitutil.main_branch(cfg, r), "HEAD") for r in cfg.repos())
+                              gitutil.main_branch(cfg, r), "HEAD") for r in c.repos())
 
 
 def _repos_for(cfg, item):
@@ -416,12 +419,18 @@ def own_commits(cfg, c, state, repo, items):
 def _rebuild(cfg, c, state, dropped=()):
     """Reset every repo to main, keeping the Curator's own commits for replay.
     Commits of the applied items and of the dropped ones are not own commits."""
+    repos = c.repos()
+    for repo in repos:
+        path = c.worktree(repo)
+        if not mid_merge(cfg, path) and not picking(cfg, path) and dirty(cfg, path):
+            raise CurateError(f"your {repo} worktree has uncommitted changes, which a rebuild "
+                              "would lose; commit or discard them, then rerun curate-merge")
     previous = list(dropped)
     for key in state.get("applied", []):
         kind, repo, name = key.split(":", 2)
         previous.append(Item(kind, name, repo or None))
-    own = [[r, sha] for r in cfg.repos() for sha in own_commits(cfg, c, state, r, previous)]
-    for repo in cfg.repos():
+    own = [[r, sha] for r in repos for sha in own_commits(cfg, c, state, r, previous)]
+    for repo in repos:
         path = c.worktree(repo)
         gitutil.ok(cfg, path, "merge", "--abort")
         gitutil.ok(cfg, path, "cherry-pick", "--abort")
@@ -432,15 +441,13 @@ def _rebuild(cfg, c, state, dropped=()):
     c.save(state)
 
 
-# --- Step 8: publish --------------------------------------------------------
+# --- Step 9: publish --------------------------------------------------------
 def publish(cfg, report="", accepted=(), rejected=()):
-    """Fast-forward main onto the Curator branch, project repos first, then the
-    loop repo; then, if a Planner session was selected, close the cycle with the
-    verdicts. Rerunning after a crash finishes the job."""
+    """R250-R253. Rerunning after a crash finishes the job."""
     c = Curation(cfg)
     state = c.load()
     selection = c.selection()
-    order = cfg.projects() + ["loop"]
+    order = [r for r in cfg.projects() if r in c.repos()] + ["loop"]
     warnings = []
     for repo in order:
         central_on_main(cfg, repo)
