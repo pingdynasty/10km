@@ -463,10 +463,8 @@ class MSM:
             raise MSMError(EPERM, "cycle create needs phase = plan and not stopped")
         t = now()
         cur = self.current_cycle()
-        empty_before = loop["empty_cycles"]
         if cur is not None and cur["status"] == "open":
             cycle_id = cur["id"]
-            empty_before = self.empty_cycles_before(cycle_id, empty_before)
             self.db.execute("DELETE FROM tasks WHERE cycle = ?", (cycle_id,))
             self.db.execute("UPDATE cycles SET planner_session = ?, planned_at = ?, headline = ? "
                             "WHERE id = ?", (data.get("planner_session"), t, data["headline"],
@@ -482,30 +480,15 @@ class MSM:
                             "status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'waiting', ?)",
                             (str(uuid.uuid4()), seq, cycle_id, task["shortname"],
                              task["instructions"], task["branch"], t))
-        if tasks:
-            self.set_loop(empty_cycles=0)
-        else:
-            self.set_loop(empty_cycles=empty_before + 1)
+        # R72: the cycles since the last one with tasks.
+        empty = self.one("SELECT COUNT(*) FROM cycles WHERE id > "
+                         "(SELECT COALESCE(MAX(cycle), 0) FROM tasks)")[0]
+        self.set_loop(empty_cycles=empty)
         self.log("cycle create", cycle=cycle_id, tasks=[t["shortname"] for t in tasks])
         return self.cycle_get(cycle_id)
 
-    def empty_cycles_before(self, cycle_id, count):
-        """The empty_cycles value before open cycle `cycle_id` was planned, given the
-        value `count` its creation left. An empty cycle added one to it; a cycle with
-        tasks reset it, so the run of empty cycles before it is counted instead."""
-        if not self.db.execute("SELECT 1 FROM tasks WHERE cycle = ?", (cycle_id,)).fetchone():
-            return max(count - 1, 0)
-        run = 0
-        for (cid,) in self.db.execute("SELECT id FROM cycles WHERE id < ? ORDER BY id DESC",
-                                      (cycle_id,)).fetchall():
-            if cid != cycle_id - 1 - run or self.db.execute(
-                    "SELECT 1 FROM tasks WHERE cycle = ?", (cid,)).fetchone():
-                break
-            run += 1
-        return run
-
     def cycle_curate(self, data):
-        """Close the current cycle and set the verdict of each listed task."""
+        """R73, R81."""
         self.check_caller()
         self.check_fields(data, ("curator_session", "report", "tasks"))
         cur = self.current_cycle()
