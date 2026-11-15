@@ -1,29 +1,17 @@
-"""tenkm.dispatch: one Dispatcher pass.
+"""tenkm.dispatch: one Dispatcher pass (R136-R160).
 
-    expire timed-out and dead sessions
-    record the usage of agents that have exited
-    if stopped: exit
-    launch a Curator if operator or Auditor work is waiting (any phase)
-    launch by phase: Planner, Workers (up to MAX_WORKERS), or Curator
-    launch an Auditor if one is due
-
-The Dispatcher only notifies fatal errors (an unreadable or missing database);
-blocking escalations are notified by the role that raises them. Notifications
-are sent after the pass, outside the dispatch lock.
+It records the usage of agents that have exited, and notifies only fatal errors
+(R300), after the pass and outside the dispatch lock.
 """
 import os
 import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from . import config, launchers, msm, notify, sessions, usage
 from .config import BIN, CODE_ROOT
 from .locks import lock
-
-try:
-    from zoneinfo import ZoneInfo
-except ImportError:  # Python < 3.9
-    ZoneInfo = None
 
 
 def parse_time(text):
@@ -40,13 +28,13 @@ class Pass:
         self.now = now or datetime.now(timezone.utc)
         self.launcher = launchers.get(cfg)
         self.notices = []
-        self.forget = []
 
     def notice(self, title, body="", priority="default", key=None):
         self.notices.append((title, body, priority, key))
 
     # --- expiry ------------------------------------------------------------
     def expire_sessions(self):
+        """R155-R159."""
         with msm.transaction(self.cfg.db) as m:
             active = m.list("session", '{"status": "active"}')
         for s in active:
@@ -65,7 +53,7 @@ class Pass:
                 self.expire(s["name"], "not running")
 
     def escalate_unstopped(self, s, handle):
-        """The agent may still be running: tell the operator, without blocking the loop."""
+        """R158."""
         with msm.transaction(self.cfg.db) as m:
             m.create("issue", {
                 "type": "escalation", "title": f"Agent may still be running: {s['name']}",
@@ -109,7 +97,7 @@ class Pass:
 
     # --- launching ---------------------------------------------------------
     def launch(self, role):
-        """Create a session and start its agent. Returns True if launched."""
+        """R148-R151. Returns True if launched."""
         session = None
         for _ in range(3):
             try:
@@ -170,6 +158,7 @@ class Pass:
 
     # --- auditor -----------------------------------------------------------
     def auditor_due(self, m):
+        """R145-R147."""
         closed = m.list("cycle", '{"status": "closed"}')
         if not closed:
             return False
@@ -191,7 +180,7 @@ class Pass:
         """Today's AUDIT_TIME in AUDIT_TIMEZONE, as a UTC datetime."""
         try:
             hour, minute = (int(x) for x in at.split(":"))
-            tz = ZoneInfo(zone) if ZoneInfo else timezone.utc
+            tz = ZoneInfo(zone)
         except Exception:
             self.notice("Bad AUDIT_TIME or AUDIT_TIMEZONE", f"{at!r} {zone!r}", key="bad-audit-time")
             return None
@@ -228,8 +217,6 @@ class Pass:
             self.launch("auditor")
 
     def flush(self):
-        for prefix in self.forget:
-            notify.forget(self.cfg, prefix)
         for title, body, priority, key in self.notices:
             notify.send(self.cfg, title, body, priority, key)
 

@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 EINVAL, EPERM, ENOENT = 1, 2, 3
 
 ROLES = ("planner", "worker", "curator", "auditor", "operator")
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE loop (
@@ -101,8 +101,8 @@ RESOURCES = {
                  update=("shortname", "instructions", "branch", "report", "status")),
     "cycle": dict(table="cycles", key="id", update=("headline", "report")),
     "issue": dict(table="issues", key="id",
-                  create=("type", "title", "description", "assigner_session", "assignee_role",
-                          "severity", "urgent_if", "branch"),
+                  create=("type", "title", "description", "assignee_role", "severity",
+                          "urgent_if", "branch"),
                   required=("type", "title"),
                   update=("title", "description", "assignee_role", "severity",
                           "urgent_if", "status", "branch", "resolution")),
@@ -112,17 +112,7 @@ RESOURCES = {
 
 HIDDEN = {"seq"}
 USERNAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
-# The role in a session name, as session_create makes it.
-SESSION_ROLE = re.compile(r"^(?:cycle\d+-(planner|curator|worker)\d*|(auditor)\d+|(operator))-")
 UNRESOLVED = ("open", "answered")
-
-
-def role_of(name):
-    """The role in session name `name`; operator when there is no name, None if unknown."""
-    if not name:
-        return "operator"
-    match = SESSION_ROLE.match(name)
-    return next((g for g in match.groups() if g), None) if match else None
 
 
 class MSMError(Exception):
@@ -165,17 +155,13 @@ def parse_json(text, kind=dict):
 
 
 class MSM:
-    """The state machine over an open transaction.
-
-    caller is the calling agent's session name (LOOP_SESSION), or None for the
-    operator and the Dispatcher. Changes from an expired or removed session are
-    refused, and agents can't start, resume or update a stopped loop.
-    """
+    """The state machine over an open transaction. caller is the caller's session
+    name (LOOP_SESSION, R86), or None for the operator and the Dispatcher."""
 
     def __init__(self, db, caller=None):
         self.db = db
         self.caller = caller or None
-        self.actions = []  # action log lines, written after the transaction commits
+        self.actions = []  # action log lines (R89), written after the commit
 
     # --- callers -----------------------------------------------------------
     def caller_session(self):
@@ -184,7 +170,7 @@ class MSM:
         return self.one("SELECT * FROM sessions WHERE name = ?", self.caller)
 
     def check_caller(self):
-        """Refuse changes from an expired or removed session."""
+        """R87."""
         if self.caller is None:
             return
         s = self.caller_session()
@@ -196,9 +182,8 @@ class MSM:
         return s is not None and s["role"] != "operator"
 
     def check_loop_record(self):
-        """While the loop is stopped, only the operator changes the loop record."""
-        if self.loop()["stopped"] and (self.is_agent() or
-                                       (self.caller and self.caller_session() is None)):
+        """R88. Call after check_caller."""
+        if self.loop()["stopped"] and self.is_agent():
             raise MSMError(EPERM, "only the operator can change a stopped loop")
 
     def log(self, command, **detail):
@@ -291,8 +276,7 @@ class MSM:
         return to_dict(self.loop())
 
     def check_no_blocking_escalation(self):
-        """Refuse while a blocking escalation assigned to the operator is open; an
-        answered one doesn't count (R313)."""
+        """R313."""
         row = self.one("SELECT id FROM issues WHERE type = 'escalation' AND status = 'open' "
                        "AND severity = 'blocking' AND assignee_role = 'operator' LIMIT 1")
         if row is not None:
@@ -321,7 +305,7 @@ class MSM:
         return self.one("SELECT 1 FROM sessions WHERE role = ? AND status = 'active'", role)
 
     def pending_contributions(self):
-        """Inactive operator or Auditor sessions: work the Curator can take in any phase."""
+        """Inactive operator or Auditor sessions (R91)."""
         return self.one("SELECT 1 FROM sessions WHERE role IN ('operator', 'auditor') "
                         "AND status != 'active'")
 
@@ -377,7 +361,7 @@ class MSM:
         if task is not None:
             self.db.execute("UPDATE tasks SET session = ?, started_at = ?, status = 'active' "
                             "WHERE id = ?", (name, t, task["id"]))
-        self.log("session create", name=name, role=role)
+        self.log("session create", name=name, role=role, cycle=cycle)
         if task is not None:
             self.log("task claim", task=task["id"], worker=name)
         return to_dict(self.get_row("session", name))
@@ -394,14 +378,14 @@ class MSM:
         t = now()
         self.update_row("session", name, {"status": status, "updated_at": t})
         role = s["role"]
-        self.log(f"session {status}", name=name, role=role)
+        self.log(f"session {status}", name=name, role=role, cycle=s["cycle"])
         if role == "worker":
             changed = self.db.execute("UPDATE tasks SET status = ?, done_at = ? "
                                       "WHERE session = ? AND status = 'active'",
                                       (status, t, name)).rowcount
             if changed:
                 self.log(f"task {status}", worker=name)
-        # Phase transitions.
+        # Phase transitions (R109-R111).
         loop, cur = self.loop(), self.current_cycle()
         is_open = cur is not None and cur["status"] == "open"
         if role == "planner" and status == "done" and loop["phase"] == "plan" and is_open:
@@ -435,7 +419,7 @@ class MSM:
                            "WHERE session = ? AND status = 'active'", (name,)).rowcount:
             self.log("task returned", worker=name)
         self.db.execute("DELETE FROM sessions WHERE name = ?", (name,))
-        self.log("session remove", name=name, role=s["role"])
+        self.log("session remove", name=name, role=s["role"], cycle=s["cycle"])
         return {"removed": name}
 
     # --- tasks -------------------------------------------------------------
@@ -473,10 +457,8 @@ class MSM:
             raise MSMError(EPERM, "cycle create needs phase = plan and not stopped")
         t = now()
         cur = self.current_cycle()
-        empty_before = loop["empty_cycles"]
         if cur is not None and cur["status"] == "open":
             cycle_id = cur["id"]
-            empty_before = self.empty_cycles_before(cycle_id, empty_before)
             self.db.execute("DELETE FROM tasks WHERE cycle = ?", (cycle_id,))
             self.db.execute("UPDATE cycles SET planner_session = ?, planned_at = ?, headline = ? "
                             "WHERE id = ?", (data.get("planner_session"), t, data["headline"],
@@ -492,30 +474,15 @@ class MSM:
                             "status, created_at) VALUES (?, ?, ?, ?, ?, ?, 'waiting', ?)",
                             (str(uuid.uuid4()), seq, cycle_id, task["shortname"],
                              task["instructions"], task["branch"], t))
-        if tasks:
-            self.set_loop(empty_cycles=0)
-        else:
-            self.set_loop(empty_cycles=empty_before + 1)
+        # R72: the cycles since the last one with tasks.
+        empty = self.one("SELECT COUNT(*) FROM cycles WHERE id > "
+                         "(SELECT COALESCE(MAX(cycle), 0) FROM tasks)")[0]
+        self.set_loop(empty_cycles=empty)
         self.log("cycle create", cycle=cycle_id, tasks=[t["shortname"] for t in tasks])
         return self.cycle_get(cycle_id)
 
-    def empty_cycles_before(self, cycle_id, count):
-        """The empty_cycles value before open cycle `cycle_id` was planned, given the
-        value `count` its creation left. An empty cycle added one to it; a cycle with
-        tasks reset it, so the run of empty cycles before it is counted instead."""
-        if not self.db.execute("SELECT 1 FROM tasks WHERE cycle = ?", (cycle_id,)).fetchone():
-            return max(count - 1, 0)
-        run = 0
-        for (cid,) in self.db.execute("SELECT id FROM cycles WHERE id < ? ORDER BY id DESC",
-                                      (cycle_id,)).fetchall():
-            if cid != cycle_id - 1 - run or self.db.execute(
-                    "SELECT 1 FROM tasks WHERE cycle = ?", (cid,)).fetchone():
-                break
-            run += 1
-        return run
-
     def cycle_curate(self, data):
-        """Close the current cycle and set the verdict of each listed task."""
+        """R73, R81."""
         self.check_caller()
         self.check_fields(data, ("curator_session", "report", "tasks"))
         cur = self.current_cycle()
@@ -570,9 +537,9 @@ class MSM:
             raise MSMError(EINVAL, f"missing fields: {', '.join(missing)}")
         t = now()
         if res == "issue":
-            session = data.get("assigner_session") or self.caller
-            row = dict(data, id=str(uuid.uuid4()), assigner_session=session,
-                       assigner_role=self.assigner_role(session), status="open", created_at=t)
+            s = self.caller_session()
+            row = dict(data, id=str(uuid.uuid4()), assigner_session=self.caller,
+                       assigner_role=s["role"] if s else "operator", status="open", created_at=t)
         else:
             if not isinstance(data["period"], dict) or set(data["period"]) != {"from", "to"}:
                 raise MSMError(EINVAL, "period must be {from, to}")
@@ -588,15 +555,6 @@ class MSM:
             raise MSMError(EINVAL, str(e))
         self.log(f"{res} create", id=row["id"])
         return to_dict(self.get_row(res, row["id"]))
-
-    def assigner_role(self, session):
-        """The role of the session raising an issue: its record's role, else the role in
-        its name; operator when there is no session (R314-R317)."""
-        row = self.one("SELECT role FROM sessions WHERE name = ?", session) if session else None
-        role = row["role"] if row else role_of(session)
-        if role is None:
-            raise MSMError(EINVAL, f"no role in session name {session}")
-        return role
 
     def update(self, res, key, data):
         self.check_caller()
@@ -645,9 +603,9 @@ class MSM:
 
 
 def db_path():
-    """The database path: MSM_DB, or <LOOP_ROOT>/.10km/loop.db."""
+    """The database path: MSM_DB (relative to LOOP_ROOT), or <LOOP_ROOT>/.10km/loop.db."""
     root = os.environ.get("LOOP_ROOT", "/loop")
-    return os.environ.get("MSM_DB") or os.path.join(root, ".10km", "loop.db")
+    return os.path.join(root, os.environ.get("MSM_DB") or os.path.join(".10km", "loop.db"))
 
 
 def migrate(db):
@@ -667,32 +625,7 @@ def migrate(db):
     loop_cols = {r[1] for r in db.execute("PRAGMA table_info(loop)")}
     if "empty_cycles" not in loop_cols:
         db.execute("ALTER TABLE loop ADD COLUMN empty_cycles INTEGER NOT NULL DEFAULT 0")
-    if "assigner_role" not in {r[1] for r in db.execute("PRAGMA table_info(issues)")}:
-        migrate_issues(db)
     db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-
-
-def migrate_issues(db):
-    """Rebuild the issues table for status answered, answered_at, assigner_session and
-    assigner_role (SQLite can't alter a CHECK). owner_session becomes assigner_session,
-    assigner_role comes from its name, and resolver_role is dropped."""
-    table = SCHEMA[SCHEMA.index("CREATE TABLE issues"):]
-    table = table[:table.index(";")]
-    if not db.execute("SELECT name FROM sqlite_master WHERE name = 'issues'").fetchone():
-        db.execute(table)
-        return
-    db.execute(table.replace("TABLE issues", "TABLE issues_new"))
-    rows = db.execute("SELECT * FROM issues").fetchall()
-    for row in rows:
-        old = dict(row)
-        session = old.pop("owner_session", None) or None
-        old.pop("resolver_role", None)
-        new = dict(old, assigner_session=session,
-                   assigner_role=role_of(session) or "operator", answered_at=None)
-        db.execute(f"INSERT INTO issues_new ({', '.join(new)}) "
-                   f"VALUES ({', '.join('?' for _ in new)})", tuple(new.values()))
-    db.execute("DROP TABLE issues")
-    db.execute("ALTER TABLE issues_new RENAME TO issues")
 
 
 def connect(path=None, create=False):
@@ -738,9 +671,10 @@ def transaction(path=None, create=False, caller=None):
 
 
 def action_log_path(db=None):
-    """The action log: MSM_LOG, or actions.log next to the database."""
-    return os.environ.get("MSM_LOG") or os.path.join(os.path.dirname(
-        os.path.abspath(db or db_path())), "actions.log")
+    """The action log: MSM_LOG (relative to LOOP_ROOT), or actions.log next to the database."""
+    if os.environ.get("MSM_LOG"):
+        return os.path.join(os.environ.get("LOOP_ROOT", "/loop"), os.environ["MSM_LOG"])
+    return os.path.join(os.path.dirname(os.path.abspath(db or db_path())), "actions.log")
 
 
 USAGE = """usage: msm <command>
@@ -770,9 +704,8 @@ USAGE = """usage: msm <command>
 A filter is a JSON object of field values, e.g. answered issues raised by Planners:
   issue list '{"status":"answered","assigner_role":"planner"}'
 An unknown field is EINVAL; an unknown value matches nothing.
-Issue status goes open, answered (sets answered_at), resolved (sets
-resolved_at). msm sets assigner_session to the caller unless given, and
-assigner_role from it (operator without a session)."""
+Issue status goes open, answered, resolved (R314). msm sets assigner_session
+and assigner_role from the caller's session (R317)."""
 
 
 def run(m, argv):

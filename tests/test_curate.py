@@ -430,3 +430,37 @@ class TestReviewFindings(CurateCase):
         self.assertEqual(rc, curate.EXIT_CONFLICT)
         rc, _, _ = self.run_step(cur, "merge", "no-such-session")
         self.assertEqual(rc, curate.EXIT_ERROR)
+
+    def test_rebuild_refuses_to_lose_uncommitted_changes(self):
+        planner, (w1, w2) = self.cycle_with_workers(("a.txt", "a"), ("b.txt", "b"))
+        cur = self.curator()
+        path = os.path.join(self.root, cur, "project", "a.txt")
+        with self.as_session(cur):
+            curate.select(self.cfg)
+            curate.merge(self.cfg, [planner, w1, w2])
+            with open(path, "w") as f:
+                f.write("unsaved")
+            with self.assertRaisesRegex(curate.CurateError, "uncommitted"):
+                curate.merge(self.cfg, [planner, w1])  # leaving w2 out rebuilds
+            with open(path) as f:
+                self.assertEqual(f.read(), "unsaved")
+            subprocess.run(["git", "-C", os.path.dirname(path), "checkout", "a.txt"], check=True)
+            self.assertEqual(curate.merge(self.cfg, [planner, w1])["applied"], [planner, w1])
+
+    def test_repo_added_after_the_curator_started_is_skipped(self):
+        op = sessions.create(self.cfg, "operator", "mars")["name"]
+        self.commit(op, "project", "x.txt", "x")
+        with self.m() as m:
+            m.session_status(op, "done")
+            m.loop_start()
+        cur = self.curator()
+        late = self.cfg.repo_path("late")
+        subprocess.run(["git", "init", "-q", "-b", "main", late], check=True)
+        subprocess.run(["git", "-C", late, "commit", "-q", "--allow-empty", "-m", "start"],
+                       check=True)
+        with self.as_session(cur):
+            curate.select(self.cfg)
+            self.assertEqual(curate.merge(self.cfg, [op])["applied"], [op])
+            self.assertEqual(curate.merge(self.cfg, [op])["applied"], [])
+            self.assertEqual(curate.publish(self.cfg)["published"], ["project", "loop"])
+        self.assertEqual(self.central("project", "x.txt"), "x")

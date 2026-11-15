@@ -1,17 +1,14 @@
-"""tenkm.curate: the Curator's deterministic steps.
+"""tenkm.curate: the Curator's scripted steps (R203-R259).
 
-    curate-prepare                     Step 1: remove leftover sessions
-    curate-select                      Step 2: choose the sessions to curate
-    curate-merge [ITEM...]             Step 3: make the Curator branch main plus the
-                                       items (sessions and commits), in order; no
-                                       items: main plus the Curator's own commits
+    curate-prepare                     Step 1 (R207)
+    curate-select                      Step 2 (R210)
+    curate-merge [ITEM...]             Step 3 (R216)
     curate-publish [--report TEXT | --report-file F] [--accepted S...] [--rejected S...]
-                                       Step 9: fast-forward main, close the cycle
-    curate-cleanup                     Step 10: remove the curated sessions
+                                       Step 9 (R249)
+    curate-cleanup                     Step 10 (R254)
 
-Every step runs as the Curator session in LOOP_SESSION and refuses to run unless
-that session is active. State between steps is kept in <session>/curation.json.
-Each step is safe to rerun.
+Every step runs as the Curator session in LOOP_SESSION (R205). State between steps
+is kept in <session>/curation.json. Each step is safe to rerun.
 
 Exit status: 0 done, 1 error, 2 refused (stop), 3 conflict (resolve, commit, rerun).
 """
@@ -51,6 +48,10 @@ class Curation:
 
     def worktree(self, repo):
         return os.path.join(self.dir, repo)
+
+    def repos(self):
+        """The repos the Curator has a worktree in (not those added to central/ since)."""
+        return [r for r in self.cfg.repos() if os.path.isdir(self.worktree(r))]
 
     def load(self):
         try:
@@ -116,6 +117,7 @@ def central_on_main(cfg, repo):
 
 # --- Step 1: prepare --------------------------------------------------------
 def prepare(cfg):
+    """R208, R209."""
     c = Curation(cfg)
     with msm.transaction(cfg.db) as m:
         all_sessions = m.list("session")
@@ -140,6 +142,7 @@ def prepare(cfg):
 
 # --- Step 2: select ---------------------------------------------------------
 def select(cfg):
+    """R211-R214."""
     c = Curation(cfg)
     with msm.transaction(cfg.db) as m:
         loop = m.loop_get()
@@ -206,10 +209,7 @@ def resolve_items(cfg, words):
 
 
 def merge(cfg, words):
-    """Make the Curator branch main plus the given items, in order, in every repo,
-    keeping the Curator's own commits. Stops at a conflict with instructions;
-    rerunning continues. A list that isn't an extension of the last one rebuilds;
-    an empty list leaves main plus the Curator's own commits."""
+    """R217-R223. A list that isn't an extension of the last one rebuilds."""
     c = Curation(cfg)
     selected = {s["name"] for s in c.load()["selection"] or []}
     empty = [w for w in words if w in selected and not branch_repos(cfg, w)]
@@ -254,10 +254,9 @@ def merge(cfg, words):
 
 
 def behind_main(cfg, c):
-    """True if main has moved past the Curator branch in some repo (someone else
-    published since the merge): the branch must be rebuilt on the new main."""
+    """True if main has moved past the Curator branch in some repo."""
     return any(not gitutil.ok(cfg, c.worktree(r), "merge-base", "--is-ancestor",
-                              gitutil.main_branch(cfg, r), "HEAD") for r in cfg.repos())
+                              gitutil.main_branch(cfg, r), "HEAD") for r in c.repos())
 
 
 def _repos_for(cfg, item):
@@ -416,12 +415,18 @@ def own_commits(cfg, c, state, repo, items):
 def _rebuild(cfg, c, state, dropped=()):
     """Reset every repo to main, keeping the Curator's own commits for replay.
     Commits of the applied items and of the dropped ones are not own commits."""
+    repos = c.repos()
+    for repo in repos:
+        path = c.worktree(repo)
+        if not mid_merge(cfg, path) and not picking(cfg, path) and dirty(cfg, path):
+            raise CurateError(f"your {repo} worktree has uncommitted changes, which a rebuild "
+                              "would lose; commit or discard them, then rerun curate-merge")
     previous = list(dropped)
     for key in state.get("applied", []):
         kind, repo, name = key.split(":", 2)
         previous.append(Item(kind, name, repo or None))
-    own = [[r, sha] for r in cfg.repos() for sha in own_commits(cfg, c, state, r, previous)]
-    for repo in cfg.repos():
+    own = [[r, sha] for r in repos for sha in own_commits(cfg, c, state, r, previous)]
+    for repo in repos:
         path = c.worktree(repo)
         gitutil.ok(cfg, path, "merge", "--abort")
         gitutil.ok(cfg, path, "cherry-pick", "--abort")
@@ -432,15 +437,13 @@ def _rebuild(cfg, c, state, dropped=()):
     c.save(state)
 
 
-# --- Step 8: publish --------------------------------------------------------
+# --- Step 9: publish --------------------------------------------------------
 def publish(cfg, report="", accepted=(), rejected=()):
-    """Fast-forward main onto the Curator branch, project repos first, then the
-    loop repo; then, if a Planner session was selected, close the cycle with the
-    verdicts. Rerunning after a crash finishes the job."""
+    """R250-R253. Rerunning after a crash finishes the job."""
     c = Curation(cfg)
     state = c.load()
     selection = c.selection()
-    order = cfg.projects() + ["loop"]
+    order = [r for r in cfg.projects() if r in c.repos()] + ["loop"]
     warnings = []
     for repo in order:
         central_on_main(cfg, repo)
@@ -499,10 +502,9 @@ def _verdicts(cfg, selection, accepted, rejected):
     return out
 
 
-# --- Step 9: cleanup --------------------------------------------------------
+# --- Step 10: cleanup -------------------------------------------------------
 def cleanup(cfg):
-    """Remove the selected sessions. Reports, per repo, removed branches with
-    commits that never reached main."""
+    """R256. Reports removed branches with commits that never reached main."""
     c = Curation(cfg)
     selection = c.selection()
     warnings = []

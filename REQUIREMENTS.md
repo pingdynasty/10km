@@ -179,7 +179,7 @@ Issue   { id: uuid,  # R99
           type: escalation|backlog,
           title: string,
           description: string,
-          assigner_session: string,
+          assigner_session: string|null,
           assigner_role: planner|curator|auditor|operator|worker,
           assignee_role: planner|curator|auditor|operator,
           severity: low|high|blocking,
@@ -292,7 +292,7 @@ Notes:
 **R175** Issues from unmerged work (expired, incomplete, or rejected) should reference its branch.
 **R314** An issue's status goes open, then answered, then resolved.
 **R315** The assignee answers an issue: it sets status answered with the answer or decision in `resolution`; msm sets `answered_at`. **R316** The operator answers operator escalations with `msm issue update`.
-**R317** The role that raised an issue, its `assigner_role` (msm sets it from the raising session's role, operator without a session), owns the follow-up: it reads the answered issues with its role as `assigner_role`, acts on the answer (a plan change, a backlog item, a task), then sets status resolved; msm sets `resolved_at`.
+**R317** The role that raised an issue, its `assigner_role` (msm sets `assigner_session` to the caller's session and `assigner_role` to its role, or null and operator without a session; the creator sets neither), owns the follow-up: it reads the answered issues with its role as `assigner_role`, acts on the answer (a plan change, a backlog item, a task), then sets status resolved; msm sets `resolved_at`.
 **R318** The assignee may resolve an issue directly, without answering it first, when it leaves no follow-up for another role: a backlog item it has done, or an issue with its own role as `assigner_role` or with no `assigner_session`.
 **R319** Only open issues wait for an answer.
 

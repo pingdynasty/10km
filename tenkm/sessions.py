@@ -1,9 +1,4 @@
-"""tenkm.sessions: create and remove sessions.
-
-A session is a record in the database, a directory, and a branch and worktree in
-every repo, all named after the session. Creation is serialised with a file lock
-and rolled back completely if any step fails.
-"""
+"""tenkm.sessions: create (R114-R135) and remove sessions."""
 import os
 import shutil
 
@@ -22,11 +17,8 @@ class SessionError(Exception):
 
 
 def create(cfg, role, username=None):
-    """Create a session for a role. Returns its record; raises SessionError.
-
-    Codes: those of `msm session create` (1 EINVAL, 2 EPERM, 3 ENOENT),
-    4 if the branch name is taken, 5 on git errors.
-    """
+    """Create a session for a role (R128-R131). Returns its record; raises
+    SessionError with the codes of R132-R135."""
     with lock(cfg, "session"):
         try:
             with msm.transaction(cfg.db) as m:
@@ -69,18 +61,14 @@ def _undo(cfg, name, directory, repos):
 
 
 def protected_branches(m):
-    """Branches referenced by unresolved (open or answered) issues (R206). Scripts never
-    remove these."""
+    """Branches of unresolved issues (R206)."""
     return {i["branch"] for i in m.list("issue")
             if i["status"] in msm.UNRESOLVED and i.get("branch")}
 
 
 def remove(cfg, name, protected=()):
     """Remove a session's worktrees, unprotected branches, directory and record.
-
-    Checks the caller first, so an expired caller removes nothing. Records the
-    session's usage first, if the Dispatcher hasn't yet.
-    """
+    An expired caller removes nothing (R87); usage is recorded first."""
     with msm.transaction(cfg.db) as m:
         m.check_caller()
         session = m.one("SELECT * FROM sessions WHERE name = ?", name)

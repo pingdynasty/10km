@@ -100,52 +100,6 @@ class TestMigration(unittest.TestCase):
             with msm.transaction(path) as m:  # idempotent
                 self.assertEqual(m.loop_get()["current_cycle"], 3)
 
-    def test_rebuilds_issues_with_answered_and_assigner(self):
-        """Schema 2 to 3: status answered and answered_at; owner_session becomes
-        assigner_session, assigner_role comes from its name, resolver_role goes."""
-        with tempfile.TemporaryDirectory() as d:
-            path = os.path.join(d, "old.db")
-            db = sqlite3.connect(path)
-            db.executescript("""
-              CREATE TABLE loop (id INTEGER PRIMARY KEY, current_cycle INTEGER NOT NULL,
-                last_audit INTEGER NOT NULL, empty_cycles INTEGER NOT NULL,
-                phase TEXT NOT NULL, stopped INTEGER NOT NULL, reason TEXT,
-                updated_at TEXT NOT NULL);
-              INSERT INTO loop VALUES (1, 3, 0, 0, 'plan', 0, NULL, '2026-01-01T00:00:00Z');
-              CREATE TABLE issues (id TEXT PRIMARY KEY, type TEXT NOT NULL, title TEXT NOT NULL,
-                description TEXT, owner_session TEXT, assignee_role TEXT, resolver_role TEXT,
-                severity TEXT NOT NULL DEFAULT 'low', urgent_if TEXT,
-                status TEXT NOT NULL CHECK (status IN ('open','resolved')), branch TEXT,
-                created_at TEXT NOT NULL, resolved_at TEXT, resolution TEXT);
-              PRAGMA user_version = 2;
-            """)
-            owners = {"p": "cycle3-planner-abcdefgh", "w": "cycle3-worker12-abcdefgh",
-                      "c": "cycle2-curator-abcdefgh", "a": "auditor4-abcdefgh",
-                      "o": "operator-mars-abcdefgh", "n": None, "e": "", "x": "odd"}
-            for key, owner in owners.items():
-                db.execute("INSERT INTO issues VALUES (?, 'backlog', ?, 'd', ?, 'planner', "
-                           "'planner', 'low', NULL, 'open', 'b', 't', NULL, NULL)",
-                           (key, key, owner))
-            db.commit()
-            db.close()
-            for _ in range(2):  # idempotent
-                with msm.transaction(path) as m:
-                    issues = {i["id"]: i for i in m.list("issue")}
-            roles = {k: (i["assigner_session"], i["assigner_role"]) for k, i in issues.items()}
-            self.assertEqual(roles, {
-                "p": (owners["p"], "planner"), "w": (owners["w"], "worker"),
-                "c": (owners["c"], "curator"), "a": (owners["a"], "auditor"),
-                "o": (owners["o"], "operator"), "n": (None, "operator"),
-                "e": (None, "operator"), "x": ("odd", "operator")})
-            self.assertNotIn("owner_session", issues["p"])
-            self.assertNotIn("resolver_role", issues["p"])
-            self.assertEqual((issues["p"]["branch"], issues["p"]["answered_at"]), ("b", None))
-            with msm.transaction(path) as m:
-                self.assertEqual(m.update("issue", "p", {"status": "answered"})["status"],
-                                 "answered")
-                self.assertEqual(m.db.execute("PRAGMA user_version").fetchone()[0],
-                                 msm.SCHEMA_VERSION)
-
 
 class TestConfig(LoopCase):
     def test_environment_overrides_config(self):
@@ -154,6 +108,17 @@ class TestConfig(LoopCase):
         self.assertEqual(self.cfg.repos(), ["loop", "project"])
         self.assertEqual(self.reload(WORKER_TIMEOUT="5").timeout("worker"), 5)
         self.assertEqual(self.cfg.timeout("planner"), 3600)
+
+
+class TestStatePaths(LoopCase):
+    def test_relative_state_paths_are_under_the_loop_root(self):
+        names = ("MSM_DB", "MSM_LOG", "USAGE_LOG")
+        with mock.patch.dict(os.environ, dict(zip(names, ("s/db", "s/log", "s/usage")))):
+            cfg = config.load()
+            for name, path in zip(names, ("s/db", "s/log", "s/usage")):
+                self.assertEqual(cfg[name], os.path.join(self.root, path))
+                self.assertEqual(os.environ[name], cfg[name])
+            self.assertEqual((cfg.db, cfg.action_log), (cfg["MSM_DB"], cfg["MSM_LOG"]))
 
 
 class TestBrokenConfig(LoopCase):

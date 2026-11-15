@@ -182,6 +182,15 @@ class MsmTest(unittest.TestCase):
             line = json.loads(f.read().splitlines()[-1])
         self.assertEqual((line["command"], line["session"]), ("issue create", None))
 
+    def test_relative_state_paths_are_under_the_loop_root(self):
+        self.env.update(MSM_DB="state/loop.db", MSM_LOG="state/actions.log")
+        cwd = os.getcwd()
+        self.ok("init")
+        self.ok("issue", "create", '{"type": "backlog", "title": "t"}')
+        self.assertTrue(os.path.exists(os.path.join(self.tmp.name, "state", "loop.db")))
+        self.assertTrue(os.path.exists(os.path.join(self.tmp.name, "state", "actions.log")))
+        self.assertFalse(os.path.exists(os.path.join(cwd, "state")))
+
     def test_session_create_end_and_remove_are_logged(self):
         self.ok("loop", "start")
         a = self.ok("session", "create", "auditor")["name"]
@@ -192,15 +201,21 @@ class MsmTest(unittest.TestCase):
         del self.env["LOOP_SESSION"]
         self.ok("session", "expired", b)
         self.ok("session", "remove", a)
+        p = self.ok("session", "create", "planner")["name"]
+        self.ok("session", "expired", p)
+        self.ok("session", "remove", p)
         with open(os.path.join(self.tmp.name, "actions.log")) as f:
             lines = [json.loads(x) for x in f.read().splitlines()]
-        got = [(x["command"], x["session"], x["name"], x["role"]) for x in lines
+        got = [(x["command"], x["session"], x["name"], x["role"], x["cycle"]) for x in lines
                if x["command"].startswith("session ")]
-        self.assertEqual(got, [("session create", None, a, "auditor"),
-                               ("session create", None, b, "operator"),
-                               ("session done", a, a, "auditor"),
-                               ("session expired", None, b, "operator"),
-                               ("session remove", None, a, "auditor")])
+        self.assertEqual(got, [("session create", None, a, "auditor", None),
+                               ("session create", None, b, "operator", None),
+                               ("session done", a, a, "auditor", None),
+                               ("session expired", None, b, "operator", None),
+                               ("session remove", None, a, "auditor", None),
+                               ("session create", None, p, "planner", 1),
+                               ("session expired", None, p, "planner", 1),
+                               ("session remove", None, p, "planner", 1)])
         self.assertTrue(all(x["at"] for x in lines))
 
     def test_stop_and_resume(self):
