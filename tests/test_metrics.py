@@ -13,7 +13,7 @@ import testenv  # noqa: E402,F401  (test config, no caller env: tests/testenv.py
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from test_loop import LoopCase  # noqa: E402
-from tenkm import cli, metrics, msm  # noqa: E402
+from tenkm import cli, metrics, msm, timefmt  # noqa: E402
 
 
 class MetricsCase(LoopCase):
@@ -141,8 +141,8 @@ class TestCollect(MetricsCase):
         row = by[curator]
         start, end = self.logged(curator, "session create"), self.logged(curator, "session done")
         self.assertEqual((row["times_from"], row["start"], row["end"]), ("log", start, end))
-        self.assertEqual(row["duration_s"], (metrics.parse_time(end)
-                                             - metrics.parse_time(start)).total_seconds())
+        self.assertEqual(row["duration_s"], (timefmt.parse(end)
+                                             - timefmt.parse(start)).total_seconds())
         self.assertEqual(by[planner]["times_from"], "log")
 
     def test_cycle_filter_and_missing_usage_log(self):

@@ -21,8 +21,7 @@ MAP = {
             RL + "TestStatus.test_empty_cycles_plural",
             "tests/test_timefmt.py:TestFormat.test_clock_today_other_day_other_year",
             "tests/test_timefmt.py:TestFormat.test_elapsed",
-            "tests/test_timefmt.py:TestParse."
-            "test_iso_utc_git_offset_and_ps_lstart_are_the_same_instant"],
+            "tests/test_timefmt.py:TestParse.test_iso_utc_and_git_offset_are_the_same_instant"],
 }
 
 PENDING = set()
