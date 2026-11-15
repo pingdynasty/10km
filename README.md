@@ -117,7 +117,7 @@ The next Curator merges your session, then the loop carries on from its phase.
 ## Testing
 
 ```sh
-make test         # unit and script tests: python3 -m unittest discover tests
+make test         # unit and script tests, in parallel: python3 tests/run.py
 make smoke        # end to end with a fake agent, in the container (needs Docker)
 make smoke-host   # the same end-to-end test on this host (Linux or macOS)
 ```

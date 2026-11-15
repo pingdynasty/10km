@@ -32,7 +32,11 @@ change `REQUIREMENTS.md` without the operator. Each requirement has a stable ID
 
 ## Testing
 
-- Unit and script tests: `make test` (`python3 -m unittest discover tests`)
+- Unit and script tests: `make test` runs them in parallel with `tests/run.py`
+  (`-j N` jobs, default the CPU count; name patterns select classes, e.g.
+  `python3 tests/run.py test_msm`). `python3 -m unittest discover tests` runs the
+  same tests serially. Tests must be safe to run in parallel: temporary roots, no
+  fixed ports or shared paths.
 - End to end, in the container: `make smoke` (builds the image, runs `tests/smoke.sh`)
 - End to end, on the host (Linux or macOS): `make smoke-host` (runs `tests/smoke.sh`)
 
