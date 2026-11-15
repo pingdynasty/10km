@@ -166,13 +166,42 @@ class TestCollect(MetricsCase):
                 m.session_remove(name)
         self.assertEqual(outcomes(), expected)
 
-    def test_operator_session_gets_the_cycle_planned_before_it(self):
-        self.one_cycle()
+    def test_cycleless_sessions_get_only_an_open_cycle(self):
+        """R266: an operator session started while a cycle is open is in that cycle; an
+        Auditor (cycle null) started after the cycle is curated is in no cycle, not
+        in the last one (backlog d7f1b6c6)."""
+        self.start_loop()
+        time.sleep(1 - time.time() % 1)
+        with self.m() as m:
+            planner = m.session_create("planner")["name"]
+        with msm.transaction(self.cfg.db, caller=planner) as m:
+            m.cycle_create({"planner_session": planner, "headline": "h", "tasks": [
+                {"shortname": "a", "instructions": "i", "branch": planner}]})
+            m.session_status(planner, "done")
+        time.sleep(1.01)  # one-second resolution: start after planned_at
         with self.m() as m:
             op = m.session_create("operator", "mars")["name"]
-        data = metrics.collect(self.cfg, cycle=1)
-        row = [r for r in data["sessions"] if r["session"] == op][0]
-        self.assertEqual((row["role"], row["outcome"], row["end"]), ("operator", "active", None))
+            curator = m.session_create("curator")["name"]
+        time.sleep(1.01)  # curated_at after the operator's start
+        with msm.transaction(self.cfg.db, caller=curator) as m:
+            task = m.cycle_get()["tasks"][0]
+            m.cycle_curate({"curator_session": curator, "report": "r", "tasks": [
+                {"id": task["id"], "status": "rejected"}]})
+            m.session_status(curator, "done")
+        time.sleep(1.01)
+        with self.m() as m:
+            auditor = m.session_create("auditor")["name"]
+            late_op = m.session_create("operator", "venus")["name"]
+        by = {r["session"]: r for r in metrics.collect(self.cfg)["sessions"]}
+        self.assertEqual((by[op]["role"], by[op]["cycle"], by[op]["outcome"]),
+                         ("operator", 1, "active"))
+        self.assertIsNone(by[auditor]["cycle"])
+        self.assertIsNone(by[late_op]["cycle"])
+        self.assertNotIn(auditor, {r["session"] for r in
+                                   metrics.collect(self.cfg, cycle=1)["sessions"]})
+        summary = {(g["cycle"], g["role"]): g["sessions"]
+                   for g in metrics.collect(self.cfg)["summary"]}
+        self.assertEqual((summary[(None, "auditor")], summary.get((1, "auditor"))), (1, None))
 
 
 class TestCommand(MetricsCase):

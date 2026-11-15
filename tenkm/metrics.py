@@ -137,6 +137,20 @@ class _Session:
         return totals
 
 
+def open_cycle(cycles, at):
+    """The cycle planned but not yet curated at `at`, or None.
+
+    For sessions without a cycle (Auditor, operator): an Auditor runs after a
+    cycle is curated, so it belongs to no cycle rather than the last one."""
+    if not at:
+        return None
+    for c in sorted(cycles, key=lambda c: c["id"], reverse=True):
+        planned, curated = parse_time(c.get("planned_at")), parse_time(c.get("curated_at"))
+        if planned and planned <= at and (curated is None or at < curated):
+            return c["id"]
+    return None
+
+
 def collect(cfg, cycle=None):
     """Metrics for every session the database, action log, usage log or git know of,
     optionally only those of one cycle."""
@@ -198,14 +212,10 @@ def collect(cfg, cycle=None):
     for name, repos in commits_by_session(cfg).items():
         get(name).commits = repos
 
-    # Sessions without a cycle (auditor, operator): the cycle last planned when they started.
-    planned = sorted((parse_time(c["planned_at"]), c["id"]) for c in cycles if c.get("planned_at"))
     records = []
     for s in sessions.values():
         start, end, source = s.span()
-        cyc = s.cycle
-        if cyc is None and start:
-            cyc = max((cid for at, cid in planned if at and at <= start), default=None)
+        cyc = s.cycle if s.cycle is not None else open_cycle(cycles, start)
         if cycle is not None and cyc != cycle:
             continue
         duration = (end - start).total_seconds() if start and end else None
