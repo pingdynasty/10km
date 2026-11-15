@@ -192,6 +192,13 @@ class TestSessions(LoopCase):
             self.assertEqual(m.list("session"), [])
         self.assertEqual([d for d in os.listdir(self.root) if d.startswith("operator")], [])
 
+    def test_shared_setup_covers_a_repo_added_since(self):
+        setup = {}
+        sessions.create(self.cfg, "operator", "mars", setup=setup)
+        testenv.project_repo(self.cfg.repo_path("extra"))
+        s = sessions.create(self.cfg, "operator", "venus", setup=setup)
+        self.assertTrue(os.path.isdir(os.path.join(s["working_directory"], "extra")))
+
     def test_detached_central_head_still_branches_from_main(self):
         subprocess.run(["git", "-C", self.cfg.repo_path("project"), "checkout", "-q", "--detach"],
                        check=True)
@@ -283,6 +290,23 @@ class TestDispatch(LoopCase):
             titles = {i["title"] for i in m.list("issue")}
         self.assertIn(f"ESC5: Agent may still be running: {names[0]}", titles)
         self.assertIn(f"ESC6: Agent may still be running: {names[1]}", titles)
+
+    def test_undecodable_prompt_still_launches(self):  # R151
+        self.start_loop()
+        with open(os.path.join(self.cfg.central, "loop", "prompts", "curator.md"), "ab") as f:
+            f.write(b"\xff\xfe bad bytes\n")
+        dispatch.run_pass(self.cfg)
+        [cur] = self.sessions("curator")
+        self.assertTrue(cur["handle"].startswith("process:"))
+        with open(os.path.join(cur["working_directory"], "prompt.txt"), encoding="utf-8") as f:
+            self.assertIn("\ufffd", f.read())
+
+    def test_escalation_number_ignores_overlong_digits(self):  # R158
+        self.start_loop()
+        with self.m() as m:
+            m.create("issue", {"type": "escalation", "title": "ESC" + "9" * 5000 + ": x"})
+            m.create("issue", {"type": "escalation", "title": "ESC2: y"})
+            self.assertEqual(dispatch.next_escalation(m), "ESC3")
 
     def test_failed_prompt_write_removes_the_session(self):  # R151
         self.start_loop()
