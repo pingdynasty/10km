@@ -35,7 +35,8 @@ Write for a reader without the loop's files open: say what each id or name is.
 
 - `low` and `high` don't stop the loop. The assignee acts on them in its own time.
 - `blocking`, on an operator escalation, stops the loop: the Curator notifies the
-  operator and stops the loop at the end of its pass. Use it only when the loop
+  operator and stops the loop at the end of its pass, and `msm loop resume` is
+  refused until the escalation is resolved. Use it only when the loop
   cannot make progress without the answer. A blocking escalation to another role
   does not stop the loop.
 

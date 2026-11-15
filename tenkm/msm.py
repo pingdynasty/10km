@@ -272,9 +272,18 @@ class MSM:
         loop = self.loop()
         if not loop["stopped"]:
             raise MSMError(EPERM, "loop is not stopped")
+        self.check_no_blocking_escalation()
         phase = "curate" if loop["phase"] == "plan" else loop["phase"]
         self.set_loop(stopped=0, reason=None, phase=phase)
         return to_dict(self.loop())
+
+    def check_no_blocking_escalation(self):
+        """Refuse while a blocking escalation assigned to the operator is open."""
+        row = self.one("SELECT id FROM issues WHERE type = 'escalation' AND status = 'open' "
+                       "AND severity = 'blocking' AND assignee_role = 'operator' LIMIT 1")
+        if row is not None:
+            raise MSMError(EPERM, f"blocking operator escalation {row['id']} is open: "
+                                  "resolve it before resuming")
 
     def loop_stop(self, reason=None):
         self.check_caller()

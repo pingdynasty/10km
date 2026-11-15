@@ -125,6 +125,35 @@ class TestLoopRecord(MsmCase):
         self.assertEqual((loop["stopped"], loop["reason"], loop["phase"]),
                          (False, None, "execute"))
 
+    def blocking_escalation(self):
+        return self.ok("issue", "create", json.dumps(
+            {"type": "escalation", "title": "decide", "severity": "blocking",
+             "assignee_role": "operator"}))["id"]
+
+    def test_resume_is_refused_while_a_blocking_operator_escalation_is_open(self):  # R171 R313
+        self.ok("loop", "start")
+        self.ok("loop", "stop", "blocked")
+        issue = self.blocking_escalation()
+        # Escalations that are not blocking, or not for the operator, don't hold it.
+        for other in ({"severity": "high", "assignee_role": "operator"},
+                      {"severity": "blocking", "assignee_role": "planner"}):
+            self.ok("issue", "create", json.dumps(dict(other, type="escalation", title="t")))
+        err = self.fails(2, "loop", "resume")
+        self.assertIn(issue, err)
+        operator = self.ok("session", "create", "operator", "mars")["name"]
+        self.env["LOOP_SESSION"] = operator
+        self.fails(2, "loop", "resume")
+        self.assertTrue(self.loop()["stopped"])
+
+    def test_resume_is_allowed_once_the_blocking_escalation_is_resolved(self):  # R171 R313
+        self.ok("loop", "start")
+        self.ok("loop", "stop", "blocked")
+        issue = self.blocking_escalation()
+        self.fails(2, "loop", "resume")
+        self.ok("issue", "update", issue, '{"status": "resolved", "resolution": "ruled"}')
+        loop = self.ok("loop", "resume")
+        self.assertEqual((loop["stopped"], loop["reason"]), (False, None))
+
     def test_stop_sets_stopped_and_reason(self):  # R41 R76
         self.ok("loop", "start")
         loop = self.ok("loop", "stop", "idle")

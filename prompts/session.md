@@ -29,7 +29,8 @@ Rules:
 - Don't change `REQUIREMENTS.md` unless the operator says so.
 - Don't resume a stopped loop unless the operator says so. msm lets an operator
   session do it, but the operator decides when: tell them to run `msm loop resume`
-  once the session is done.
+  once the session is done. msm refuses to resume while a blocking escalation
+  assigned to the operator is open, so resolve those first.
 - Operator sessions never time out. When finished, commit, then `msm session done
   "$LOOP_SESSION"`, and tell the operator what you changed and what is left for
   them.
