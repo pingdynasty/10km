@@ -12,7 +12,7 @@ MAP = {
              (P, "escalations assigned to the planner, and backlog items")],
     "R187": (P, "Read open issues (`msm issue list '{\"status\": \"open\"}'`): escalations "
                 "assigned to the planner"),
-    "R188": (P, "Answer escalations you can (`prompts/escalation.md`), or resolve them if nothing is left for the raiser."),
+    "R188": (P, "Answer or resolve the escalations you can."),
     "R189": (P, "Consolidate, reprioritise or prune the backlog"),
     "R190": (P, "Decide the headline: the focus of this cycle. Update the plan"),
     "R191": (P, "Plan the tasks."),

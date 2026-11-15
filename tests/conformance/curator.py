@@ -128,7 +128,7 @@ MAP = {
     "R257": (P, "Exit: if there are open blocking operator escalations"),
     "R258": [(P, "if there are open blocking operator escalations, `msm loop stop <reason>` with the escalation's reason"), IDLE],
     "R259": [(P, "`msm session done $LOOP_SESSION`"), CLEANUP],
-    "R321": (P, "Read answered issues raised by Curators (`msm issue list '{\"status\":\"answered\",\"assigner_role\":\"curator\"}'`)"),
+    "R321": (P, "answered issues raised by Curators (`msm issue list '{\"status\":\"answered\",\"assigner_role\":\"curator\"}'`)"),
 }
 
 PENDING = set()

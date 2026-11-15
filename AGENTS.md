@@ -32,31 +32,26 @@ change `REQUIREMENTS.md` without the operator. Each requirement has a stable ID
 
 ## Testing
 
-- Unit and script tests: `make test` runs them in parallel with `tests/run.py`
-  (`-j N` jobs, default the CPU count; name patterns select classes, e.g.
-  `python3 tests/run.py test_msm`). `python3 -m unittest discover tests` runs the
-  same tests serially. Tests must be safe to run in parallel: temporary roots, no
-  fixed ports or shared paths.
-- Tests never launch a real agent harness (claude, codex, kiro-cli) by default.
-  They run with the test config, `tests/config.env`: every test module imports
+- Unit and script tests: `make test` (`python3 tests/run.py`, in parallel; `-j N`
+  sets the jobs, patterns select tests, e.g. `python3 tests/run.py test_msm`).
+  Tests must be safe to run in parallel: temporary roots, no fixed ports or
+  shared paths.
+- Tests never launch a real agent harness. Every test module imports
   `tests/testenv.py` first, which drops the caller's loop and agent settings and
-  sets `LOOP_CONFIG` to it. There every agent command fails loudly (exit 97) unless
-  the test sets its own fake (e.g. `LOOP_AGENT`, or `tests/fake-agent`). Tests that
-  read the code's `config.env` defaults may read the file, but run its agent
-  commands only against stubs. `tests/test_no_agent.py` guards this.
-- Agent tests, which run a real harness and spend credits, go in `tests/agent/`
-  and run only with `make agent-test`; `make test`, `tests/run.py` and the gates
-  skip them. See `tests/agent/README.md`.
-- End to end, in the container: `make smoke` (builds the image, runs `tests/smoke.sh`)
-- End to end, on the host (Linux or macOS): `make smoke-host` (runs `tests/smoke.sh`)
+  selects `tests/config.env`, where every agent command fails (exit 97) unless
+  the test sets a fake (e.g. `LOOP_AGENT`, `tests/fake-agent`).
+  `tests/test_no_agent.py` guards this.
+- Tests that run a real harness go in `tests/agent/` and run only with
+  `make agent-test` (`tests/agent/README.md`).
+- End to end: `make smoke` (container) or `make smoke-host` (Linux or macOS).
+  `tests/smoke.sh` ignores a live loop's environment, so it is safe inside a loop
+  session.
+- Requirement IDs map to tests or prompt phrases in `tests/conformance/`, one file
+  per `REQUIREMENTS.md` section; `python3 tests/conformance.py` lists what is
+  unmapped.
 
 Run the unit tests before every commit; run the smoke test when changing scripts,
-the Dispatcher or the Curator flow. To map a requirement ID, add it to `MAP` in its
-section's file in `tests/conformance/` (a `tests/<file>.py:Class.method` that
-checks it, or a `prompts/<file>.md` with a phrase for agent-only behaviour) and drop
-it from `PENDING`; `python3 tests/conformance.py` lists what is left. `tests/smoke.sh` works in a temporary
-directory and ignores a live loop's environment, so it is safe to run inside a loop
-session.
+the Dispatcher or the Curator flow.
 
 ## Commits and branches
 

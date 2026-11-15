@@ -31,27 +31,30 @@ shortname means on first use: "DEL2 (status report)".
 
 Issues are escalations (a request for help or a decision) or backlog items (work
 for later). Before creating one, search for a similar open issue
-(`msm issue list '{"status":"open"}'`) and update it instead if one exists.
+(`msm issue list '{"status":"open"}'`) and update it instead if one exists
+(`msm issue update <id> '<json>'`). Before you create or answer an escalation,
+read `prompts/escalation.md`.
 
-For escalations, when to raise them, how to write them, severity and answering,
-read `prompts/escalation.md` before you create or answer one.
+Create an issue with `msm issue create '<json>'`. Fields:
 
-Create a backlog item with `msm issue create '<json>'`. Fields:
-
-- `type`: `backlog`; `title`: one line; `description`: the details.
-- `assigner_session`: your session name. msm sets `assigner_role` from it.
+- `type`: `backlog` or `escalation`; `title`: one line; `description`: the details.
 - `assignee_role`: `planner`, `curator`, `auditor` or `operator`.
 - `severity`: `low`, `high` or `blocking`.
 - `urgent_if`: for backlog items, the condition under which the item becomes urgent.
 - `branch`: the branch holding unmerged work (expired, incomplete or rejected), if any.
 
-An issue goes open, then answered, then resolved. The assignee answers it with
-`msm issue update <id> '{"status":"answered","resolution":"..."}'`: the answer or
-decision. The role that raised it (`assigner_role`) follows up: it reads the
-answered issues its role raised
-(`msm issue list '{"status":"answered","assigner_role":"<role>"}'`), acts on the
-answer (a plan change, a backlog item, a task), then resolves it with
-`msm issue update <id> '{"status":"resolved","resolution":"..."}'`: the answer,
-kept, and what was done. Resolve directly, without answering, when nothing is
-left for another role: a backlog item you have done, or an issue your own role
-raised or with no `assigner_session`.
+msm records your session and role as `assigner_session` and `assigner_role`.
+
+An issue goes open, then answered, then resolved:
+
+- The assignee answers:
+  `msm issue update <id> '{"status":"answered","resolution":"..."}'`, with the
+  answer or decision.
+- The role that raised it follows up. Read the answered issues your role raised
+  (the list command is in your role prompt), act on each answer (a plan change, a
+  backlog item, a task), then resolve it:
+  `msm issue update <id> '{"status":"resolved","resolution":"..."}'`, with the
+  answer and what was done.
+- The assignee resolves directly, without answering, when nothing is left for
+  another role: a backlog item it has done, or an issue its own role raised or
+  with no `assigner_session`.

@@ -1,7 +1,7 @@
 # Escalations
 
 An escalation asks another role, or the operator, for help or a decision you
-cannot make yourself. It is an issue with `type: escalation`.
+cannot make yourself. It is an issue with `type: escalation` (`prompts/common.md`).
 
 ## When
 
@@ -15,38 +15,26 @@ cannot make yourself. It is an issue with `type: escalation`.
 
 ## How
 
-Search first: `msm issue list '{"status":"open","type":"escalation"}'`. If a
-similar escalation is open, update it instead of creating another
-(`msm issue update <id> '<json>'`).
-
-Create with `msm issue create '<json>'`:
-- `type`: `escalation`; `title`: the next free ESCn, then the question, in one
-  line (`ESC3: ...`).
-- `assigner_session`: your session; `assignee_role`: who must answer (`planner`,
-  `curator`, `auditor` or `operator`).
-- `severity`: `low`, `high` or `blocking`.
-- `branch`: the branch holding related unmerged work, if any.
+- `title`: the next free ESCn, then the question, in one line (`ESC3: ...`).
+- `assignee_role`: who must answer.
 - `description`, in this order: what is needed, the context (why the loop can't
   settle it, with evidence: commits, logs, test names), the options, and your
   recommendation.
 
 Write for a reader without the loop's files open: say what each id or name is,
-and spell out each shortname on first use (`prompts/common.md`).
+and spell out each shortname on first use.
 
 ## Severity
 
-- `low` and `high` don't stop the loop. The assignee acts on them in its own time.
-- `blocking`, on an operator escalation, stops the loop: the Curator notifies the
+- `low` and `high` don't stop the loop; the assignee acts on them in its own time.
+- `blocking` on an operator escalation stops the loop: the Curator notifies the
   operator and stops the loop at the end of its pass, and `msm loop resume` is
-  refused while the escalation is open; answering it is enough. Use it only when the loop
-  cannot make progress without the answer. A blocking escalation to another role
-  does not stop the loop.
+  refused until the escalation is answered. Use it only when the loop cannot make
+  progress without the answer. A blocking escalation to another role does not
+  stop the loop.
 
 ## Answering
 
-The assignee answers an escalation with
-`msm issue update <id> '{"status":"answered","resolution":"..."}'`: the decision.
-The operator answers operator escalations the same way. The raising role
-(`assigner_role`) then acts on the decision, records anything lasting in the plan,
-and sets status `resolved` (`prompts/common.md`). Resolve it yourself instead
-only if nothing is left for the raiser to do.
+Answer, follow up and resolve as for any issue (`prompts/common.md`). The operator
+answers operator escalations the same way. When you follow up on an answered
+escalation, record anything lasting in the plan before you resolve it.

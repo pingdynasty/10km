@@ -12,9 +12,9 @@ In 10km, monkey agents act in four roles:
 
 The work is done in cycles, with a session per agent. You can run your own sessions in parallel, with an agent or without. The Curator merges it into the project.
 
-You kick off a Monkey loop with your goals, deliverables and a high-level plan. If you're short on these, don't worry: just tell the loop what you want it to do. You can always change it later. The loop will continue running until its done, or until you tell it otherwise.
+You kick off a Monkey loop with your goals, deliverables and a high-level plan. If you're short on these, don't worry: just tell the loop what you want it to do. You can always change it later. The loop will continue running until it's done, or until you tell it otherwise.
 
-10km is designed to run in a sandbox, and to work well with small models. The loop can use any harness, with local or remote models. You can interfere with the monkeys at any time, or run your own parallel sessions.
+10km is designed to run in a sandbox, and to work well with small models. The loop can use any harness, with local or remote models. You can interfere with the monkeys at any time.
 
 The monkeys may use and abuse any tools you give them access to. It would be a mistake to let them out of their sandbox.
 
@@ -54,10 +54,8 @@ run-loop                         # the Dispatcher every DISPATCH_INTERVAL second
 ```
 
 Keep `run-loop` running (in `tmux`, or as a service), or call `10km dispatch` from
-cron instead. `10km status` shows where the loop is. `msm loop stop <reason>` pauses it:
-nothing new is launched, and running sessions finish or time out. `msm loop
-resume` carries on, once no blocking operator escalation is open. Stopping
-`run-loop` itself only stops the Dispatcher; resume by starting it again.
+cron instead. Stopping `run-loop` only stops the Dispatcher; start it again to carry
+on. To stop the loop itself, see [Interacting with a loop](#interacting-with-a-loop).
 
 ## Kickoff
 
@@ -87,43 +85,108 @@ Settings are in `config.env` in the central loop worktree, sourced as shell. Rep
 
 Also in `config.env`: `SESSION_TIMEOUT` (and per-role `PLANNER_TIMEOUT` etc.), `MAX_WORKERS`, `BACKLOG_SIZE`, `AUDIT_TIME`, `AUDIT_TIMEZONE`, `AUDIT_CYCLES_LIMIT`, `IDLE_CYCLE_LIMIT`, `DISPATCH_INTERVAL`, `GATE_WAIT` (how long `gate` waits before exiting 3; keep it under the agent's tool-call limit), `LAUNCHER`, `MSM_DB`, `MSM_LOG` and `USAGE_LOG`. Each is described in the file.
 
-## Operating the loop
+## Interacting with a loop
+
+There are two ways to act on a running loop: change its state directly with `msm`, or work in an operator session. Use `msm` for decisions and bookkeeping; use a session for anything that changes files in a repo. Both are for the operator, or an agent acting for the operator.
+
+Run the commands from your own shell, with `LOOP_ROOT` and `PATH` set as in [Run it on a host](#run-it-on-a-host); in the container both are set already. Unset `LOOP_SESSION`: msm treats a set `LOOP_SESSION` as an agent's session.
 
 ```sh
-10km status                        # phase, cycle, tasks, sessions, escalations, main
-10km metrics [--cycle N] [--json]  # per cycle and role: sessions, times, commits, usage
-msm loop stop <reason>             # stop: the Dispatcher launches nothing new
-msm loop resume                    # resume a stopped loop (refused while a blocking
-                                   # operator escalation is open)
-10km session start <username>      # operator session with OPERATOR_AGENT
-10km session start <username> --no-agent      # worktrees only; work by hand
-10km session start <username> -- "<message>"  # one-shot instruction
-10km session done <name>           # hand the session's work to the Curator
+10km status               # phase, cycle, tasks, sessions, escalations, main
 ```
 
-An operator session's agent follows [prompts/session.md](prompts/session.md). For a
-status report on the loop (state, deliverables, recent cycles, audits, cost and
-open escalations), ask it to follow [prompts/status.md](prompts/status.md), e.g.
-`10km session start <username> -- "Follow prompts/status.md"`. It changes nothing
-but marking its session done.
+Agents raise escalations as issues for the Planner, Curator, Auditor or you. The loop notifies you only of blocking escalations and fatal errors, through `NOTIFY_CMD`. Test it with `10km notify <title> [body]`.
 
-Run `msm` from your own shell or an operator session: it refuses loop changes from agent sessions while the loop is stopped. An operator session gets its own worktrees and branch, named `operator-<username>-<suffix>`. When you mark it done, the next Dispatcher pass launches a Curator to merge it, whatever the phase. Operator sessions never time out.
+### 1. With msm: state only
 
-Agents raise escalations as issues for the Planner, Curator, Auditor or you. The loop notifies you only of blocking escalations and fatal errors, through `NOTIFY_CMD`. Test it with `10km notify <title> [body]`. To list and answer escalations:
+`msm` changes the database at once: no session, no merge, no Curator pass. It never touches files or git, so it can't change goals, prompts, code or `REQUIREMENTS.md` directly.
+
+**Answer an escalation.** List what is waiting for you, read it in full, then record your decision as the resolution:
 
 ```sh
 msm issue list '{"status": "open", "assignee_role": "operator"}'
-msm issue update <id> '{"status": "answered", "resolution": "..."}'
+msm issue get <id>
+msm issue update <id> '{"status": "answered", "resolution": "<your decision>"}'
 ```
 
-An issue goes open, answered, resolved: you answer with your decision, and the
-role that raised it (its `assigner_role`) acts on the answer and resolves it.
+Write the resolution as an instruction: what you decided, and what the loop should do now. An issue goes open, answered, resolved: the role that raised it (its `assigner_role`) reads your answer, acts on it (a plan change, a backlog item, a task) and resolves it. An escalation with no `assigner_session`, such as the Dispatcher's, has no role to follow up: resolve it yourself (`"status": "resolved"`).
 
-`10km metrics` lists every session the loop still knows of, by cycle and role: its task and outcome, start and duration, commits on main by `Loop-Session:` trailer, and harness usage (agent time, turns, tokens, cost) from `usage.jsonl` next to the database; then totals per cycle and role. The outcome is a Worker's task status, `planned` or `curated` for the Planner or Curator a cycle names, else the session status; it stays the same once the session is removed. The Curator removes sessions once curated, so times come from what survives: the session row, the Worker's task, the session's create and done or expired lines in the action log, usage records, or failing those (action logs from before msm logged sessions) the session's first and last state change in the action log or first and last commit, marked `~` as an activity window rather than the whole session. `--json` gives the same data for agents.
+**Create a backlog item.** The Planner turns open backlog items into tasks:
+
+```sh
+msm issue create '{"type": "backlog", "title": "<one line>",
+  "description": "<what you want, and why>", "assignee_role": "planner",
+  "severity": "low|high|blocking", "urgent_if": "<when it becomes urgent>"}'
+```
+
+Search first (`msm issue list '{"status": "open"}'`) and update a similar item instead of adding another. Say in the description if you approve a change that would otherwise need you, such as a change to `REQUIREMENTS.md`.
+
+**Start, stop and resume.**
+
+```sh
+msm loop start              # once, after kickoff: the first Planner runs
+msm loop stop <reason>      # the Dispatcher launches nothing new; running agents finish
+msm loop resume             # continue a stopped loop from its phase
+msm loop get                # stopped or not, the reason, phase and cycle
+```
+
+A stopped loop keeps its state and worktrees. Agents can't restart it: msm refuses loop changes from agent sessions while the loop is stopped. `msm loop resume` is refused while a blocking escalation assigned to you is open; answer it first.
+
+### 2. In an operator session: files and repos
+
+An operator session is a session like an agent's: its own directory, `<root>/operator-<username>-<suffix>/`, with a worktree of every repo on a branch of the same name. Changes made there reach main the way agents' work does: when the session is marked done, the next Dispatcher pass launches a Curator, whatever the phase, which merges and validates it. Operator sessions never time out. The Curator escalates rather than drop operator work.
+
+Use a session to change goals, the plan, prompts, `config.env`, `REQUIREMENTS.md` or code. Don't edit or commit in `central/`: those worktrees belong to the Curator.
+
+There are three kinds:
+
+**Interactive.** You talk with your agent (`OPERATOR_AGENT`), in the session's loop worktree. It follows [prompts/session.md](prompts/session.md).
+
+```sh
+10km session start <username>
+```
+
+**One-shot.** The agent gets your instructions as its first message and runs them without asking:
+
+```sh
+10km session start <username> -- "<instructions>"
+10km session start <username> -- "Follow prompts/status.md"   # a status report
+```
+
+Write one-shot instructions to be complete: what to change, in which repo, what is approved (for example a `REQUIREMENTS.md` change), which escalations to answer and with what decision, "mark the session done" at the end (or run `10km session done <session>` yourself), and "do not resume the loop" if the loop should stay stopped. For long instructions, put them in a file and pass `"$(cat file)"`. Start one session per topic, after the previous one is done; two sessions that change the same files conflict when the Curator merges them. A status report ([prompts/status.md](prompts/status.md): state, deliverables, recent cycles, audits, cost and open escalations) changes nothing but marking its session done.
+
+**Manual.** No agent: you, or an agent you run yourself, work in the worktrees by hand.
+
+```sh
+10km session start <username> --no-agent      # prints the session name and directory
+cd <root>/<session>/<repo>                     # one worktree per repo
+# edit, then commit on the session branch as usual
+git add <files> && git commit -m "<what and why>"
+10km session done <session>                    # hand the work to the Curator
+```
+
+Commit everything before `session done`: the Curator merges commits only, and uncommitted changes are lost when the session is removed. Commits get a `Loop-Session:` trailer from the session branch.
+
+**Which to use.**
+
+| You want to | Use |
+|---|---|
+| Answer an escalation with a decision | `msm issue update` |
+| Ask for work | `msm issue create` (backlog item) |
+| Pause or continue the loop | `msm loop stop` / `msm loop resume` |
+| Change files yourself | a manual session |
+| Have your agent change files, with you | an interactive session |
+| Have your agent change files from written instructions | a one-shot session |
+
+## Metrics and logs
+
+`10km metrics [--cycle N] [--json]` lists every session the loop still knows of, by cycle and role: its task and outcome, start and duration, commits on main (by `Loop-Session:` trailer) and harness usage (agent time, turns, tokens, cost); then totals per cycle and role. Sessions are removed once curated, so times come from what survives: the session row, the Worker's task, the session's lines in the action log, and usage records. `--json` gives the same data for agents.
+
+Each session directory holds the agent's `agent.log` and its `prompt.txt` until the session is removed. Usage outlives it in `usage.jsonl` next to the database (`USAGE_LOG`): one JSON line per agent run, with its session, role, cycle and harness, and its duration, turns, tokens and cost when the harness reports them (Claude Code with `--output-format json`, as in the default `LOOP_AGENT`).
 
 ## Recovering from a stop
 
-The Curator stops the loop with reason `blocked` when there is an open blocking operator escalation: a decision only you can make, the project is done, or the loop has been idle for `IDLE_CYCLE_LIMIT` empty cycles. A stopped loop launches nothing, but its state and worktrees stay as they were. Inspect it:
+The Curator stops the loop when there is an open blocking operator escalation: a decision only you can make (reason `blocked`), the project is done (`done`), or the loop has been idle for `IDLE_CYCLE_LIMIT` empty cycles (`idle`). A stopped loop launches nothing, but its state and worktrees stay as they were. Inspect it:
 
 ```sh
 10km status
@@ -133,26 +196,12 @@ msm session list '{"status": "expired"}'
 msm task list '{"status": "rejected"}'
 ```
 
-Each session directory holds the agent's `agent.log` and its `prompt.txt`. The
-directory goes when the session is removed, but its usage stays in `usage.jsonl`
-next to the database (`USAGE_LOG`): one JSON line per agent run with `session`,
-`role`, `cycle`, `recorded_at` and `harness`, plus, when the harness reports them
-(Claude Code with `--output-format json`, the default `LOOP_AGENT`),
-`harness_session_id`, `duration_ms`, `num_turns`, `input_tokens`, `output_tokens`,
-`cache_read_input_tokens`, `cache_creation_input_tokens` and `total_cost_usd`.
-The Dispatcher records a run once its agent has exited; removing a session records
-it first if it wasn't yet.
+To resume (see [Interacting with a loop](#interacting-with-a-loop)):
 
-To resume:
+1. Answer each blocking escalation with `msm issue update <id> '{"status": "answered", "resolution": "..."}'`. If a decision needs changes to files, make them in an operator session and mark it done, or create a backlog item for them.
+2. `msm loop resume`. msm refuses it while a blocking operator escalation is still open; answered ones don't count.
 
-1. Start an operator session: `10km session start <username>`.
-2. Answer the blocking escalations (`msm issue update <id> '{"status": "answered",
-   "resolution": "..."}'`); you may also update the goals and plan. Commit.
-3. `10km session done <name>`.
-4. `msm loop resume`. msm refuses it (EPERM) while a blocking escalation assigned
-   to the operator is still open; answered ones don't count.
-
-The next Curator merges your session, then the loop carries on from its phase.
+The next Curator merges any operator sessions, then the loop carries on from its phase, and the roles that raised the escalations act on your answers.
 
 ## Testing
 
