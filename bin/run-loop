@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Container main process: run the Dispatcher every DISPATCH_INTERVAL seconds.
-# Uses the loop repo's own copy of dispatch, so agents can adapt it.
-. "$(dirname "$0")/lib.sh"
-
+# Container main process: run the Dispatcher every DISPATCH_INTERVAL seconds,
+# using the central loop repo's own dispatch, so agents can adapt it.
+bin="$(cd "$(dirname "$0")" && pwd)"
+LOOP_ROOT="${LOOP_ROOT:-$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1])
+from tenkm.config import default_root; print(default_root())' "$bin/..")}"
+export LOOP_ROOT
 while :; do
-  dispatch="$CENTRAL/loop/bin/dispatch"
-  [ -x "$dispatch" ] || dispatch="$BIN/dispatch"
+  dispatch="$LOOP_ROOT/central/loop/bin/dispatch"
+  [ -x "$dispatch" ] || dispatch="$bin/dispatch"
   "$dispatch" || echo "dispatch failed: $?" >&2
-  sleep "${DISPATCH_INTERVAL:-60}"
+  config="${LOOP_CONFIG:-$LOOP_ROOT/central/loop/config.env}"
+  sleep "$( [ -f "$config" ] && . "$config" >/dev/null 2>&1; echo "${DISPATCH_INTERVAL:-60}")"
 done

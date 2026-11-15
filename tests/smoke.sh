@@ -31,7 +31,7 @@ from tenkm.init import create_loop_repo; create_loop_repo(sys.argv[2], source=sy
 git init -q -b main "$LOOP_ROOT/central/project"
 git -C "$LOOP_ROOT/central/project" commit -q --allow-empty -m "Initial commit"
 "$here/bin/10km" init >/dev/null
-. "$here/bin/lib.sh"
+CENTRAL="$LOOP_ROOT/central"
 echo "Goal: say hello" >"$CENTRAL/loop/GOALS.md"
 git -C "$CENTRAL/loop" add GOALS.md
 git -C "$CENTRAL/loop" commit -q -m "Set goals"

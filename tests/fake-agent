@@ -28,7 +28,18 @@ if [ -n "${LAUNCH_TEST-}" ]; then
     *) exit "${FAKE_LAUNCH_TEST:-0}" ;;
   esac
 fi
-. "$(dirname "$0")/../bin/lib.sh"
+MSM="$(cd "$(dirname "$0")/../bin" && pwd)/msm"
+config="${LOOP_CONFIG:-$LOOP_ROOT/central/loop/config.env}"
+# shellcheck source=/dev/null
+[ -f "$config" ] && . "$config"
+repos() {  # the loop repo, then every other git repo in central/
+  echo loop
+  for d in "$LOOP_ROOT"/central/*/; do
+    d=${d%/}
+    [ "${d##*/}" != loop ] && [ -e "$d/.git" ] && echo "${d##*/}"
+  done
+  return 0
+}
 s=$SESSION
 dir="$LOOP_ROOT/$s"
 projects=$(repos | sed 1d)
