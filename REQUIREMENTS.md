@@ -85,7 +85,6 @@ msm session remove <name>
 msm task get|remove <id> | --session <name>
 msm task update <id> | --session <name> <json>
 msm task list [filter]
-msm task batch <verdicts-json> [<cycle-curate-json>]
 
 msm cycle create|curate {json}
 msm cycle get|list|update|remove ...
@@ -107,13 +106,14 @@ The state machine returns exit status:
 2. Updating a Worker session to done|expired sets its task to the same status and sets `done_at`.
 3. Removing a Worker session whose task is still `active` returns that task to `waiting`, clearing `session` and `started_at`.
 4. `cycle create` requires phase = plan and not stopped. It increments the cycle and creates the tasks. If phase = plan and the current cycle is open, it replaces that cycle and its tasks instead. It sets `empty_cycles` to the previous value + 1 if tasks is empty, or 0 otherwise.
-5. `cycle curate` closes the cycle.
+5. `cycle curate` closes the cycle and its tasks.
 6. `loop start` sets stopped = false, reason = null.
 7. `loop resume` sets stopped = false, reason = null.
 8. `loop stop <reason>`: stopped = true, reason = <reason>.
 
 Changing loop or session status updates `updated_at`.
 An expired session cannot be set to done.
+A closed cycle can't be changed.
 Creating a Cycle sets `id: (Loop.current_cycle + 1)`, `status: open` and `planned_at`.
 Curating a Cycle sets `curated_at` and `status: closed`.
 Creating a Task sets `cycle`, `status: waiting`, and `created_at`.
@@ -127,11 +127,11 @@ While the loop is stopped, msm refuses agents' changes to the loop record (`loop
 msm appends every change to a cycle, task, audit or issue to an action log: a text file, one line per change with the time, the caller's session and the command.
 
 ### Role Preconditions
-- Planner: phase = plan, not stopped, no active Planner.
-- Curator: not stopped, no active Curator, and either phase = curate or an inactive operator or Auditor session exists.
-- Worker: phase = execute, not stopped, a waiting task exists. The task is claimed atomically.
-- Auditor: not stopped, no Auditor session.
-- Operator: always.
+- Planner: phase = plan AND not stopped AND no active Planner
+- Curator: not stopped AND no active Curator AND (phase = curate OR an inactive operator or Auditor session exists)
+- Worker: phase = execute AND not stopped AND a waiting task exists
+- Auditor: not stopped AND no Auditor session
+- Operator: always
 
 ### State
 ```
@@ -199,19 +199,20 @@ cycle create
           tasks: [{ shortname, instructions, branch }] }
 
 cycle curate
-        { curator_session: string, 
-		  report: string }
+        { curator_session: string,
+          report: string,
+          tasks: [{ id, status: accepted|rejected }] }
 ```
 State is stored in a database that supports transactions.
 Sessions and Status reflect a point in time. 
 Cycles, Tasks, Audits and Issues accumulate. They are kept for metrics and analysis, but are disposable. Only the operator decides when they are archived or removed, and may delegate this to an agent. Removal must not affect the current cycle, open issues, or active sessions.
 
 ### Phase Transitions
-Planner session `done`: if the current cycle is open: phase = execute, or curate if it has no tasks.
-Worker session `done|expired`: if no tasks remain waiting or active: phase = curate.
-Curator session `done`: if the current cycle is not open: phase = plan.
-`loop start`: phase = curate.
-`loop resume`: phase = curate if phase = plan.
+Planner session `done`: if the current cycle is open: `execute`, or `curate` if it has no tasks.
+Worker session `done|expired`: if no tasks remain waiting or active: `curate`.
+Curator session `done`: if the current cycle is not open: `plan`.
+`loop start`: `curate`.
+`loop resume`: if phase = plan: `curate`. Otherwise leave as is.
 
 ## Sessions
 Agents and operators do their work in sessions.
@@ -221,6 +222,7 @@ When a session is instantiated, these are created:
 - git worktrees
 - session branch for each worktree
 When the agent finishes, the session status is set to done.
+A session is considered inactive if its status is done or expired.
 Sessions expire after a configurable amount of time.
 Sessions are named `cycle#-planner|curator|worker#`, `auditor#`, or `operator-username`.
 The assigned worker number is the number of existing workers in the cycle + 1.
@@ -268,7 +270,7 @@ The Dispatcher may also expire sessions whose launcher reports them not running,
 
 Notes:
 Expired Planners and Curators need no special rule. The phase hasn't moved, so the next dispatcher run relaunches them. The next Planner's `cycle create` replaces an open cycle.
-A Curator that crashes before Publish leaves main unchanged, and the next Curator redoes the pass. One that crashes after Publish has already merged its work, so redoing the pass changes nothing. Sessions left by a crash after Publish are removed by the next Clean up.
+A Curator that crashes before Publish leaves main unchanged, and the next Curator redoes the pass. One that crashes after Publish has already merged its work, so redoing the pass changes nothing. Sessions left by a crash after Publish are removed by the next Prepare.
 The Curator doesn't wait for active operator and Auditor sessions to finish before launching.
 A failing Planner or Curator is relaunched until it succeeds.
 
@@ -319,18 +321,17 @@ When finished, it sets the session to done (this also sets the task to done).
 The Curator agent runs these steps in order. Steps marked (script) are deterministic scripts that it calls. Scripts refuse to run unless the Curator session is active.
 Scripts never remove branches referenced by open issues.
 
-Step 1: Clean up (script `curate-clean`)
+Step 1: Prepare (script `curate-prepare`)
 It removes done Curator sessions, and expired Curator and Planner sessions, with their worktrees and branches.
 It removes sessions left over from closed cycles, with their worktrees and branches.
 
 Step 2: Select (script `curate-select`)
 It selects and returns the sessions to curate:
 - if they exist: inactive operator and Auditor sessions
-- otherwise, if phase = curate: the current cycle's inactive Planner and Worker sessions
-- otherwise: nothing
-Note: A session is inactive if its status is done or expired.
-Note: Operator and Auditor work is curated as soon as it is done, in its own pass, whatever the phase. The cycle is then curated with fresh context against the updated goals and prompts.
-If the selection is empty, the Curator skips to Step 7.
+- else if phase = curate: the current, open cycle's inactive Planner and Worker sessions
+- else: nothing
+If the selection is empty, the Curator skips to Step 7: Assess.
+Note: Selection makes sure that operator and Auditor work is curated as soon as it is done, whatever the phase. The cycle is then curated with fresh context, in its own pass, against updated goals and prompts.
 
 Step 3: Triage (script `curate-merge`)
 The script merges done sessions into the Curator session, reporting conflicts.
@@ -362,7 +363,9 @@ If the project is done, or `Loop.empty_cycles` has reached the idle limit from c
 If there are blocking operator escalations, notify the operator.
 
 Step 8: Publish (script `curate-publish`)
-The script fast-forwards main onto the Curator branch in each project repo, then in the loop repo. It then runs the task status updates and, if a Planner session was selected, `cycle curate`, in one msm transaction. It is safe to rerun.
+The script fast-forwards main onto the Curator branch in each project repo, then in the loop repo.
+If the selection includes a Planner session:
+- run `cycle curate` with the report and the task verdicts.
 The agent passes any task verdicts and the cycle report as arguments. It publishes even if nothing was selected, so that its own plan and backlog updates reach main.
 
 Step 9: Cleanup (script `curate-cleanup`)
