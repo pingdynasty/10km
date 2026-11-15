@@ -263,7 +263,7 @@ class MSM:
         self.check_loop_record()
         if not self.loop()["stopped"]:
             raise MSMError(EPERM, "loop is not stopped")
-        self.set_loop(stopped=0, reason=None, phase="curate")
+        self.set_loop(stopped=0, reason=None, phase="plan")
         return to_dict(self.loop())
 
     def loop_resume(self):

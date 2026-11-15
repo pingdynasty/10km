@@ -16,6 +16,8 @@ You carry out one task.
    `msm task update --session <session> '{"report": "..."}'`.
 6. Finish with `msm session done <session>` (this also sets the task to done).
 
-If you are blocked, create an escalation for the Planner, Curator or Auditor
-(`msm issue create '{"type": "escalation", "assignee_role": "...", ...}'`),
-say so in your report, and still finish with step 6.
+If you are blocked, or have a question only the operator can answer, create an
+escalation for the Curator: it reviews this cycle and passes operator questions on
+(`msm issue create '{"type": "escalation", "assignee_role": "curator", ...}'`).
+Escalate to the Planner only about planning (task scope, dependencies between
+tasks). Say so in your report, and still finish with step 6.

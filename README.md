@@ -18,53 +18,59 @@ You kick off a Monkey loop with your goals, deliverables and a high-level plan. 
 
 The monkeys may use and abuse any tools you give them access to. It would be a mistake to let them out of their sandbox.
 
-## Install
+## Run it in a sandbox
 
-You need Python 3.9+ (standard library only), Bash, git, and an agent CLI such as `claude`, `codex` or `kiro-cli`. Put `bin/` on your `PATH`:
-
-```sh
-export PATH="$PWD/bin:$PATH"
-10km --help
-```
-
-The loop lives under `LOOP_ROOT` (default `/loop`): the central worktrees in `$LOOP_ROOT/central/`, one directory per session beside them, and the database at `MSM_DB` (default `$LOOP_ROOT/.10km/loop.db`).
-
-## Container or host
-
-Agents run with their permission prompts off, so run the loop in a sandbox: they can do anything the loop's user can. The `Dockerfile` gives you one, with an unprivileged user, no exposed ports, and volumes for the worktrees (`/loop`) and the database (`/data`). Add the agent harness you use to it, then:
+Agents run with their permission prompts off: they can do anything the loop's user
+can. Run the loop in a sandbox. The recommended one is the container: an
+unprivileged user, no exposed ports, and only the directories you mount. A dedicated
+VM or user account also works; a host you use for other things does not.
 
 ```sh
-docker build -t 10km .
-docker run -d --name 10km -v loop:/loop -v data:/data 10km   # runs bin/run-loop
-docker exec -it 10km 10km status
+docker build -t 10km .            # add your agent harness to the Dockerfile first
+mkdir central
+docker run -d --name 10km -v "$PWD/central:/loop/central" -v 10km-data:/data 10km
+docker exec -it 10km 10km kickoff
 ```
 
-`run-loop` calls the Dispatcher every `DISPATCH_INTERVAL` seconds. On a host, run it yourself, or call `10km dispatch` from cron. Use a host only if it is itself a sandbox, such as a dedicated VM or account.
+The central worktrees (the loop repo and the project repos) live on the host, in
+`central/`, so you can see and edit them. The database is in the `10km-data`
+volume. On first start the container creates the loop repo, `central/loop`, from
+its copy of 10km, then runs `run-loop`, which calls the Dispatcher every
+`DISPATCH_INTERVAL` seconds.
 
-## Init and kickoff
+In another sandbox: you need Python 3.9+ (standard library only), Bash, git and
+an agent CLI such as `claude`, `codex` or `kiro-cli`. Clone or fork 10km as
+`<root>/central/loop`, and run its commands from there: `<root>` is the loop root
+(`LOOP_ROOT`), with the database at `<root>/.10km/loop.db` unless `MSM_DB` says
+otherwise. Run `central/loop/bin/run-loop`, or call `10km dispatch` from cron.
 
-```sh
-PROJECT_REPOS='app=https://example.com/app.git' 10km init
-10km session start <username>
-```
+## Kickoff
 
-In a container, run them with `docker exec -it 10km ...`. `10km init` creates the database, the central loop repo and the project repos. The kickoff session then sets the goals, deliverables, plan, gates and prompts with you, and finishes with `msm loop start`: see [prompts/kickoff.md](prompts/kickoff.md). The first Curator merges the kickoff work, then the first Planner runs.
+`10km kickoff` runs the operator's agent (`OPERATOR_AGENT`) in `central/loop`,
+with no session, after creating the database. With you, it sets the goals,
+deliverables, plan, configuration, gates and prompts, and clones or creates the
+project repos in `central/`, each with its branch and author in its own git
+config. It commits to main and finishes with `msm loop start`; the first Planner
+runs next. `10km kickoff -- "<instructions>"` does it in one shot. See
+[prompts/kickoff.md](prompts/kickoff.md).
+
+To add a repo later, clone it into `central/`, set its `tenkm.mainBranch` and
+author with `git config`, and run `10km init`.
 
 ## Configuration
 
-Settings are in `config.env` in the central loop worktree, sourced as shell. An environment variable of the same name overrides a setting. Change them in a session's loop worktree: they take effect once a Curator has merged them into main. The ones operators usually set:
+Settings are in `config.env` in the central loop worktree, sourced as shell. Repos and their settings (branch, author, remotes) are not: they are the git repos in `central/`, configured with `git config`. An environment variable of the same name overrides a setting. Change them in a session's loop worktree: they take effect once a Curator has merged them into main. The ones operators usually set:
 
 | Setting | Meaning |
 |---|---|
-| `PROJECT_REPOS` | Project repos: `name` creates an empty repo, `name=url` clones one. |
 | `WORKER_GATES` | Commands Workers run (`gate worker`) before done; one per line, or `repo: command`. |
 | `VALIDATION_GATES` | Commands the Curator runs (`gate validation`); same format. |
 | `NOTIFY_CMD` | Notification commands, one per line, run with `TENKM_PRIORITY`, `TENKM_TITLE`, `TENKM_BODY` and `TENKM_PROJECT` set. Empty: append to `NOTIFICATIONS.md` in the central loop worktree. |
 | `LOOP_AGENT` | Agent command for every role, run with `SESSION`, `PROMPT_FILE` and `FIRST_MESSAGE` set. |
 | `PLANNER_AGENT`, `WORKER_AGENT`, `CURATOR_AGENT`, `AUDITOR_AGENT` | Per-role overrides of `LOOP_AGENT`, e.g. to choose a model. |
-| `SESSION_COMMAND` | Command for interactive operator sessions. |
+| `OPERATOR_AGENT` | The operator's agent, for kickoff and operator sessions; run with `FIRST_MESSAGE` and, for one-shot instructions, `ONE_SHOT=1`. It doesn't fall back to `LOOP_AGENT`. |
 
-Also in `config.env`: `MAIN_BRANCH`, `GIT_NAME`, `GIT_EMAIL`, `SESSION_TIMEOUT` (and per-role `PLANNER_TIMEOUT` etc.), `MAX_WORKERS`, `BACKLOG_SIZE`, `AUDIT_TIME`, `AUDIT_TIMEZONE`, `AUDIT_CYCLES_LIMIT` and `IDLE_CYCLE_LIMIT`.
+Also in `config.env`: `SESSION_TIMEOUT` (and per-role `PLANNER_TIMEOUT` etc.), `MAX_WORKERS`, `BACKLOG_SIZE`, `AUDIT_TIME`, `AUDIT_TIMEZONE`, `AUDIT_CYCLES_LIMIT` and `IDLE_CYCLE_LIMIT`.
 
 ## Operating the loop
 
@@ -72,7 +78,7 @@ Also in `config.env`: `MAIN_BRANCH`, `GIT_NAME`, `GIT_EMAIL`, `SESSION_TIMEOUT` 
 10km status                        # phase, cycle, tasks, sessions, escalations, main
 msm loop stop [reason]             # stop: the Dispatcher launches nothing new
 msm loop resume                    # resume a stopped loop
-10km session start <username>      # operator session with SESSION_COMMAND
+10km session start <username>      # operator session with OPERATOR_AGENT
 10km session start <username> --no-agent      # worktrees only; work by hand
 10km session start <username> -- "<message>"  # one-shot instruction
 10km session done <name>           # hand the session's work to the Curator

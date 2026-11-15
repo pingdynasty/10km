@@ -34,7 +34,7 @@ EXIT_FAILED, EXIT_RUNNING = 1, 3
 
 def gates(cfg, tier):
     setting = {"worker": "WORKER_GATES", "validation": "VALIDATION_GATES"}[tier]
-    projects = [name for name, _ in cfg.projects()]
+    projects = cfg.projects()
     default = projects[0] if projects else "loop"
     out = []
     for line in cfg.lines(setting):

@@ -1,7 +1,13 @@
-"""tenkm.init: prepare a loop: database, central loop repo and project repos.
+"""tenkm.init: prepare a loop directory.
 
-Repos that already exist are used as they are, so init also works for a loop being
-migrated into place. Fails if the database already exists.
+    10km init      create the database if there is none, and register the
+                   central repos: record each one's branch (tenkm.mainBranch)
+                   and install the loop's git hooks, where not already set.
+
+Kickoff (`10km kickoff`) calls this; run it again after adding a repo to central/.
+The central worktrees are the source of truth for which repos the loop has: init
+never clones or creates project repos. `create_loop_repo` makes a loop repo from a
+copy of 10km, for the container's first start and for tests.
 """
 import os
 import shutil
@@ -11,67 +17,39 @@ from . import gitutil, msm
 from .config import CODE_ROOT
 
 
-def _clone_or_create_loop(cfg):
-    dest = cfg.repo_path("loop")
-    if os.path.isdir(os.path.join(dest, ".git")):
-        return "existing"
-    if subprocess.run(["git", "-C", CODE_ROOT, "rev-parse", "--git-dir"],
-                      capture_output=True).returncode == 0:
-        subprocess.run(["git", "clone", "-q", CODE_ROOT, dest], check=True)
-        gitutil.git(cfg, dest, "checkout", "-q", "-B", cfg.get("MAIN_BRANCH") or "main")
-        return "cloned"
-    shutil.copytree(CODE_ROOT, dest, symlinks=True,
-                    ignore=shutil.ignore_patterns("__pycache__", "*.db*", ".#*", "*~"))
-    branch = cfg.get("MAIN_BRANCH") or "main"
-    gitutil.git(cfg, dest, "init", "-q", "-b", branch)
-    gitutil.git(cfg, dest, "add", "-A")
-    gitutil.git(cfg, dest, *_identity(cfg), "commit", "-q", "-m", "Initial loop")
-    return "created"
-
-
-def _identity(cfg):
-    return ["-c", f"user.name={cfg.get('GIT_NAME') or '10km'}",
-            "-c", f"user.email={cfg.get('GIT_EMAIL') or '10km@localhost'}"]
-
-
-def _project(cfg, name, url):
-    dest = cfg.repo_path(name)
-    if os.path.isdir(os.path.join(dest, ".git")):
-        return "existing"
-    if url:
-        subprocess.run(["git", "clone", "-q", url, dest], check=True)
-        branch = cfg.get("MAIN_BRANCH")
-        if branch:  # else keep the remote's default branch
-            start = f"origin/{branch}" if gitutil.ok(cfg, dest, "rev-parse", "--verify",
-                                                    f"origin/{branch}") else "HEAD"
-            gitutil.git(cfg, dest, "checkout", "-q", "-B", branch, start)
-        return "cloned"
-    branch = cfg.get("MAIN_BRANCH") or "main"
-    subprocess.run(["git", "init", "-q", "-b", branch, dest], check=True)
-    gitutil.git(cfg, dest, *_identity(cfg), "commit", "-q", "--allow-empty", "-m", "Initial commit")
-    return "created"
+def create_loop_repo(dest, source=CODE_ROOT, branch="main"):
+    """Create a loop repo at dest from a copy of the 10km code, with one commit."""
+    shutil.copytree(source, dest, symlinks=True,
+                    ignore=shutil.ignore_patterns(".git", "__pycache__", "*.db*", ".#*", "*~"))
+    env = dict(os.environ)
+    env.setdefault("GIT_AUTHOR_NAME", "10km")
+    env.setdefault("GIT_AUTHOR_EMAIL", "10km@localhost")
+    env.setdefault("GIT_COMMITTER_NAME", env["GIT_AUTHOR_NAME"])
+    env.setdefault("GIT_COMMITTER_EMAIL", env["GIT_AUTHOR_EMAIL"])
+    for args in (["init", "-q", "-b", branch], ["add", "-A"], ["commit", "-q", "-m", "Loop repo"]):
+        subprocess.run(["git", "-C", dest, *args], env=env, check=True, capture_output=True)
 
 
 def run(cfg):
-    """Create what is missing. Safe to rerun after a partial failure."""
-    os.makedirs(cfg.central, exist_ok=True)
-    report = {"loop": _clone_or_create_loop(cfg)}
-    for name, url in cfg.projects():
-        report[name] = _project(cfg, name, url)
-    hooks = os.path.join(cfg.repo_path("loop"), "hooks")
-    for repo in cfg.repos():
-        path = cfg.repo_path(repo)
-        gitutil.git(cfg, path, "config", "core.hooksPath", hooks)
-        # Record the default branch, so later checks don't depend on what central
-        # happens to have checked out.
-        if not gitutil.ok(cfg, path, "config", "--get", "tenkm.mainBranch"):
-            branch = cfg.get("MAIN_BRANCH") or gitutil.git(cfg, path, "symbolic-ref",
-                                                           "--short", "HEAD")
-            gitutil.git(cfg, path, "config", "tenkm.mainBranch", branch)
+    """Create the database if needed and register the central repos. Safe to rerun."""
+    loop = cfg.repo_path("loop")
+    if not os.path.exists(os.path.join(loop, ".git")):
+        raise msm.MSMError(msm.ENOENT, f"no loop repo at {loop}; run 10km from a loop "
+                                       "directory, or set LOOP_ROOT")
+    report = {}
     with msm.transaction(cfg.db, create=True) as m:
         if m.one("SELECT name FROM sqlite_master WHERE name = 'loop'"):
             report["database"] = "existing"
         else:
             m.init()
             report["database"] = "created"
+    hooks = os.path.join(loop, "hooks")
+    for repo in cfg.repos():
+        path = cfg.repo_path(repo)
+        if not gitutil.ok(cfg, path, "config", "--get", "tenkm.mainBranch"):
+            gitutil.git(cfg, path, "config", "tenkm.mainBranch",
+                        gitutil.git(cfg, path, "symbolic-ref", "--short", "HEAD"))
+        if not gitutil.ok(cfg, path, "config", "--get", "core.hooksPath"):
+            gitutil.git(cfg, path, "config", "core.hooksPath", hooks)
+        report[repo] = gitutil.main_branch(cfg, repo)
     return report

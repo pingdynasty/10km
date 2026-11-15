@@ -20,7 +20,7 @@ class Config(dict):
 
     @property
     def root(self):
-        return self.get("LOOP_ROOT") or "/loop"
+        return self.get("LOOP_ROOT") or default_root()
 
     @property
     def central(self):
@@ -47,16 +47,21 @@ class Config(dict):
         return [line.strip() for line in self.get(name, "").splitlines() if line.strip()]
 
     def projects(self):
-        """Project repos as (name, url-or-None) from PROJECT_REPOS."""
-        out = []
-        for spec in self.get("PROJECT_REPOS", "").split():
-            name, _, url = spec.partition("=")
-            out.append((name, url or None))
-        return out
+        """Project repo names: every git repo in central/ other than the loop repo.
+
+        The central worktrees are the source of truth for which repos the loop has;
+        each repo's own git config holds its settings (branch, author, remotes).
+        """
+        try:
+            names = sorted(os.listdir(self.central))
+        except OSError:
+            return []
+        return [n for n in names if n != "loop" and not n.startswith(".")
+                and os.path.exists(os.path.join(self.central, n, ".git"))]
 
     def repos(self):
         """Every repo with a worktree per session: the loop repo, then the projects."""
-        return ["loop"] + [name for name, _ in self.projects()]
+        return ["loop"] + self.projects()
 
     def repo_path(self, repo):
         return os.path.join(self.central, repo)
@@ -66,17 +71,20 @@ class Config(dict):
         return self.int(f"{role.upper()}_TIMEOUT", self.int("SESSION_TIMEOUT", 3600))
 
     def agent_command(self, role):
-        """The process launcher's command for a role: <ROLE>_AGENT, else LOOP_AGENT."""
+        """The agent command for a role: <ROLE>_AGENT, else LOOP_AGENT. The operator's
+        agent is interactive, so OPERATOR_AGENT doesn't fall back to LOOP_AGENT."""
+        if role == "operator":
+            return self.get("OPERATOR_AGENT") or "claude"
         return self.get(f"{role.upper()}_AGENT") or self.get("LOOP_AGENT", "")
 
-    def git_env(self):
-        """Environment for git commits with the configured identity."""
-        env = {}
-        if self.get("GIT_NAME"):
-            env["GIT_AUTHOR_NAME"] = env["GIT_COMMITTER_NAME"] = self["GIT_NAME"]
-        if self.get("GIT_EMAIL"):
-            env["GIT_AUTHOR_EMAIL"] = env["GIT_COMMITTER_EMAIL"] = self["GIT_EMAIL"]
-        return env
+
+def default_root():
+    """The loop root: the parent of central/ when this code is the central loop
+    worktree (run from a loop directory), else /loop."""
+    parent = os.path.dirname(CODE_ROOT)
+    if os.path.basename(parent) == "central":
+        return os.path.dirname(parent)
+    return "/loop"
 
 
 def config_path(root):
@@ -91,7 +99,7 @@ def load(root=None):
     env = dict(os.environ)
     if root:
         env["LOOP_ROOT"] = root
-    env.setdefault("LOOP_ROOT", "/loop")
+    env.setdefault("LOOP_ROOT", default_root())
     path = config_path(env["LOOP_ROOT"])
     if os.path.exists(path):
         script = 'set -a; . "$1" >&2 || exit $?; set +a; printf "TENKM_CONFIG_OK=1\\0"; env -0'

@@ -27,13 +27,20 @@ class LoopCase(unittest.TestCase):
         warnings.filterwarnings("ignore", "subprocess .* is still running", ResourceWarning)
         self.tmp = tempfile.TemporaryDirectory()
         self.root = os.path.join(self.tmp.name, "root")
-        base = {"LOOP_ROOT": self.root, "PROJECT_REPOS": "project", "MSM_DB": "",
-                "LOOP_AGENT": "sleep 30", "NOTIFY_CMD": ""}
+        base = {"LOOP_ROOT": self.root, "MSM_DB": "", "LOOP_AGENT": "sleep 30",
+                "NOTIFY_CMD": "", "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
         self.patch = mock.patch.dict(os.environ, dict(base, **self.env))
         self.patch.start()
         os.environ.pop("MSM_DB")
         os.environ.pop("LOOP_SESSION", None)  # gates run the tests inside a session
         self.cfg = config.load()
+        # What kickoff does: a loop repo and a project repo in central/.
+        init.create_loop_repo(self.cfg.repo_path("loop"))
+        project = self.cfg.repo_path("project")
+        subprocess.run(["git", "init", "-q", "-b", "main", project], check=True)
+        subprocess.run(["git", "-C", project, "commit", "-q", "--allow-empty", "-m", "start"],
+                       check=True)
         init.run(self.cfg)
 
     def tearDown(self):
@@ -111,12 +118,19 @@ class TestBrokenConfig(LoopCase):
 
 
 class TestInit(LoopCase):
-    def test_loop_repo_is_on_main_and_rerun_is_safe(self):
-        self.assertEqual(subprocess.run(
-            ["git", "-C", self.cfg.repo_path("loop"), "symbolic-ref", "--short", "HEAD"],
-            capture_output=True, text=True).stdout.strip(), "main")
+    def test_init_registers_central_repos_and_rerun_is_safe(self):
         report = init.run(self.cfg)
-        self.assertEqual(report["database"], "existing")
+        self.assertEqual(report, {"database": "existing", "loop": "main", "project": "main"})
+        added = self.cfg.repo_path("extra")
+        subprocess.run(["git", "init", "-q", "-b", "develop", added], check=True)
+        subprocess.run(["git", "-C", added, "commit", "-q", "--allow-empty", "-m", "x"],
+                       check=True)
+        self.assertEqual(init.run(self.cfg)["extra"], "develop")
+        self.assertEqual(self.cfg.repos(), ["loop", "extra", "project"])
+
+    def test_init_needs_a_loop_repo(self):
+        with self.assertRaises(msm.MSMError):
+            init.run(self.reload(LOOP_ROOT=os.path.join(self.tmp.name, "nowhere")))
 
 
 class TestNotify(LoopCase):
@@ -154,9 +168,10 @@ class TestSessions(LoopCase):
             self.assertEqual(m.list("session"), [])
 
     def test_git_failure_rolls_back(self):
-        cfg = self.reload(MAIN_BRANCH="no-such-branch")
+        subprocess.run(["git", "-C", self.cfg.repo_path("project"), "config",
+                        "tenkm.mainBranch", "no-such-branch"], check=True)
         with self.assertRaises(sessions.SessionError) as e:
-            sessions.create(cfg, "operator", "mars")
+            sessions.create(self.cfg, "operator", "mars")
         self.assertEqual(e.exception.code, sessions.EGIT)
         with self.m() as m:
             self.assertEqual(m.list("session"), [])

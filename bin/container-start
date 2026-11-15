@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Container entry point. On first start, makes the central loop worktree from the
+# image's copy of 10km (central/ is a host mount, so it persists), then runs the
+# loop from it.
+set -euo pipefail
+LOOP_ROOT=${LOOP_ROOT:-/loop}
+loop="$LOOP_ROOT/central/loop"
+if [ ! -e "$loop/.git" ]; then
+  mkdir -p "$LOOP_ROOT/central"
+  python3 -c 'import sys; sys.path.insert(0, "/opt/10km")
+from tenkm.init import create_loop_repo
+create_loop_repo(sys.argv[1], source="/opt/10km")' "$loop"
+  echo "Created the loop repo in $loop. Next: 10km kickoff"
+fi
+exec "$loop/bin/run-loop"

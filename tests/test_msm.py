@@ -110,11 +110,12 @@ class MsmTest(unittest.TestCase):
         self.fails(1, "session", "create", "operator")  # username required
         self.fails(1, "session", "create", "planner", "x")
         self.fails(2, "cycle", "create", '{"headline": "h", "tasks": []}')  # not plan phase
-        self.ok("loop", "start")
+        self.ok("loop", "start")  # goes to plan: kickoff needs no Curator pass
+        self.assertEqual(self.phase(), "plan")
         self.fails(2, "loop", "start")
+        self.fails(2, "session", "create", "curator")  # plan, nothing to curate
+        self.ok("session", "create", "planner")
         self.fails(2, "session", "create", "planner")
-        self.ok("session", "create", "curator")
-        self.fails(2, "session", "create", "curator")
         self.fails(1, "loop", "update", '{"phase": "plan"}')
         self.fails(3, "session", "get", "nope")
 

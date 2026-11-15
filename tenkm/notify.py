@@ -59,7 +59,7 @@ def _send(cfg, title, body, priority, key):
     sent = _load(cfg)
     if key and key in sent:
         return True
-    project = cfg.get("PROJECT_NAME") or (cfg.projects()[0][0] if cfg.projects() else "loop")
+    project = cfg.get("PROJECT_NAME") or (cfg.projects() or ["loop"])[0]
     commands = cfg.lines("NOTIFY_CMD")
     ok = True
     if commands:

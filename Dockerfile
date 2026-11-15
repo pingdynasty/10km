@@ -1,5 +1,7 @@
 # Ten Thousand Monkeys loop. No ports are exposed: the loop only runs local
-# processes. Mount /loop (worktrees) and /data (database) as volumes.
+# processes. Mount a host directory on /loop/central, so the central worktrees
+# (the loop repo and the project repos) live on the host, and a volume on /data
+# for the database. On first start the loop repo is created from this image.
 FROM debian:bookworm-slim
 
 RUN apt-get update \
@@ -12,13 +14,11 @@ RUN apt-get update \
 #  && npm install -g @anthropic-ai/claude-code && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --uid 1000 monkey \
- && mkdir -p /loop /data && chown monkey:monkey /loop /data
+ && mkdir -p /loop/central /data && chown -R monkey:monkey /loop /data
 COPY --chown=monkey:monkey . /opt/10km
 
 USER monkey
-ENV LOOP_ROOT=/loop MSM_DB=/data/loop.db PATH=/opt/10km/bin:$PATH \
-    GIT_AUTHOR_NAME=monkey GIT_AUTHOR_EMAIL=monkey@localhost \
-    GIT_COMMITTER_NAME=monkey GIT_COMMITTER_EMAIL=monkey@localhost
-VOLUME ["/loop", "/data"]
+ENV LOOP_ROOT=/loop MSM_DB=/data/loop.db PATH=/loop/central/loop/bin:/opt/10km/bin:$PATH
+VOLUME ["/loop/central", "/data"]
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["/opt/10km/bin/run-loop"]
+CMD ["/opt/10km/bin/container-start"]

@@ -5,7 +5,7 @@ set -euo pipefail
 . "$(dirname "$0")/../bin/lib.sh"
 s=$SESSION
 dir="$LOOP_ROOT/$s"
-project=${PROJECT_REPOS%%=*}
+project=$(repos | sed -n 2p)
 
 case $s in
   *-planner-*)

@@ -137,7 +137,6 @@ class Pass:
         env = {k: v for k, v in os.environ.items() if not k.startswith(("LOOP_SESSION", "TENKM_"))}
         loop_code = os.path.join(self.cfg.central, "loop")
         code = loop_code if os.path.isdir(os.path.join(loop_code, "tenkm")) else CODE_ROOT
-        env.update(self.cfg.git_env())
         env.update(SESSION=name, LOOP_SESSION=name, PROMPT_FILE=prompt_file,
                    FIRST_MESSAGE=first_message, LOOP_ROOT=self.cfg.root, MSM_DB=self.cfg.db,
                    PATH=os.pathsep.join([os.path.join(code, "bin"), BIN, env.get("PATH", "")]),

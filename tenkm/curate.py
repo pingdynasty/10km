@@ -305,7 +305,7 @@ def picking(cfg, path):
 
 
 def _continue(cfg, path):
-    env = dict(os.environ, GIT_EDITOR="true", **cfg.git_env())
+    env = dict(os.environ, GIT_EDITOR="true")
     subprocess.run(["git", "-C", path, *RERERE, "cherry-pick", "--continue"], env=env,
                    capture_output=True)
 
@@ -433,7 +433,7 @@ def publish(cfg, report="", accepted=(), rejected=()):
     c = Curation(cfg)
     state = c.load()
     selection = c.selection()
-    order = [name for name, _ in cfg.projects()] + ["loop"]
+    order = cfg.projects() + ["loop"]
     warnings = []
     for repo in order:
         central_on_main(cfg, repo)
