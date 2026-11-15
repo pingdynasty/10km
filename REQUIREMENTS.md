@@ -105,7 +105,7 @@ Creating an Audit sets `id: (Loop.last_audit + 1)`, `created_at`, and `Loop.last
 
 ### Role Preconditions
 - Planner: phase = plan, not stopped, no active Planner.
-- Curator: phase = curate, not stopped, no active Curator.
+- Curator: not stopped, no active Curator, and either phase = curate or an inactive operator or Auditor session exists.
 - Worker: phase = execute, not stopped, a waiting task exists. The task is claimed atomically.
 - Auditor: not stopped, no Auditor session.
 - Operator: always.
@@ -221,10 +221,12 @@ The Dispatcher is invoked periodically, e.g. by cron, at an interval set in the 
 When the Dispatcher is invoked, it reads the loop state.
 It checks for and expires timed out sessions.
 If the loop is stopped, it exits.
-If the phase is:
+If an inactive operator or Auditor session exists, it launches a Curator, whatever the phase.
+Otherwise, if the phase is:
   plan    -> launch Planner   (fails harmlessly if one is active)
   execute -> launch Workers while launches succeed, up to max workers active
-  curate  -> launch Curator   (fails harmlessly if one is active)
+  curate  -> launch Curator
+Launches fail harmlessly if the role's preconditions are not met.
 It launches an Auditor if the number of cycles closed since the last audit has reached the limit in config.env, or more than the configured time has passed since the last audit. The first Auditor runs only after a cycle has been curated.
 To launch a role, it attempts to create a session. If it fails with EAGAIN (4) it tries again, up to 3 times.
 If it succeeds it reads the role prompt.
@@ -298,11 +300,13 @@ It removes done Curator sessions, and expired Curator and Planner sessions, with
 It removes sessions left over from closed cycles, with their worktrees and branches.
 
 Step 2: Select (script `curate-select`)
-It selects and returns the sessions to curate, either:
+It selects and returns the sessions to curate:
 - if they exist: inactive operator and Auditor sessions
-- otherwise: inactive Planner and Worker sessions
+- otherwise, if phase = curate: the current cycle's inactive Planner and Worker sessions
+- otherwise: nothing
 Note: A session is inactive if its status is done or expired.
-Note: Operator and Auditor work gets its own pass, so the cycle is curated with fresh context against the updated goals and prompts.
+Note: Operator and Auditor work is curated as soon as it is done, in its own pass, whatever the phase. The cycle is then curated with fresh context against the updated goals and prompts.
+If the selection is empty, the Curator skips to Step 7.
 
 Step 3: Triage (script `curate-merge`)
 The script merges done sessions into the Curator session, reporting conflicts.
@@ -335,7 +339,7 @@ If there are blocking operator escalations, notify the operator.
 
 Step 8: Publish (script `curate-publish`)
 The script fast-forwards main onto the Curator branch in each project repo, then in the loop repo. It then runs the task status updates and, if a Planner session was selected, `cycle curate`, in one msm transaction. It is safe to rerun.
-The agent passes task verdicts and the cycle report as arguments.
+The agent passes any task verdicts and the cycle report as arguments. It publishes even if nothing was selected, so that notifications and its own plan and backlog updates reach main.
 
 Step 9: Cleanup (script `curate-cleanup`)
 It updates central worktrees.
