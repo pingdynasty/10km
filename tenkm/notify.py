@@ -59,12 +59,11 @@ def _send(cfg, title, body, priority, key):
     sent = _load(cfg)
     if key and key in sent:
         return True
-    project = cfg.get("PROJECT_NAME") or (cfg.projects() or ["loop"])[0]
     commands = cfg.lines("NOTIFY_CMD")
     ok = True
     if commands:
         env = dict(os.environ, TENKM_PRIORITY=priority, TENKM_TITLE=title, TENKM_BODY=body,
-                   TENKM_PROJECT=project)
+                   TENKM_PROJECT=cfg.project_name)
         for command in commands:
             if subprocess.run(["bash", "-c", command], env=env).returncode != 0:
                 ok = False

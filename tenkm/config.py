@@ -70,6 +70,12 @@ class Config(dict):
         return [n for n in names if n != "loop" and not n.startswith(".")
                 and os.path.exists(os.path.join(self.central, n, ".git"))]
 
+    @property
+    def project_name(self):
+        """PROJECT_NAME, else the first project repo, else the loop root's basename."""
+        return (self.get("PROJECT_NAME") or (self.projects() or [None])[0]
+                or os.path.basename(os.path.abspath(self.root)))
+
     def repos(self):
         """Every repo with a worktree per session: the loop repo, then the projects."""
         return ["loop"] + self.projects()

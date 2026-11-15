@@ -59,8 +59,7 @@ def report(cfg, now=None, tz=None):
     def when(t):
         return f"{timefmt.clock(t, now, tz)}, {timefmt.ago(t, now)}"
 
-    project = cfg.get("PROJECT_NAME") or (cfg.projects() or ["10km"])[0]
-    lines = [f"{project} loop, {timefmt.stamp(now, tz)}", _loop_line(loop)]
+    lines = [f"{cfg.project_name} loop, {timefmt.stamp(now, tz)}", _loop_line(loop)]
     if cycle:
         lines.append(f"\nCycle {cycle['id']} ({cycle['status']}, planned "
                      f"{when(cycle.get('planned_at'))}):")
