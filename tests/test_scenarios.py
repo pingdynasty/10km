@@ -218,7 +218,7 @@ class TestStopAndResume(ScenarioCase):
         R212, R213, R110, R111.
         """
         settings = dict(FAKE_TASKS="a b c", MAX_WORKERS="2", FAKE_WORKER1="slow",
-                        FAKE_DELAY="3", FAKE_WORKER2="hang", WORKER_TIMEOUT="5")
+                        FAKE_DELAY="2", FAKE_WORKER2="hang", WORKER_TIMEOUT="12")
         self.loop.start()
         self.drive(lambda: len(self.active("worker")) == 2, **settings)
         self.loop.msm("loop", "stop", "test")
