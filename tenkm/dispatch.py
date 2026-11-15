@@ -1,13 +1,14 @@
 """tenkm.dispatch: one Dispatcher pass.
 
     expire timed-out and dead sessions
-    notify once when the loop stops
     if stopped: exit
     launch a Curator if operator or Auditor work is waiting (any phase)
     launch by phase: Planner, Workers (up to MAX_WORKERS), or Curator
     launch an Auditor if one is due
 
-Notifications are sent after the pass, outside the dispatch lock.
+The Dispatcher only notifies fatal errors (an unreadable or missing database);
+blocking escalations are notified by the role that raises them. Notifications
+are sent after the pass, outside the dispatch lock.
 """
 import os
 import sqlite3
