@@ -38,11 +38,26 @@ volume. On first start the container creates the loop repo, `central/loop`, from
 its copy of 10km, then runs `run-loop`, which calls the Dispatcher every
 `DISPATCH_INTERVAL` seconds.
 
-In another sandbox: you need Python 3.9+ (standard library only), Bash, git and
-an agent CLI such as `claude`, `codex` or `kiro-cli`. Clone or fork 10km as
-`<root>/central/loop`, and run its commands from there: `<root>` is the loop root
-(`LOOP_ROOT`), with the database at `<root>/.10km/loop.db` unless `MSM_DB` says
-otherwise. Run `central/loop/bin/run-loop`, or call `10km dispatch` from cron.
+## Run it on a host
+
+In another sandbox (a VM or a dedicated user account) you need Python 3.9+
+(standard library only), Bash, git and an agent CLI such as `claude`, `codex` or
+`kiro-cli`. The loop root (`LOOP_ROOT`) is a directory holding `central/`; the
+database is `<root>/.10km/loop.db` unless `MSM_DB` says otherwise.
+
+```sh
+mkdir -p ~/myloop/central && cd ~/myloop
+git clone <10km or your fork> central/loop
+export LOOP_ROOT=~/myloop PATH=~/myloop/central/loop/bin:$PATH
+10km kickoff                     # create the database and set up the loop
+run-loop                         # the Dispatcher every DISPATCH_INTERVAL seconds
+```
+
+Keep `run-loop` running (in `tmux`, or as a service), or call `10km dispatch` from
+cron instead. `10km status` shows where the loop is. `msm loop stop` pauses it:
+nothing new is launched, and running sessions finish or time out. `msm loop
+resume` carries on. Stopping `run-loop` itself only stops the Dispatcher; resume
+by starting it again.
 
 ## Kickoff
 
@@ -70,7 +85,7 @@ Settings are in `config.env` in the central loop worktree, sourced as shell. Rep
 | `PLANNER_AGENT`, `WORKER_AGENT`, `CURATOR_AGENT`, `AUDITOR_AGENT` | Per-role overrides of `LOOP_AGENT`, e.g. to choose a model. |
 | `OPERATOR_AGENT` | The operator's agent, for kickoff and operator sessions; run with `FIRST_MESSAGE` and, for one-shot instructions, `ONE_SHOT=1`. It doesn't fall back to `LOOP_AGENT`. |
 
-Also in `config.env`: `MSM_DB`, `MSM_LOG`, `USAGE_LOG`, `SESSION_TIMEOUT` (and per-role `PLANNER_TIMEOUT` etc.), `MAX_WORKERS`, `BACKLOG_SIZE`, `AUDIT_TIME`, `AUDIT_TIMEZONE`, `AUDIT_CYCLES_LIMIT` and `IDLE_CYCLE_LIMIT`.
+Also in `config.env`: `SESSION_TIMEOUT` (and per-role `PLANNER_TIMEOUT` etc.), `MAX_WORKERS`, `BACKLOG_SIZE`, `AUDIT_TIME`, `AUDIT_TIMEZONE`, `AUDIT_CYCLES_LIMIT`, `IDLE_CYCLE_LIMIT`, `DISPATCH_INTERVAL`, `GATE_WAIT` (how long `gate` waits before exiting 3; keep it under the agent's tool-call limit), `LAUNCHER`, `MSM_DB`, `MSM_LOG` and `USAGE_LOG`. Each is described in the file.
 
 ## Operating the loop
 
@@ -134,6 +149,15 @@ make test         # unit and script tests, in parallel: python3 tests/run.py
 make smoke        # end to end with a fake agent, in the container (needs Docker)
 make smoke-host   # the same end-to-end test on this host (Linux or macOS)
 ```
+
+`tests/run.py` runs each test (or test class with shared setup) in its own
+process: `python3 tests/run.py -j 4` sets the jobs (default: the CPU count;
+`make test JOBS=4`), `-v` lists every test, and patterns pick tests by id
+(`python3 tests/run.py test_msm TestDispatch`). It ends with the slowest tests.
+`python3 -m unittest discover tests` also works, serially. A loop's gates are
+plain commands, e.g. `WORKER_GATES="10km: python3 tests/run.py -j 4"`.
+`loopstate.schema.json` is generated from the State block of `REQUIREMENTS.md`:
+after changing that block run `python3 -m tenkm.schema` (a test checks it).
 
 The end-to-end test, `tests/smoke.sh`, needs Bash, git, jq and Python 3.9+. It
 runs in a temporary directory, removed on exit, and uses neither a live loop's
