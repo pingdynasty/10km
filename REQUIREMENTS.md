@@ -22,7 +22,7 @@ Configuration is in `config.env` in the loop repo (see Configuration below). Scr
 The operator may provide one or more pre-existing project repos for the loop to work on.
 If not, a new project repo is created during kickoff.
 Each session has a directory with git worktrees and scratch files.
-In this document, main means each repo's default branch.
+In this document, main means each repo's configured branch.
 Under normal operation, all worktrees and branches are merged into main and removed by the Curator.
 If sessions expire, the Curator will attempt to fix them up but stale branches may remain.
 There are central worktrees that the Curator keeps up to date.
@@ -52,10 +52,7 @@ root/central/project-repo2/
 - Harness sessions: name each coding-harness session after the loop session, or record the harness session name in a trailer. That lets the Auditor join token and time metrics to role and cycle.
 
 ### Configuration
-- Project repos
 - Database and action log path
-- Main branch
-- Commit identity
 - Launcher and agent commands
 - Session time-outs
 - Max workers
@@ -211,7 +208,7 @@ Cycles, Tasks, Audits and Issues accumulate. They are kept for metrics and analy
 Planner session `done`: if the current cycle is open: `execute`, or `curate` if it has no tasks.
 Worker session `done|expired`: if no tasks remain waiting or active: `curate`.
 Curator session `done`: if the current cycle is not open: `plan`.
-`loop start`: `curate`.
+`loop start`: `plan`.
 `loop resume`: if phase = plan: `curate`. Otherwise leave as is.
 
 ## Sessions
@@ -417,11 +414,16 @@ Files can be used for agents to communicate, for example for workers to save res
 What type of files that agents may produce, and where, is determined during kickoff.
 
 ## Kickoff
-An init script prepares the loop: it calls `msm init`, creates the project repo if none is provided, and creates the central worktrees.
-The kickoff determines the goals, the plan, and the deliverables.
+The operator runs Kickoff (`10km kickoff`) before the loop starts.
+Kickoff can be interactive, or a one-shot operator instruction.
+It creates no session and runs directly in the central working directory.
+It calls `msm init` if there is not already a database.
+It determines the goals, the plan, the deliverables and the configuration, and commits them to loop main.
+It determines the project repos and their configuration: branch, author, hooks, remotes etc.
+It clones or creates the central project worktrees and configures them with `git config`.
 It ensures that loop prompts meet the project needs.
-Kickoff can be an interactive operator session, or a one-shot operator instruction.
-When done, kickoff sets its session to done and calls `loop start`. The Curator then merges the kickoff work before the first Planner runs.
+It should leave the central worktrees clean.
+When done, kickoff calls `loop start`, and the first Planner runs.
 
 ## Notification
 The operator notification mechanism should be a deterministic action configured during Kickoff.
