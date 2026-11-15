@@ -51,7 +51,7 @@ def create(cfg, role, username=None, setup=None):
         try:
             try:
                 os.makedirs(directory, exist_ok=True)
-                if not setup:
+                if not setup.keys() >= set(cfg.repos()):  # first call, or a repo added
                     setup.update(repo_setup(cfg))
                 for repo in cfg.repos():
                     base, hooks = setup[repo]
