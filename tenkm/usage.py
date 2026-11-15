@@ -39,9 +39,8 @@ def is_number(value):
             and math.isfinite(value) and abs(value) < 1e12)
 
 
-def parse_result(text):
-    """The figures in the last JSON line (or whole text) with "type": "result", or {}."""
-    candidates = [text] + text.splitlines()[::-1]
+def _objects(candidates):
+    """The JSON objects among text candidates; others are skipped."""
     for candidate in candidates:
         candidate = candidate.strip()
         if not candidate.startswith("{"):
@@ -50,7 +49,14 @@ def parse_result(text):
             data = json.loads(candidate)
         except ValueError:
             continue
-        if isinstance(data, dict) and data.get("type") == "result":
+        if isinstance(data, dict):
+            yield data
+
+
+def parse_result(text):
+    """The figures in the last JSON line (or whole text) with "type": "result", or {}."""
+    for data in _objects([text] + text.splitlines()[::-1]):
+        if data.get("type") == "result":
             return _figures(data)
     return {}
 
@@ -70,20 +76,6 @@ def _figures(data):
     return out
 
 
-def _json_lines(text):
-    """The JSON objects among a log's lines; other lines are skipped."""
-    for line in text.splitlines():
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            data = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(data, dict):
-            yield data
-
-
 def _credits(items, key):
     """The sum of the credit amounts (`key`) in a list of usage items, or None."""
     if not isinstance(items, list):
@@ -93,59 +85,45 @@ def _credits(items, key):
     return sum(found) if found else None
 
 
-def _kiro_turn(event):
-    """(kind, duration_ms, credits) of a kiro-cli event, or None if it reports neither.
-
-    kind is "turn" for a turn's figures, "session" for v3's session credit total.
-    """
-    data = event.get("data")
-    if not isinstance(data, dict):
-        return None
-    if event.get("type") == "metadata":  # engine v2, at the end of each turn
-        return "turn", data.get("turnDurationMs"), _credits(data.get("meteringUsage"), "value")
-    update = data.get("update")
-    meta = update.get("_meta") if isinstance(update, dict) else None
-    kiro = meta.get("kiro") if isinstance(meta, dict) else None
+def _kiro_event(kind, data):
+    """(turn ms, turn credits, session credits) of a kiro-cli event."""
+    if kind == "metadata":  # engine v2, at the end of each turn
+        return data.get("turnDurationMs"), _credits(data.get("meteringUsage"), "value"), None
+    kiro = data.get("update")
+    for key in ("_meta", "kiro"):
+        kiro = kiro.get(key) if isinstance(kiro, dict) else None
     if not isinstance(kiro, dict):
-        return None
+        return None, None, None
     if kiro.get("kind") == "turn_completion":  # engine v3
-        return "turn", kiro.get("elapsedTime"), _credits(kiro.get("promptTurnSummaries"), "usage")
+        return kiro.get("elapsedTime"), _credits(kiro.get("promptTurnSummaries"), "usage"), None
     if kiro.get("kind") == "session_usage":
-        return "session", None, _credits(kiro.get("credits"), "usage")
-    return None
+        return None, None, _credits(kiro.get("credits"), "usage")
+    return None, None, None
 
 
 def parse_kiro(text):
-    """The figures in kiro-cli's `--output-format stream-json` events, or {}.
-
-    Engine v2 ends each turn with a "metadata" event carrying meteringUsage
-    (credits) and turnDurationMs; engine v3 with a "turn_completion" update
-    carrying promptTurnSummaries (credits) and elapsedTime (ms), and reports the
-    session's credits in "session_usage" updates. Turns are summed; v3's last
-    session total wins for credits. kiro-cli reports no tokens, and its default
-    text output reports nothing.
-    """
-    out, ms_total, credit_total, session_credits = {}, [], [], None
-    for event in _json_lines(text):
+    """The figures in kiro-cli's `--output-format stream-json` events, or {}: turn
+    times and credits summed, v3's last session credit total preferred. kiro-cli
+    reports no tokens."""
+    out, ms, credits, session_credits = {}, [], [], None
+    for event in _objects(text.splitlines()):
         data = event.get("data")
-        if isinstance(data, dict) and isinstance(data.get("sessionId"), str):
+        if not isinstance(data, dict):
+            continue
+        if isinstance(data.get("sessionId"), str):
             out["harness_session_id"] = data["sessionId"]
-        turn = _kiro_turn(event)
-        if turn is None:
-            continue
-        kind, ms, credits = turn
-        if kind == "session":
-            session_credits = credits if credits is not None else session_credits
-            continue
-        if is_number(ms):
-            ms_total.append(ms)
-        if credits is not None:
-            credit_total.append(credits)
-    for key, values in (("duration_ms", ms_total), ("credits", credit_total)):
-        if values and is_number(sum(values)):
-            out[key] = sum(values)
-    if session_credits is not None and is_number(session_credits):
-        out["credits"] = session_credits
+        turn_ms, turn_credits, total = _kiro_event(event.get("type"), data)
+        if is_number(turn_ms):
+            ms.append(turn_ms)
+        if turn_credits is not None:
+            credits.append(turn_credits)
+        if total is not None:
+            session_credits = total
+    if ms and is_number(sum(ms)):
+        out["duration_ms"] = sum(ms)
+    total = session_credits if session_credits is not None else sum(credits) if credits else None
+    if is_number(total):
+        out["credits"] = total
     return out
 
 
