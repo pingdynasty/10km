@@ -171,7 +171,7 @@ def main(argv):
         print(f"LOOP_SESSION {name or '(unset)'} is not an active session; stop.", file=sys.stderr)
         return 2
     session = dict(session)
-    wait = cfg.int("GATE_WAIT", 1500)
+    wait = cfg.int("GATE_WAIT", 540)
     results, status = [], 0
     for repo, command in gates(cfg, argv[0]):
         state, log = run_gate(cfg, session, repo, command, wait)
