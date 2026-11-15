@@ -69,8 +69,10 @@ def _undo(cfg, name, directory, repos):
 
 
 def protected_branches(m):
-    """Branches referenced by open issues. Scripts never remove these."""
-    return {i["branch"] for i in m.list("issue", '{"status": "open"}') if i.get("branch")}
+    """Branches referenced by unresolved (open or answered) issues (R206). Scripts never
+    remove these."""
+    return {i["branch"] for i in m.list("issue")
+            if i["status"] in msm.UNRESOLVED and i.get("branch")}
 
 
 def remove(cfg, name, protected=()):

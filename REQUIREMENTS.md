@@ -179,9 +179,9 @@ Issue   { id: uuid,  # R99
           type: escalation|backlog,
           title: string,
           description: string,
-          owner_session: string,
+          assigner_session: string,
+          assigner_role: planner|curator|auditor|operator|worker,
           assignee_role: planner|curator|auditor|operator,
-          resolver_role: planner|curator|auditor|operator,
           severity: low|high|blocking,
           urgent_if: string,
           status: open|answered|resolved,
@@ -292,8 +292,8 @@ Notes:
 **R175** Issues from unmerged work (expired, incomplete, or rejected) should reference its branch.
 **R314** An issue's status goes open, then answered, then resolved.
 **R315** The assignee answers an issue: it sets status answered with the answer or decision in `resolution`; msm sets `answered_at`. **R316** The operator answers operator escalations with `msm issue update`.
-**R317** The role that raised an issue (the role of its `owner_session`) owns the follow-up: it reads the answered issues its role raised, acts on the answer (a plan change, a backlog item, a task), then sets status resolved; msm sets `resolved_at`.
-**R318** The assignee may resolve an issue directly, without answering it first, when it leaves no follow-up for another role: a backlog item it has done, or an issue its own role raised or that has no `owner_session`.
+**R317** The role that raised an issue, its `assigner_role` (msm sets it from the raising session's role, operator without a session), owns the follow-up: it reads the answered issues with its role as `assigner_role`, acts on the answer (a plan change, a backlog item, a task), then sets status resolved; msm sets `resolved_at`.
+**R318** The assignee may resolve an issue directly, without answering it first, when it leaves no follow-up for another role: a backlog item it has done, or an issue with its own role as `assigner_role` or with no `assigner_session`.
 **R319** Only open issues wait for an answer.
 
 ## Escalations
@@ -311,7 +311,7 @@ Notes:
 ## Planner
 **R184** It is launched with its session name. **R185** It reads its session.
 **R186** It reads the plan, open backlog items, and the last curator report.
-**R187** It reads open escalations. **R320** It reads answered issues raised by Planners.
+**R187** It reads open escalations. **R320** It reads answered issues raised by Planners (`assigner_role` planner).
 **R188** It may answer or resolve escalations.
 **R189** It may consolidate, reprioritise, or prune the backlog.
 **R190** It updates the plan and decides the headline (focus/goal/purpose of cycle).
@@ -356,7 +356,7 @@ Note: Selection makes sure that operator and Auditor work is curated as soon as 
 - **R227** incomplete work is either backlogged or discarded
 
 **R228** Step 5: Read
-**R229** It reads the plan, goals, open escalations, the current cycle, and audits since the cycle was planned. **R321** It reads answered issues raised by Curators.
+**R229** It reads the plan, goals, open escalations, the current cycle, and audits since the cycle was planned. **R321** It reads answered issues raised by Curators (`assigner_role` curator).
 
 **R230** Step 6: Evaluate
 For each done or included expired Worker session:
@@ -400,7 +400,7 @@ If the selection includes a Planner session:
 **R260** It is launched with its session name. **R261** It reads its session.
 **R262** It reads its prompt and the last audit.
 **R263** It reads previous learnings from LEARNINGS.md.
-**R264** It reads any open escalations. **R322** It reads answered issues raised by Auditors.
+**R264** It reads any open escalations. **R322** It reads answered issues raised by Auditors (`assigner_role` auditor).
 **R265** It retrieves a git log summary since last audit.
 **R266** It analyses git history for time spent per role and cycle.
 **R267** It may analyse agent harness metrics for tokens or credits used per role and cycle.

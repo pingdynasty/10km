@@ -158,6 +158,15 @@ class TestLoopRecord(MsmCase):
         loop = self.ok("loop", "resume")
         self.assertEqual((loop["stopped"], loop["reason"]), (False, None))
 
+    def test_resume_is_allowed_once_the_blocking_escalation_is_answered(self):  # R313 R319
+        self.ok("loop", "start")
+        self.ok("loop", "stop", "blocked")
+        issue = self.blocking_escalation()
+        self.fails(2, "loop", "resume")
+        self.ok("issue", "update", issue, '{"status": "answered", "resolution": "go on"}')
+        loop = self.ok("loop", "resume")
+        self.assertEqual((loop["stopped"], loop["reason"]), (False, None))
+
     def test_stop_sets_stopped_and_reason(self):  # R41 R76
         self.ok("loop", "start")
         loop = self.ok("loop", "stop", "idle")
@@ -304,12 +313,16 @@ class TestCycles(MsmCase):
         self.plan("new")
         active = self.ok("session", "create", "worker")["name"]
         issue = self.ok("issue", "create", '{"type": "backlog", "title": "t"}')
+        answered = self.ok("issue", "create", '{"type": "escalation", "title": "q"}')
+        self.ok("issue", "update", answered["id"], '{"status": "answered"}')
         self.assertEqual(self.ok("cycle", "update", "2", '{"headline": "h2"}')["headline"], "h2")
         self.assertEqual([c["id"] for c in self.ok("cycle", "list", '{"status": "open"}')], [2])
-        # Removing history must not touch the current cycle, open issues, or active sessions.
+        # Removing history must not touch the current cycle, unresolved (open or answered)
+        # issues, or active sessions.
         self.fails(2, "cycle", "remove", "2")
         self.fails(2, "task", "remove", "--session", active)
         self.fails(2, "issue", "remove", issue["id"])
+        self.fails(2, "issue", "remove", answered["id"])
         self.ok("task", "remove", old_task["id"])
         self.fails(3, "task", "get", old_task["id"])
         self.ok("cycle", "remove", "1")
@@ -389,9 +402,9 @@ class TestResults(MsmCase):
                              "curator_session curated_at"),
             "task": (cycle["tasks"][0], "id cycle shortname instructions branch session report "
                                         "status created_at started_at done_at curated_at"),
-            "issue": (issue, "id type title description owner_session assignee_role "
-                             "resolver_role severity urgent_if status branch created_at "
-                             "resolved_at resolution"),
+            "issue": (issue, "id type title description assigner_session assigner_role "
+                             "assignee_role severity urgent_if status branch created_at "
+                             "answered_at resolved_at resolution"),
             "audit": (audit, "id period summary created_at"),
         }
         for kind, (record, fields) in expected.items():

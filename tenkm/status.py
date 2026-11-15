@@ -15,6 +15,7 @@ def report(cfg):
         active = m.list("session", '{"status": "active"}')
         inactive = [s for s in m.list("session") if s["status"] != "active"]
         issues = m.list("issue", '{"status": "open"}')
+        answered = m.list("issue", '{"status": "answered"}')
         audits = m.list("audit")
     state_line = "stopped" + (f" ({loop['reason']})" if loop["reason"] else "") \
         if loop["stopped"] else "running"
@@ -40,6 +41,10 @@ def report(cfg):
     for i in sorted(escalations, key=lambda i: i["severity"] != "blocking"):
         lines.append(f"  [{i['severity']}] {i['title']}  -> {i.get('assignee_role') or '?'}")
     lines.append(f"Open backlog items: {len(backlog)}")
+    lines.append(f"Answered issues, awaiting follow-up: {len(answered)}")
+    for i in answered:
+        lines.append(f"  [{i['type']}] {i['title']}  -> {i['assigner_role']}"
+                     f"  since {i.get('answered_at') or '?'}")
     lines.append(f"Audits: {len(audits)}"
                  + (f", last {audits[-1]['created_at']}" if audits else ""))
     lines.append("\nMain:")

@@ -43,7 +43,7 @@ give_up() {
 backlog() {  # backlog <session> <why>: keep a Worker's branch for later
   "$MSM" issue create "$(jq -n --arg s "$s" --arg w "$1" --arg why "$2" \
     '{type: "backlog", title: "\($why): \($w)", description: "\($why) work on branch \($w)",
-      owner_session: $s, assignee_role: "planner", severity: "low",
+      assigner_session: $s, assignee_role: "planner", severity: "low",
       urgent_if: "never", branch: $w}')" >/dev/null
 }
 
@@ -122,7 +122,7 @@ case $s in
     if [ -n "${IDLE_CYCLE_LIMIT-}" ] && [ "$empty" -ge "$IDLE_CYCLE_LIMIT" ]; then
       "$MSM" issue create "$(jq -n --arg s "$s" --arg n "$empty" \
         '{type: "escalation", title: "idle: \($n) empty cycles", description: "idle",
-          owner_session: $s, assignee_role: "operator", severity: "blocking"}')" >/dev/null
+          assigner_session: $s, assignee_role: "operator", severity: "blocking"}')" >/dev/null
     fi
     # shellcheck disable=SC2086
     curate-publish --report smoke --accepted $accepted --rejected $rejected >/dev/null

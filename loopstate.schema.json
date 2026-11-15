@@ -328,22 +328,23 @@
             "null"
           ]
         },
-        "owner_session": {
+        "assigner_session": {
           "type": [
             "string",
             "null"
           ]
         },
-        "assignee_role": {
+        "assigner_role": {
           "enum": [
             "planner",
             "curator",
             "auditor",
             "operator",
+            "worker",
             null
           ]
         },
-        "resolver_role": {
+        "assignee_role": {
           "enum": [
             "planner",
             "curator",
@@ -413,9 +414,9 @@
         "type",
         "title",
         "description",
-        "owner_session",
+        "assigner_session",
+        "assigner_role",
         "assignee_role",
-        "resolver_role",
         "severity",
         "urgent_if",
         "status",

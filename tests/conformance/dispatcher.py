@@ -88,7 +88,8 @@ MAP = {
     "R312": ("prompts/session.md", "**Goals and plan.** Change `GOALS.md`, `PLAN.md`"),
     "R313": [RM + "TestLoopRecord."
              "test_resume_is_refused_while_a_blocking_operator_escalation_is_open",
-             RM + "TestLoopRecord.test_resume_is_allowed_once_the_blocking_escalation_is_resolved"],
+             RM + "TestLoopRecord.test_resume_is_allowed_once_the_blocking_escalation_is_resolved",
+             RM + "TestLoopRecord.test_resume_is_allowed_once_the_blocking_escalation_is_answered"],
 }
 
 PENDING = set()

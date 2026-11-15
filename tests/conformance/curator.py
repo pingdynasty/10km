@@ -34,8 +34,8 @@ MAP = {
              CS + "TestRefusals.test_done_curator_is_refused",
              CS + "TestRefusals.test_curator_expired_mid_pass_removes_nothing",
              C + "TestRefusals.test_steps_refuse_an_inactive_curator"],
-    "R206": [CS + "TestPrepare.test_keeps_branches_of_open_issues",
-             CS + "TestCleanup.test_keeps_branches_of_open_issues"],
+    "R206": [CS + "TestPrepare.test_keeps_branches_of_unresolved_issues",
+             CS + "TestCleanup.test_keeps_branches_of_unresolved_issues"],
     # Step 1: Prepare
     "R207": [STEPS, CS + "TestPrepare.test_removes_old_curators_and_closed_cycle_sessions",
              CS + "TestPrepare.test_rerun_after_a_crash_mid_removal_finishes"],
@@ -101,7 +101,7 @@ MAP = {
     "R240": [(P, "validate again"), VALIDATE],
     "R241": (P, "Escalate rejected operator work to the operator"),
     "R242": [(P, "backlog or discard other rejected work"), REJECT_GATE, REJECT_CONFLICT,
-             CS + "TestCleanup.test_keeps_branches_of_open_issues"],
+             CS + "TestCleanup.test_keeps_branches_of_unresolved_issues"],
     # Step 8: Assess
     "R243": (P, "Assess milestones, goals and deliverables"),
     "R244": (P, "Assess milestones, goals and deliverables"),
