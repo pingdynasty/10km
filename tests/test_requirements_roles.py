@@ -101,7 +101,7 @@ class TestHarnessSessionName(unittest.TestCase):
         self.assertEqual(self.run_default("operator"), [])
 
 
-class TestIssueTypes(MsmCase):
+class IssueCase(MsmCase):
     def as_session(self, name, *args):
         """Run msm as session name; return (exit code, output)."""
         env, self.env = self.env, dict(self.env, LOOP_SESSION=name)
@@ -111,6 +111,13 @@ class TestIssueTypes(MsmCase):
             self.env = env
         return rc, out
 
+    def as_ok(self, name, *args):
+        rc, out = self.as_session(name, *args)
+        self.assertEqual(rc, 0, f"msm {' '.join(args)} as {name} failed with {rc}")
+        return out
+
+
+class TestIssueTypes(IssueCase):
     def test_issues_are_escalations_or_backlog_items(self):  # R174
         for kind in ("escalation", "backlog"):
             issue = self.ok("issue", "create", json.dumps({"type": kind, "title": kind}))
@@ -127,12 +134,83 @@ class TestIssueTypes(MsmCase):
         operator = self.ok("session", "create", "operator", "mars")["name"]
         for name in (worker, operator):
             rc, issue = self.as_session(name, "issue", "create", json.dumps(
-                {"type": "backlog", "title": f"from {name}", "owner_session": name,
+                {"type": "backlog", "title": f"from {name}", "assigner_session": name,
                  "urgent_if": "later"}))
             self.assertEqual(rc, 0)
-            self.assertEqual((issue["owner_session"], issue["status"]), (name, "open"))
+            self.assertEqual((issue["assigner_session"], issue["status"]), (name, "open"))
         self.ok("issue", "create", '{"type": "backlog", "title": "from the operator\'s shell"}')
         self.assertEqual(len(self.ok("issue", "list", '{"type": "backlog"}')), 3)
+
+
+class TestIssueLifecycle(IssueCase):
+    """Issues go open, answered, resolved; the assigner follows up on answers."""
+
+    def setUp(self):
+        super().setUp()
+        self.ok("loop", "start")
+        self.planner = self.plan("a", done=False)
+        self.auditor = self.ok("session", "create", "auditor")["name"]
+
+    def answered_for(self, role):
+        return [i["id"] for i in self.ok("issue", "list", json.dumps(
+            {"status": "answered", "assigner_role": role}))]
+
+    def test_status_goes_open_answered_resolved(self):  # R314 R315 R317
+        issue = self.as_ok(self.planner, "issue", "create", json.dumps(
+            {"type": "escalation", "title": "which way", "assignee_role": "auditor"}))
+        self.assertEqual((issue["status"], issue["assigner_session"], issue["assigner_role"]),
+                         ("open", self.planner, "planner"))
+        answered = self.as_ok(self.auditor, "issue", "update", issue["id"], json.dumps(
+            {"status": "answered", "resolution": "left"}))
+        self.assertEqual((answered["status"], answered["resolution"]), ("answered", "left"))
+        self.assertIsNotNone(answered["answered_at"])
+        self.assertIsNone(answered["resolved_at"])
+        # The raising role finds it; other roles, and unknown ones, don't.
+        self.assertEqual(self.answered_for("planner"), [issue["id"]])
+        self.assertEqual(self.answered_for("auditor"), [])
+        self.assertEqual(self.answered_for("nobody"), [])
+        resolved = self.as_ok(self.planner, "issue", "update", issue["id"],
+                              '{"status": "resolved"}')
+        self.assertEqual((resolved["status"], resolved["resolution"]), ("resolved", "left"))
+        self.assertEqual(resolved["answered_at"], answered["answered_at"])
+        self.assertIsNotNone(resolved["resolved_at"])
+        self.assertEqual(self.answered_for("planner"), [])
+
+    def test_operator_answers_operator_escalations(self):  # R316
+        self.ok("session", "done", self.planner)
+        worker = self.ok("session", "create", "worker")["name"]
+        issue = self.as_ok(worker, "issue", "create", json.dumps(
+            {"type": "escalation", "title": "need a key", "assignee_role": "operator"}))
+        self.assertEqual(issue["assigner_role"], "worker")
+        operator = self.ok("session", "create", "operator", "mars")["name"]
+        self.as_ok(operator, "issue", "update", issue["id"], json.dumps(
+            {"status": "answered", "resolution": "use the test key"}))
+        self.assertEqual(self.answered_for("worker"), [issue["id"]])
+
+    def test_assignee_may_resolve_without_answering(self):  # R318
+        issue = self.ok("issue", "create", json.dumps(
+            {"type": "backlog", "title": "tidy", "assignee_role": "planner"}))
+        self.assertEqual((issue["assigner_session"], issue["assigner_role"]),
+                         (None, "operator"))
+        resolved = self.as_ok(self.planner, "issue", "update", issue["id"], json.dumps(
+            {"status": "resolved", "resolution": "done"}))
+        self.assertEqual(resolved["status"], "resolved")
+        self.assertIsNone(resolved["answered_at"])
+        self.assertIsNotNone(resolved["resolved_at"])
+
+    def test_assigner_role_is_set_by_msm(self):  # R317
+        own = self.as_ok(self.auditor, "issue", "create", '{"type": "backlog", "title": "a"}')
+        self.assertEqual((own["assigner_session"], own["assigner_role"]),
+                         (self.auditor, "auditor"))
+        named = self.as_ok(self.auditor, "issue", "create", json.dumps(
+            {"type": "backlog", "title": "b", "assigner_session": self.planner}))
+        self.assertEqual(named["assigner_role"], "planner")
+        self.fails(1, "issue", "create", json.dumps(
+            {"type": "backlog", "title": "c", "assigner_role": "planner"}))
+        self.fails(1, "issue", "create", json.dumps(
+            {"type": "backlog", "title": "d", "assigner_session": "nobody"}))
+        self.fails(1, "issue", "update", own["id"], '{"assigner_role": "planner"}')
+        self.fails(1, "issue", "update", own["id"], '{"status": "closed"}')
 
 
 class TestWorkerLaunch(ScriptCase):

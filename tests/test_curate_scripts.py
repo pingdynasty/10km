@@ -186,17 +186,25 @@ class TestPrepare(CurateScriptCase):
                 self.assertNotIn(name, self.loop.branches(repo))
         self.assertEqual(sorted(self.worktrees("project")), sorted([op, cur]))
 
-    def test_keeps_branches_of_open_issues(self):
-        """R206, R209: a leftover session referenced by an open issue loses its
-        worktree and record, but not its branch."""
+    def test_keeps_branches_of_unresolved_issues(self):
+        """R206, R209: a leftover session referenced by an open or answered issue
+        loses its worktree and record, but not its branch; a resolved issue's
+        branch goes."""
         old, planner, w1 = self.closed_cycle_left_behind()
         self.loop.msm("issue", "create", json.dumps(
             {"type": "backlog", "title": "finish it", "branch": w1}))
+        answered = self.loop.msm("issue", "create", json.dumps(
+            {"type": "escalation", "title": "which way", "branch": planner}))["id"]
+        self.loop.msm("issue", "update", answered, '{"status": "answered", "resolution": "x"}')
+        resolved = self.loop.msm("issue", "create", json.dumps(
+            {"type": "backlog", "title": "done", "branch": old}))["id"]
+        self.loop.msm("issue", "update", resolved, '{"status": "resolved"}')
         cur = self.curator()
-        self.assertIn(w1, self.step_ok(cur, "prepare")["removed"])
-        self.assertIn(w1, self.loop.branches("project"))
-        self.assertNotIn(w1, self.worktrees("project"))
-        self.assertNotIn(planner, self.loop.branches("project"))
+        self.assertLessEqual({w1, planner, old}, set(self.step_ok(cur, "prepare")["removed"]))
+        for kept in (w1, planner):
+            self.assertIn(kept, self.loop.branches("project"))
+            self.assertNotIn(kept, self.worktrees("project"))
+        self.assertNotIn(old, self.loop.branches("project"))
 
     def test_keeps_the_open_cycles_sessions(self):
         """R208, R209: done Workers and the done Planner of the open cycle are work
@@ -555,13 +563,15 @@ class TestCleanup(CurateScriptCase):
         self.loop.done(cur)
         self.assertEqual(self.loop.msm("loop", "get")["phase"], "plan")  # R259
 
-    def test_keeps_branches_of_open_issues(self):
+    def test_keeps_branches_of_unresolved_issues(self):
         """R206, R242, R256: rejected work backlogged with its branch keeps the
-        branch, and is not reported as lost."""
+        branch, and is not reported as lost, also once the item is answered."""
         cur, planner, w1, w2 = self.published()
-        self.loop.msm("issue", "create", json.dumps(
-            {"type": "backlog", "title": "redo b", "branch": w2, "owner_session": cur}),
+        issue = self.loop.msm("issue", "create", json.dumps(
+            {"type": "backlog", "title": "redo b", "branch": w2, "assigner_session": cur}),
             session=cur)
+        self.assertEqual(issue["assigner_role"], "curator")
+        self.loop.msm("issue", "update", issue["id"], '{"status": "answered"}', session=cur)
         out = self.step_ok(cur, "cleanup")
         self.assertEqual(out["unpublished_removed"], [])
         self.assertIn(w2, self.loop.branches("project"))

@@ -72,7 +72,7 @@ class Pass:
                 "description": f"Session {s['name']} timed out and was expired, but its "
                                f"launcher could not confirm the agent stopped (handle "
                                f"{handle}). Stop it by hand if it is still running.",
-                "owner_session": None, "assignee_role": "operator", "severity": "high"})
+                "assignee_role": "operator", "severity": "high"})
         log(f"escalated {s['name']}: agent may still be running")
 
     def expire(self, name, why):

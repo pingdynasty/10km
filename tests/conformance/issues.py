@@ -13,12 +13,14 @@ MAP = {
              "test_hanging_worker_is_expired_its_work_backlogged_and_the_loop_goes_on",
              "tests/test_scenarios.py:TestRejection."
              "test_branch_failing_validation_is_rejected_and_backlogged"],
-    "R314": "prompts/common.md",  # placeholder: task issue-msm replaces it
-    "R315": "prompts/common.md",  # placeholder: task issue-msm replaces it
-    "R316": "prompts/common.md",  # placeholder: task issue-msm replaces it
-    "R317": "prompts/common.md",  # placeholder: task issue-msm replaces it
-    "R318": "prompts/common.md",  # placeholder: task issue-msm replaces it
-    "R319": "prompts/common.md",  # placeholder: task issue-msm replaces it
+    "R314": RR + "TestIssueLifecycle.test_status_goes_open_answered_resolved",
+    "R315": RR + "TestIssueLifecycle.test_status_goes_open_answered_resolved",
+    "R316": RR + "TestIssueLifecycle.test_operator_answers_operator_escalations",
+    "R317": [RR + "TestIssueLifecycle.test_status_goes_open_answered_resolved",
+             RR + "TestIssueLifecycle.test_assigner_role_is_set_by_msm"],
+    "R318": RR + "TestIssueLifecycle.test_assignee_may_resolve_without_answering",
+    "R319": "tests/test_requirements_msm.py:TestLoopRecord."
+            "test_resume_is_allowed_once_the_blocking_escalation_is_answered",
 }
 
 PENDING = set()

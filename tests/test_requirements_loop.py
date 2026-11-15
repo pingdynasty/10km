@@ -26,9 +26,14 @@ class TestStatus(LoopCase):
         with self.m() as m:
             m.create("issue", {"type": "escalation", "title": "help", "severity": "blocking",
                                "assignee_role": "operator"})
+            answered = m.create("issue", {"type": "escalation", "title": "which way",
+                                          "assignee_role": "operator"})
+            m.update("issue", answered["id"], {"status": "answered", "resolution": "left"})
         text = status.report(self.cfg)
         for expected in ("Loop: running, phase plan, cycle 0", f"{op} (done)",
-                         "Open escalations: 1", "[blocking] help", "project:"):
+                         "Open escalations: 1", "[blocking] help",
+                         "Answered issues, awaiting follow-up: 1",
+                         "[escalation] which way  -> operator", "project:"):
             self.assertIn(expected, text)
 
 

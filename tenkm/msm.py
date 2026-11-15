@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 EINVAL, EPERM, ENOENT = 1, 2, 3
 
 ROLES = ("planner", "worker", "curator", "auditor", "operator")
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE loop (
@@ -74,14 +74,16 @@ CREATE TABLE issues (
   type TEXT NOT NULL CHECK (type IN ('escalation','backlog')),
   title TEXT NOT NULL,
   description TEXT,
-  owner_session TEXT,
+  assigner_session TEXT,
+  assigner_role TEXT NOT NULL
+    CHECK (assigner_role IN ('planner','curator','auditor','operator','worker')),
   assignee_role TEXT CHECK (assignee_role IN ('planner','curator','auditor','operator')),
-  resolver_role TEXT CHECK (resolver_role IN ('planner','curator','auditor','operator')),
   severity TEXT NOT NULL DEFAULT 'low' CHECK (severity IN ('low','high','blocking')),
   urgent_if TEXT,
-  status TEXT NOT NULL CHECK (status IN ('open','resolved')),
+  status TEXT NOT NULL CHECK (status IN ('open','answered','resolved')),
   branch TEXT,
   created_at TEXT NOT NULL,
+  answered_at TEXT,
   resolved_at TEXT,
   resolution TEXT);
 CREATE TABLE audits (
@@ -99,10 +101,10 @@ RESOURCES = {
                  update=("shortname", "instructions", "branch", "report", "status")),
     "cycle": dict(table="cycles", key="id", update=("headline", "report")),
     "issue": dict(table="issues", key="id",
-                  create=("type", "title", "description", "owner_session", "assignee_role",
-                          "resolver_role", "severity", "urgent_if", "branch"),
+                  create=("type", "title", "description", "assigner_session", "assignee_role",
+                          "severity", "urgent_if", "branch"),
                   required=("type", "title"),
-                  update=("title", "description", "assignee_role", "resolver_role", "severity",
+                  update=("title", "description", "assignee_role", "severity",
                           "urgent_if", "status", "branch", "resolution")),
     "audit": dict(table="audits", key="id", create=("period", "summary"),
                   required=("period", "summary"), update=("period", "summary")),
@@ -110,6 +112,17 @@ RESOURCES = {
 
 HIDDEN = {"seq"}
 USERNAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+# The role in a session name, as session_create makes it.
+SESSION_ROLE = re.compile(r"^(?:cycle\d+-(planner|curator|worker)\d*|(auditor)\d+|(operator))-")
+UNRESOLVED = ("open", "answered")
+
+
+def role_of(name):
+    """The role in session name `name`; operator when there is no name, None if unknown."""
+    if not name:
+        return "operator"
+    match = SESSION_ROLE.match(name)
+    return next((g for g in match.groups() if g), None) if match else None
 
 
 class MSMError(Exception):
@@ -278,12 +291,13 @@ class MSM:
         return to_dict(self.loop())
 
     def check_no_blocking_escalation(self):
-        """Refuse while a blocking escalation assigned to the operator is open."""
+        """Refuse while a blocking escalation assigned to the operator is open; an
+        answered one doesn't count (R313)."""
         row = self.one("SELECT id FROM issues WHERE type = 'escalation' AND status = 'open' "
                        "AND severity = 'blocking' AND assignee_role = 'operator' LIMIT 1")
         if row is not None:
             raise MSMError(EPERM, f"blocking operator escalation {row['id']} is open: "
-                                  "resolve it before resuming")
+                                  "answer it before resuming")
 
     def loop_stop(self, reason):
         """Stop the loop; the reason is required (R41, R76)."""
@@ -556,7 +570,9 @@ class MSM:
             raise MSMError(EINVAL, f"missing fields: {', '.join(missing)}")
         t = now()
         if res == "issue":
-            row = dict(data, id=str(uuid.uuid4()), status="open", created_at=t)
+            session = data.get("assigner_session") or self.caller
+            row = dict(data, id=str(uuid.uuid4()), assigner_session=session,
+                       assigner_role=self.assigner_role(session), status="open", created_at=t)
         else:
             if not isinstance(data["period"], dict) or set(data["period"]) != {"from", "to"}:
                 raise MSMError(EINVAL, "period must be {from, to}")
@@ -573,14 +589,23 @@ class MSM:
         self.log(f"{res} create", id=row["id"])
         return to_dict(self.get_row(res, row["id"]))
 
+    def assigner_role(self, session):
+        """The role of the session raising an issue: its record's role, else the role in
+        its name; operator when there is no session (R314-R317)."""
+        row = self.one("SELECT role FROM sessions WHERE name = ?", session) if session else None
+        role = row["role"] if row else role_of(session)
+        if role is None:
+            raise MSMError(EINVAL, f"no role in session name {session}")
+        return role
+
     def update(self, res, key, data):
         self.check_caller()
         self.check_fields(data, RESOURCES[res]["update"])
         self.get_row(res, key)
         if res == "cycle":
             self.check_open(key)
-        if res == "issue" and data.get("status") == "resolved":
-            data["resolved_at"] = now()
+        if res == "issue" and data.get("status") in ("answered", "resolved"):
+            data[f"{data['status']}_at"] = now()
         if res == "audit" and "period" in data:
             data["period"] = json.dumps(data["period"])
         self.update_row(res, key, data)
@@ -590,8 +615,8 @@ class MSM:
     def remove(self, res, key):
         self.check_caller()
         row = self.get_row(res, key)
-        if res == "issue" and row["status"] == "open":
-            raise MSMError(EPERM, "open issues cannot be removed")
+        if res == "issue" and row["status"] in UNRESOLVED:
+            raise MSMError(EPERM, f"{row['status']} issues cannot be removed")
         spec = RESOURCES[res]
         self.db.execute(f"DELETE FROM {spec['table']} WHERE {spec['key']} = ?", (key,))
         self.log(f"{res} remove", id=key)
@@ -642,7 +667,32 @@ def migrate(db):
     loop_cols = {r[1] for r in db.execute("PRAGMA table_info(loop)")}
     if "empty_cycles" not in loop_cols:
         db.execute("ALTER TABLE loop ADD COLUMN empty_cycles INTEGER NOT NULL DEFAULT 0")
+    if "assigner_role" not in {r[1] for r in db.execute("PRAGMA table_info(issues)")}:
+        migrate_issues(db)
     db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+
+def migrate_issues(db):
+    """Rebuild the issues table for status answered, answered_at, assigner_session and
+    assigner_role (SQLite can't alter a CHECK). owner_session becomes assigner_session,
+    assigner_role comes from its name, and resolver_role is dropped."""
+    table = SCHEMA[SCHEMA.index("CREATE TABLE issues"):]
+    table = table[:table.index(";")]
+    if not db.execute("SELECT name FROM sqlite_master WHERE name = 'issues'").fetchone():
+        db.execute(table)
+        return
+    db.execute(table.replace("TABLE issues", "TABLE issues_new"))
+    rows = db.execute("SELECT * FROM issues").fetchall()
+    for row in rows:
+        old = dict(row)
+        session = old.pop("owner_session", None) or None
+        old.pop("resolver_role", None)
+        new = dict(old, assigner_session=session,
+                   assigner_role=role_of(session) or "operator", answered_at=None)
+        db.execute(f"INSERT INTO issues_new ({', '.join(new)}) "
+                   f"VALUES ({', '.join('?' for _ in new)})", tuple(new.values()))
+    db.execute("DROP TABLE issues")
+    db.execute("ALTER TABLE issues_new RENAME TO issues")
 
 
 def connect(path=None, create=False):
@@ -715,7 +765,14 @@ USAGE = """usage: msm <command>
   issue|audit create <json>
   issue|audit get|remove <id>
   issue|audit list [filter]
-  issue|audit update <id> <json>"""
+  issue|audit update <id> <json>
+
+A filter is a JSON object of field values, e.g. answered issues raised by Planners:
+  issue list '{"status":"answered","assigner_role":"planner"}'
+An unknown field is EINVAL; an unknown value matches nothing.
+Issue status goes open, answered (sets answered_at), resolved (sets
+resolved_at). msm sets assigner_session to the caller unless given, and
+assigner_role from it (operator without a session)."""
 
 
 def run(m, argv):
