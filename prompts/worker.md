@@ -8,7 +8,7 @@ You carry out one task.
    `git rebase <base>`. Then record your branch on the task:
    `msm task update --session <session> '{"branch": "<session>"}'`.
 4. Do the work and commit to your session branch. Then run `gate worker` and fix
-   what fails; it refuses to run on uncommitted changes.
+   what fails.
 5. Write a short report: `msm task update --session <session> '{"report": "..."}'`.
 6. Finish with `msm session done <session>`.
 

@@ -86,58 +86,106 @@ class TestContributionPass(CurateCase):
         with self.as_session(cur):
             curate.prepare(self.cfg)
             self.assertEqual([s["name"] for s in curate.select(self.cfg)], [op])
-            self.assertEqual(curate.merge(self.cfg, [op])["merged"], [op])
+            self.assertEqual(curate.merge(self.cfg, [op])["applied"], [op])
             self.assertIsNone(curate.publish(self.cfg)["cycle"])
-            curate.cleanup(self.cfg)
+            out = curate.cleanup(self.cfg)
+        self.assertEqual(out["unpublished_removed"], [])
         self.assertEqual(self.central("project", "goal.txt"), "hello")
         with self.m() as m:
             self.assertEqual([s["name"] for s in m.list("session")], [cur])
 
 
-class TestCyclePass(CurateCase):
-    def test_conflict_rerun_rebuild_and_close(self):
-        planner, (w1, w2) = self.cycle_with_workers(("f.txt", "one"), ("f.txt", "two"))
-        cur = self.curator()
-        with self.as_session(cur):
-            curate.prepare(self.cfg)
-            chosen = {s["name"] for s in curate.select(self.cfg)}
-            self.assertEqual(chosen, {planner, w1, w2})
-            result = curate.merge(self.cfg, [planner, w1, w2])
-            self.assertEqual(result["conflicts"][0]["session"], w2)
-            self.assertEqual(result["remaining"], [])
-            self.assertEqual(result["conflicts"][0]["files"], ["f.txt"])
-            wt = os.path.join(self.root, cur, "project")
-            subprocess.run(["git", "-C", wt, "checkout", "--ours", "f.txt"], check=True)
-            subprocess.run(["git", "-C", wt, "add", "f.txt"], check=True)
-            subprocess.run(["git", "-C", wt, "commit", "-q", "--no-edit"], check=True)
-            again = curate.merge(self.cfg, [planner, w1, w2])
-            self.assertEqual(set(again["skipped"]), {planner, w1, w2})
-            rebuilt = curate.rebuild(self.cfg, [w2])
-            self.assertEqual(rebuilt["excluded"], [w2])
-            with self.assertRaises(curate.CurateError):  # w1's done task needs a verdict
-                curate.publish(self.cfg, "r", accepted=[], rejected=[w2])
-            out = curate.publish(self.cfg, "r", accepted=[w1], rejected=[w2])
-            self.assertEqual(out["cycle"], 1)
-            curate.cleanup(self.cfg)
-        self.assertEqual(self.central("project", "f.txt"), "one")
-        with self.m() as m:
-            c = m.cycle_get(1)
-            self.assertEqual(c["status"], "closed")
-            self.assertEqual(sorted(t["status"] for t in c["tasks"]), ["accepted", "rejected"])
-            m.session_status(cur, "done")
-            self.assertEqual(m.loop_get()["phase"], "plan")
+class TestDeclarativeMerge(CurateCase):
+    def edit_and_rerun(self, cur, words, path, text):
+        with open(os.path.join(self.root, cur, "project", path), "w") as f:
+            f.write(text)
+        return curate.merge(self.cfg, words)
 
-    def test_clean_only_skips_conflicting_session(self):
+    def test_conflict_resolve_by_editing_and_rerun(self):
         planner, (w1, w2) = self.cycle_with_workers(("f.txt", "one"), ("f.txt", "two"))
         cur = self.curator()
         with self.as_session(cur):
             curate.select(self.cfg)
-            curate.merge(self.cfg, [planner, w1])
-            result = curate.merge(self.cfg, [w2], clean_only=True)
-        self.assertEqual(result["not_clean"], [w2])
+            words = [planner, w1, w2]
+            result = curate.merge(self.cfg, words)
+            conflict = result["conflict"]
+            self.assertEqual((conflict["item"], conflict["files"]), (w2, ["f.txt"]))
+            self.assertIn("curate-merge", conflict["instructions"])
+            again = curate.merge(self.cfg, words)  # markers still there: same report
+            self.assertEqual(again["conflict"]["item"], w2)
+            done = self.edit_and_rerun(cur, words, "f.txt", "both")
+            self.assertIsNone(done["conflict"])
+            curate.publish(self.cfg, "r", accepted=[w1, w2])
+        self.assertEqual(self.central("project", "f.txt"), "both")
+        with self.m() as m:
+            self.assertEqual({t["status"] for t in m.cycle_get(1)["tasks"]}, {"accepted"})
+
+    def test_agent_can_finish_the_merge_itself(self):
+        planner, (w1, w2) = self.cycle_with_workers(("f.txt", "one"), ("f.txt", "two"))
+        cur = self.curator()
         wt = os.path.join(self.root, cur, "project")
-        self.assertEqual(subprocess.run(["git", "-C", wt, "status", "--porcelain"],
-                                        capture_output=True, text=True).stdout, "")
+        with self.as_session(cur):
+            curate.select(self.cfg)
+            curate.merge(self.cfg, [planner, w1, w2])
+            subprocess.run(["git", "-C", wt, "checkout", "--theirs", "f.txt"], check=True)
+            subprocess.run(["git", "-C", wt, "add", "f.txt"], check=True)
+            subprocess.run(["git", "-C", wt, "commit", "-q", "--no-edit"], check=True)
+            self.assertIsNone(curate.merge(self.cfg, [planner, w1, w2])["conflict"])
+        with open(os.path.join(wt, "f.txt")) as f:
+            self.assertEqual(f.read(), "two")
+
+    def test_leaving_an_item_out_rebuilds_and_keeps_own_commits_and_resolutions(self):
+        planner, (w1, w2, w3) = self.cycle_with_workers(
+            ("f.txt", "one"), ("f.txt", "two"), ("g.txt", "three"))
+        cur = self.curator()
+        with self.as_session(cur):
+            curate.select(self.cfg)
+            words = [planner, w1, w2, w3]
+            curate.merge(self.cfg, words)
+            self.edit_and_rerun(cur, words, "f.txt", "both")
+            self.commit(cur, "loop", "PLAN.md", "updated plan", "Update plan")
+            out = curate.merge(self.cfg, [planner, w1, w3])  # drop w2
+            self.assertIsNone(out["conflict"])
+            curate.merge(self.cfg, words)  # put w2 back: the resolution is replayed
+        wt = os.path.join(self.root, cur)
+        with open(os.path.join(wt, "project", "f.txt")) as f:
+            self.assertEqual(f.read(), "both")
+        with open(os.path.join(wt, "loop", "PLAN.md")) as f:
+            self.assertEqual(f.read(), "updated plan")
+        with open(os.path.join(wt, "project", "g.txt")) as f:
+            self.assertEqual(f.read(), "three")
+
+    def test_dropping_the_conflicting_item_abandons_its_merge(self):
+        planner, (w1, w2) = self.cycle_with_workers(("f.txt", "one"), ("f.txt", "two"))
+        cur = self.curator()
+        with self.as_session(cur):
+            curate.select(self.cfg)
+            curate.merge(self.cfg, [planner, w1, w2])
+            self.assertIsNone(curate.merge(self.cfg, [planner, w1])["conflict"])
+            curate.publish(self.cfg, "r", accepted=[w1], rejected=[w2])
+        self.assertEqual(self.central("project", "f.txt"), "one")
+
+    def test_partial_acceptance_by_commit(self):
+        planner, (w1,) = self.cycle_with_workers(("a.txt", "a"))
+        self.commit(w1, "project", "b.txt", "b", "second change")
+        sha = subprocess.run(["git", "-C", self.cfg.repo_path("project"), "rev-parse", w1],
+                             capture_output=True, text=True).stdout.strip()
+        cur = self.curator()
+        with self.as_session(cur):
+            curate.select(self.cfg)
+            out = curate.merge(self.cfg, [planner, sha[:10]])
+            self.assertIsNone(out["conflict"])
+            curate.publish(self.cfg, "r", accepted=[w1])
+        self.assertEqual(self.central("project", "b.txt"), "b")
+        self.assertIsNone(self.central("project", "a.txt"))
+
+    def test_unknown_item_is_an_error(self):
+        self.start_loop()
+        cur = self.curator()
+        with self.as_session(cur):
+            curate.select(self.cfg)
+            with self.assertRaises(curate.CurateError):
+                curate.merge(self.cfg, ["no-such-session"])
 
 
 class TestRefusals(CurateCase):
@@ -242,26 +290,7 @@ class TestReviewFindings(CurateCase):
         subprocess.run(["git", "-C", wt, "add", path], check=True)
         subprocess.run(["git", "-C", wt, "commit", "-q", "--no-edit"], check=True)
 
-    def test_rebuild_keeps_sessions_after_a_conflict_and_reruns_finish(self):
-        planner, (w1, w2, w3, w4) = self.cycle_with_workers(
-            ("f.txt", "one"), ("f.txt", "two"), ("f.txt", "three"), ("g.txt", "four"))
-        cur = self.curator()
-        with self.as_session(cur):
-            curate.select(self.cfg)
-            names = [planner, w1, w2, w3, w4]
-            while curate.merge(self.cfg, names)["conflicts"]:
-                self.resolve_ours(cur, "project", "f.txt")
-            result = curate.rebuild(self.cfg, [w2])
-            while result["conflicts"]:
-                self.assertIn(w4, result["remaining"] + [result["conflicts"][0]["session"]])
-                self.resolve_ours(cur, "project", "f.txt")
-                result = curate.rebuild(self.cfg, [w2])
-            self.assertEqual(set(curate.Curation(self.cfg).load()["merged"]),
-                             {planner, w1, w3, w4})
-            curate.publish(self.cfg, "r", accepted=[w1, w3, w4], rejected=[w2])
-        self.assertEqual(self.central("project", "g.txt"), "four")
-
-    def test_publish_refuses_unfinished_merge_and_unmerged_or_excluded_accepts(self):
+    def test_publish_refuses_an_unfinished_merge(self):
         planner, (w1, w2) = self.cycle_with_workers(("f.txt", "one"), ("f.txt", "two"))
         cur = self.curator()
         with self.as_session(cur):
@@ -269,13 +298,9 @@ class TestReviewFindings(CurateCase):
             curate.merge(self.cfg, [planner, w1, w2])  # w2 conflicts, unresolved
             with self.assertRaises(curate.CurateError):
                 curate.publish(self.cfg, "r", accepted=[w1, w2])
-            subprocess.run(["git", "-C", os.path.join(self.root, cur, "project"),
-                            "merge", "--abort"], check=True)
-            with self.assertRaises(curate.CurateError):  # w2 isn't merged
-                curate.publish(self.cfg, "r", accepted=[w1, w2])
         self.assertIsNone(self.central("project", "f.txt"))
 
-    def test_cleanup_refuses_before_publish(self):
+    def test_cleanup_before_publish_reports_unpublished_work(self):
         op = sessions.create(self.cfg, "operator", "mars")["name"]
         self.commit(op, "project", "x.txt", "x")
         with self.m() as m:
@@ -284,21 +309,20 @@ class TestReviewFindings(CurateCase):
         cur = self.curator()
         with self.as_session(cur):
             curate.select(self.cfg)
-            curate.merge(self.cfg, [op])
-            with self.assertRaises(curate.CurateError):
-                curate.cleanup(self.cfg)
-        with self.m() as m:
-            self.assertEqual(m.get_row("session", op)["status"], "done")
+            out = curate.cleanup(self.cfg)
+        self.assertEqual(out["unpublished_removed"],
+                         [{"session": op, "repo": "project", "commits": 1}])
 
-    def test_gate_refuses_uncommitted_changes_and_exit_keeps_status(self):
+    def test_gate_on_uncommitted_changes_runs_uncached_and_exit_keeps_status(self):
         op = sessions.create(self.cfg, "operator", "mars")["name"]
         with self.m() as m:
             session = dict(m.get_row("session", op))
-        with open(os.path.join(self.root, op, "project", "ok"), "w") as f:
+        path = os.path.join(self.root, op, "project", "ok")
+        with open(path, "w") as f:
             f.write("x")
-        with self.assertRaises(gate.GateError):
-            gate.run_gate(self.cfg, session, "project", "test -f ok", 10)
-        os.remove(os.path.join(self.root, op, "project", "ok"))
+        self.assertEqual(gate.run_gate(self.cfg, session, "project", "test -f ok", 10)[0], "passed")
+        os.remove(path)
+        self.assertEqual(gate.run_gate(self.cfg, session, "project", "test -f ok", 10)[0], "failed")
         self.assertEqual(gate.run_gate(self.cfg, session, "project", "echo hi; exit 0", 10)[0],
                          "passed")
         self.assertEqual(gate.run_gate(self.cfg, session, "project", "set -e; false; true", 10)[0],
@@ -328,17 +352,6 @@ class TestReviewFindings(CurateCase):
         with self.as_session(cur), self.assertRaises(msm.MSMError):
             sessions.remove(self.cfg, other)
         self.assertTrue(os.path.isdir(os.path.join(self.root, other)))
-
-    def test_rebuild_refuses_to_drop_own_commits(self):
-        planner, (w1, w2) = self.cycle_with_workers(("a.txt", "a"), ("b.txt", "b"))
-        cur = self.curator()
-        with self.as_session(cur):
-            curate.select(self.cfg)
-            curate.merge(self.cfg, [planner, w1, w2])
-            self.commit(cur, "project", "fix.txt", "fix", "small fix")
-            with self.assertRaises(curate.CurateError):
-                curate.rebuild(self.cfg, [w2])
-            curate.rebuild(self.cfg, [w2], drop_own_commits=True)
 
     def test_merge_failure_without_conflict_is_an_error(self):
         planner, (w1,) = self.cycle_with_workers(("new.txt", "theirs"))
@@ -374,6 +387,4 @@ class TestReviewFindings(CurateCase):
         rc, _, _ = self.run_step(cur, "merge", planner, w1, w2)
         self.assertEqual(rc, curate.EXIT_CONFLICT)
         rc, _, _ = self.run_step(cur, "merge", "no-such-session")
-        self.assertEqual(rc, 0)  # nothing to merge
-        rc, _, _ = self.run_step(cur, "publish")
         self.assertEqual(rc, curate.EXIT_ERROR)

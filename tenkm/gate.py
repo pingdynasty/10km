@@ -13,7 +13,8 @@ session's scratch directory.
   to GATE_WAIT seconds, and rerunning it waits on the same run.
 - Every run's log is kept as evidence and never overwritten.
 
-Gates refuse to run on uncommitted changes: commit first, so a pass belongs to a tree.
+A pass is only cached for committed work: with uncommitted changes the gate runs
+but its result isn't reused.
 
 Exit status: 0 all passed, 1 a gate failed, 2 refused, 3 still running (rerun to wait).
 """
@@ -29,10 +30,6 @@ from .launchers import process
 from .locks import lock
 
 EXIT_FAILED, EXIT_RUNNING = 1, 3
-
-
-class GateError(Exception):
-    pass
 
 
 def gates(cfg, tier):
@@ -86,16 +83,19 @@ def _new_log(evidence, name):
 def run_gate(cfg, session, repo, command, wait):
     """Run one gate. Returns (status, log): status 'passed', 'skipped', 'failed', 'running'."""
     cwd = os.path.join(session["working_directory"], repo)
-    if gitutil.git(cfg, cwd, "status", "--porcelain"):
-        raise GateError(f"{repo} has uncommitted changes; commit them, then run the gate")
+    # A pass is cached against the commit's tree; with uncommitted changes the
+    # result doesn't belong to that tree, so the cache is neither used nor updated.
+    cacheable = not gitutil.git(cfg, cwd, "status", "--porcelain")
     tree = gitutil.git(cfg, cwd, "rev-parse", "HEAD^{tree}")
     key = f"{hashlib.sha1(command.encode()).hexdigest()[:12]}-{tree[:12]}"
+    if not cacheable:
+        key += f"-dirty-{session['name']}"
     evidence = _evidence(cfg)
     passed_path = os.path.join(evidence, "passed.json")
     running_path = os.path.join(evidence, f"running-{key}.json")
     with lock(cfg, "gate"):
         passed = _load(passed_path, {})
-        if key in passed:
+        if cacheable and key in passed:
             return "skipped", passed[key]
         run = _load(running_path, None)
         if run is None or os.path.exists(run["rc"]) and _rc(run) != 0:
@@ -127,9 +127,10 @@ def run_gate(cfg, session, repo, command, wait):
         time.sleep(1)
     with lock(cfg, "gate"):
         if _rc(run) == 0:
-            passed = _load(passed_path, {})
-            passed[key] = run["log"]
-            _save(passed_path, passed)
+            if cacheable:
+                passed = _load(passed_path, {})
+                passed[key] = run["log"]
+                _save(passed_path, passed)
             try:
                 os.remove(running_path)
             except FileNotFoundError:
@@ -173,11 +174,7 @@ def main(argv):
     wait = cfg.int("GATE_WAIT", 1500)
     results, status = [], 0
     for repo, command in gates(cfg, argv[0]):
-        try:
-            state, log = run_gate(cfg, session, repo, command, wait)
-        except GateError as e:
-            print(str(e), file=sys.stderr)
-            return 2
+        state, log = run_gate(cfg, session, repo, command, wait)
         results.append({"repo": repo, "command": command, "result": state, "log": log})
         if state == "running":
             status = EXIT_RUNNING
