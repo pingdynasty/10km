@@ -114,6 +114,24 @@ class InitHooksTest(unittest.TestCase):
         self.commit()
         self.assertIn("Loop-Session: s1", self.message())
 
+    def test_chains_repo_hooks_dir_and_relative_hooks_path(self):
+        self.make_loop()
+        repo_hooks = os.path.join(self.project, ".git", "hooks")
+        os.makedirs(repo_hooks, exist_ok=True)
+        self.inherited = repo_hooks
+        self.write_hook("pre-commit", f"echo repo >> '{self.marker}'")
+        self.loop.ok("10km", "init")
+        self.commit()
+        with open(self.global_config, "w") as f:
+            f.write("[core]\n\thooksPath = .githooks\n")
+        self.inherited = os.path.join(self.project, ".githooks")
+        os.makedirs(self.inherited)
+        self.write_hook("pre-commit", f"echo relative >> '{self.marker}'")
+        self.loop.ok("10km", "init")
+        self.commit("s2")
+        with open(self.marker) as f:
+            self.assertEqual(f.read(), "repo\nrelative\n")
+
     def test_rerun_picks_up_new_inherited_hook(self):
         self.make_loop(self.inherited)
         self.assertEqual(self.generated(), ["prepare-commit-msg"])

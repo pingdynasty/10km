@@ -61,11 +61,11 @@ def run(cfg):
 
 
 def _executables(d):
-    """The names of the executable files in dir d."""
+    """The names of the executable files in dir d; hook names have no dot (*.sample)."""
     if not d or not os.path.isdir(d):
         return set()
-    return {n for n in os.listdir(d)
-            if os.path.isfile(os.path.join(d, n)) and os.access(os.path.join(d, n), os.X_OK)}
+    return {n for n in os.listdir(d) if "." not in n
+            and os.path.isfile(os.path.join(d, n)) and os.access(os.path.join(d, n), os.X_OK)}
 
 
 def _hook_script(own, inherited):
@@ -109,8 +109,11 @@ def install_hooks(cfg, path, hooks):
     local = values.get("local", "")
     if local and not _same_dir(local, gen):
         return
-    inherited = values.get("global") or values.get("system", "")
-    if inherited and _same_dir(inherited, gen):
+    # Chain what git would run without us: the global or system hooksPath (relative
+    # to the worktree, as git resolves it), else the repo's own hooks dir.
+    inherited = values.get("global") or values.get("system") or os.path.join(common, "hooks")
+    inherited = os.path.join(path, inherited)
+    if _same_dir(inherited, gen):
         inherited = ""
     write_hooks(gen, hooks, inherited)
     if not local:
