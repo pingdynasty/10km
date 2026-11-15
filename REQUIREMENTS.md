@@ -17,7 +17,7 @@ Status: Get a project status report
 ## Git Repositories and File System
 There is one loop repo, and one or more project repos configured at kickoff.
 The loop repo contains its scripts and prompts, the plan, goals, deliverables, BACKLOG.md, LEARNINGS.md, NOTIFICATIONS.md. The database is in a container volume.
-Configuration (project repos, agent commands, time-outs, auditor schedule, notification action, backlog size, max workers) is in `config.env` in the loop repo. Scripts read it from the central loop worktree.
+Configuration (project repos, agent commands, time-outs, auditor cycles and interval, notification action, backlog size, max workers, validation gates, idle cycle limit) is in `config.env` in the loop repo. Scripts read it from the central loop worktree.
 The operator may provide one or more pre-existing project repos for the loop to work on.
 If not, a new project repo is created during kickoff.
 Each session has a directory with git worktrees and scratch files.
@@ -86,11 +86,10 @@ The state machine returns exit status:
 - 3 (ENOENT) if a resource is not found
 
 ### Side effects:
-0. `msm init` creates the database with current_cycle = 0, last_audit = 0, phase = curate, stopped = true. It fails if the database exists.
 1. Creating a Worker session claims the first waiting task: sets `session`, `started_at`, `status: active`.
 2. Updating a Worker session to done|expired sets its task to the same status and sets `done_at`.
 3. Removing a Worker session whose task is still `active` returns that task to `waiting`, clearing `session` and `started_at`.
-4. `cycle create` requires phase = plan and not stopped. It increments the cycle and creates the tasks. If phase = plan and the current cycle is open, it replaces that cycle and its tasks instead.
+4. `cycle create` requires phase = plan and not stopped. It increments the cycle and creates the tasks. If phase = plan and the current cycle is open, it replaces that cycle and its tasks instead. It sets `empty_cycles` to the previous value + 1 if tasks is empty, or 0 otherwise.
 5. `cycle curate` closes the cycle.
 6. `loop start` sets stopped = false, reason = null.
 7. `loop resume` sets stopped = false, reason = null.
@@ -102,6 +101,7 @@ Curating a Cycle sets `curated_at` and `status: closed`.
 Creating a Task sets `cycle`, `status: waiting`, and `created_at`.
 Updating a Task to `status: accepted|rejected` sets `curated_at`.
 Creating an Audit sets `id: (Loop.last_audit + 1)`, `created_at`, and `Loop.last_audit = id`.
+`msm init` sets `current_cycle = 0`, `last_audit = 0`, `empty_cycles = 0`, phase = curate, stopped = true.
 
 ### Role Preconditions
 - Planner: phase = plan, not stopped, no active Planner.
@@ -114,6 +114,7 @@ Creating an Audit sets `id: (Loop.last_audit + 1)`, `created_at`, and `Loop.last
 ```
 Loop    { current_cycle: number,
 	      last_audit: number,
+	      empty_cycles: number,
 	      phase: plan|execute|curate, 
           stopped: boolean,
 		  reason: string|null,
@@ -224,10 +225,10 @@ If the phase is:
   plan    -> launch Planner   (fails harmlessly if one is active)
   execute -> launch Workers while launches succeed, up to max workers active
   curate  -> launch Curator   (fails harmlessly if one is active)
-It launches an auditor if it is due. The auditor is configured to run at a fixed time or interval.
+It launches an Auditor if the number of cycles closed since the last audit has reached the limit in config.env, or more than the configured time has passed since the last audit. The first Auditor runs only after a cycle has been curated.
 To launch a role, it attempts to create a session. If it fails with EAGAIN (4) it tries again, up to 3 times.
 If it succeeds it reads the role prompt.
-It launches a non-interactive agent session with the prompt and session name, and records the process pid in the session.
+It writes the role prompt to a file in the session directory, launches a non-interactive agent session with the prompt file path and session name in the environment, and records the process pid in the session.
 The agent command can be configured for the loop, or specialised for each role:
 `LOOP|PLANNER|WORKER|CURATOR|AUDITOR_AGENT=...`
 `LOOP_AGENT="pi --no-session --name $SESSION -p $PROMPT"`
@@ -258,7 +259,7 @@ Issues from unmerged work (expired, incomplete, or rejected) should reference it
 
 ## Escalations
 Issues can be escalated by any role to the Planner, Auditor or Curator.
-Curator and Auditor can escalate to the operator.
+Planner, Curator and Auditor can escalate to the operator.
 The escalation prompt tells agents how to write an operator escalation.
 
 ## Backlog
@@ -284,8 +285,7 @@ It sets its session to done (sets phase = execute, or curate if there are no tas
 
 ## Worker
 It is launched with its session name. It reads its session and its task.
-It rebases its session branch on the task branch (this is either the Planner branch or the branch of a backlog item).
-It updates the task branch to its session branch.
+In each repo, it rebases its session branch on the task's base branch: the Planner session for new tasks, or a backlog item's branch for continuations. It then sets the task's `branch` field to its session name.
 The worker agent performs the work in the worktree, and commits to the session branch.
 When finished, it sets the session to done (this also sets the task to done).
 
@@ -304,10 +304,10 @@ It selects and returns the sessions to curate, either:
 Note: A session is inactive if its status is done or expired.
 Note: Operator and Auditor work gets its own pass, so the cycle is curated with fresh context against the updated goals and prompts.
 
-Step 3: Triage
-It merges done sessions into the Curator session, resolving conflicts.
-It triages expired sessions: 
-- complete work is accepted if it merges cleanly into the Curator session
+Step 3: Triage (script `curate-merge`)
+The script merges done sessions into the Curator session, reporting conflicts.
+The agent resolves reported conflicts, then triages expired sessions:
+- complete work is merged by rerunning `curate-merge` with the session; it is kept if the merge is clean
 - incomplete work is either backlogged or discarded
 
 Step 4: Read
@@ -320,13 +320,9 @@ For each done or accepted expired Worker session:
 - accept or reject the task, in whole or in part
 
 Step 6: Validate
-It runs CI, tests and validation gates.
-It troubleshoots failures, and may make small fixes.
-If any work fails it is rejected.
-For all work rejected in Step 5 or 6:
-- rebuild the Curator branch without rejected work
-- cherry-pick partially accepted work
-- re-validate
+It runs the validation gates listed in config.env, and may make small fixes to failing work.
+If any gate fails, it rejects the responsible work.
+For all work rejected in Step 5 or 6, it calls `curate-rebuild --without <sessions>` and re-validates. Partially accepted work is cherry-picked before re-validation.
 If operator work is rejected then the failure shall be escalated to the operator.
 If other work is rejected then it shall be either backlogged or discarded.
 
@@ -334,13 +330,12 @@ Step 7: Assess
 It evaluates milestones, goals and deliverables
 It may update the plan and backlog.
 It may resolve escalations.
-If the project is done, create a blocking operator escalation.
+If the project is done, or `Loop.empty_cycles` has reached the idle limit from config.env, create a blocking operator escalation with reason `done` or `idle`.
 If there are blocking operator escalations, notify the operator.
 
-Step 8: Publish
-It merges its branch into main.
-For each selected Worker session it updates its associated task status.
-If a Planner session was selected it closes the cycle with `cycle curate {curator_session, report}`.
+Step 8: Publish (script `curate-publish`)
+The script fast-forwards main onto the Curator branch in each project repo, then in the loop repo. It then runs the task status updates and, if a Planner session was selected, `cycle curate`, in one msm transaction. It is safe to rerun.
+The agent passes task verdicts and the cycle report as arguments.
 
 Step 9: Cleanup (script `curate-cleanup`)
 It updates central worktrees.
