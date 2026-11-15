@@ -10,6 +10,8 @@ FIELDS = RM + "TestResults.test_records_have_the_fields_of_the_state_block"
 LIST_UPDATE_REMOVE = RM + "TestCycles.test_list_update_and_remove"
 REPLACED = ("tests/test_requirements_roles.py:TestReplacedCycleCount."
             "test_a_replaced_cycle_does_not_count_as_an_idle_cycle")
+SCHEMA = ["tests/test_schema.py:TestSchema.test_committed_schema_is_current",
+          "tests/test_schema.py:TestSchema.test_schema_has_every_state_entry_and_its_types"]
 SESSION_CALLS = RM + "TestSessions.test_update_get_and_list_with_a_filter"
 SM = "tests/test_scenarios_more.py:"
 IDLE = SM + "TestIdleStop.test_idle_limit_of_empty_cycles_stops_the_loop"
@@ -90,15 +92,15 @@ MAP = {
     "R93": M + "test_audits_and_auditor_naming",
     "R94": RM + "TestSessions.test_operator_sessions_need_no_precondition",
     # State
-    "R95": FIELDS,
-    "R96": FIELDS,
-    "R97": FIELDS,
-    "R98": FIELDS,
-    "R99": FIELDS,
-    "R100": FIELDS,
-    "R101": RM + "TestCycles.test_create_and_curate_inputs_are_checked",
+    "R95": [FIELDS] + SCHEMA,
+    "R96": [FIELDS] + SCHEMA,
+    "R97": [FIELDS] + SCHEMA,
+    "R98": [FIELDS] + SCHEMA,
+    "R99": [FIELDS] + SCHEMA,
+    "R100": [FIELDS] + SCHEMA,
+    "R101": [RM + "TestCycles.test_create_and_curate_inputs_are_checked"] + SCHEMA,
     "R102": [RM + "TestCycles.test_create_and_curate_inputs_are_checked",
-             M + "test_cycle_curate_sets_verdicts_and_closed_cycle_is_frozen"],
+             M + "test_cycle_curate_sets_verdicts_and_closed_cycle_is_frozen"] + SCHEMA,
     "R103": RM + "TestTransactions.test_a_failing_call_changes_nothing",
     "R104": FIELDS,
     "R105": RM + "TestCycles.test_empty_cycles_counts_consecutive_empty_cycles",

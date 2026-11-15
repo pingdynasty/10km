@@ -1,0 +1,528 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "loopstate.schema.json",
+  "title": "10km loop state",
+  "description": "Generated from the State block of REQUIREMENTS.md by `python3 -m tenkm.schema`; don't edit by hand.",
+  "$defs": {
+    "Loop": {
+      "description": "Record (R95).",
+      "type": "object",
+      "properties": {
+        "current_cycle": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "last_audit": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "empty_cycles": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "phase": {
+          "enum": [
+            "plan",
+            "execute",
+            "curate",
+            null
+          ]
+        },
+        "stopped": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updated_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "current_cycle",
+        "last_audit",
+        "empty_cycles",
+        "phase",
+        "stopped",
+        "reason",
+        "updated_at"
+      ]
+    },
+    "Session": {
+      "description": "Record (R96).",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "enum": [
+            "planner",
+            "worker",
+            "curator",
+            "auditor",
+            "operator",
+            null
+          ]
+        },
+        "status": {
+          "enum": [
+            "active",
+            "done",
+            "expired",
+            null
+          ]
+        },
+        "handle": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "working_directory": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "name",
+        "role",
+        "status",
+        "handle",
+        "working_directory",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "Cycle": {
+      "description": "Record (R97).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "open",
+            "closed",
+            null
+          ]
+        },
+        "planner_session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "planned_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "headline": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "report": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "curator_session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "curated_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "planner_session",
+        "planned_at",
+        "headline",
+        "report",
+        "curator_session",
+        "curated_at"
+      ]
+    },
+    "Task": {
+      "description": "Record (R98).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "cycle": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "shortname": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "instructions": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "report": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "waiting",
+            "active",
+            "done",
+            "expired",
+            "accepted",
+            "rejected",
+            null
+          ]
+        },
+        "created_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "started_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "done_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "curated_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "cycle",
+        "shortname",
+        "instructions",
+        "branch",
+        "session",
+        "report",
+        "status",
+        "created_at",
+        "started_at",
+        "done_at",
+        "curated_at"
+      ]
+    },
+    "Issue": {
+      "description": "Record (R99).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "type": {
+          "enum": [
+            "escalation",
+            "backlog",
+            null
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "owner_session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "assignee_role": {
+          "enum": [
+            "planner",
+            "curator",
+            "auditor",
+            "operator",
+            null
+          ]
+        },
+        "resolver_role": {
+          "enum": [
+            "planner",
+            "curator",
+            "auditor",
+            "operator",
+            null
+          ]
+        },
+        "severity": {
+          "enum": [
+            "low",
+            "high",
+            "blocking",
+            null
+          ]
+        },
+        "urgent_if": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "open",
+            "resolved",
+            null
+          ]
+        },
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "resolved_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "resolution": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "title",
+        "description",
+        "owner_session",
+        "assignee_role",
+        "resolver_role",
+        "severity",
+        "urgent_if",
+        "status",
+        "branch",
+        "created_at",
+        "resolved_at",
+        "resolution"
+      ]
+    },
+    "Audit": {
+      "description": "Record (R100).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "period": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "from": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "to": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ]
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "created_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "period",
+        "summary",
+        "created_at"
+      ]
+    },
+    "CycleCreate": {
+      "description": "Input of `msm cycle create` (R101).",
+      "type": "object",
+      "properties": {
+        "planner_session": {
+          "type": "string"
+        },
+        "headline": {
+          "type": "string"
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "shortname": {},
+              "instructions": {},
+              "branch": {}
+            }
+          }
+        }
+      }
+    },
+    "CycleCurate": {
+      "description": "Input of `msm cycle curate` (R102).",
+      "type": "object",
+      "properties": {
+        "curator_session": {
+          "type": "string"
+        },
+        "report": {
+          "type": "string"
+        },
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {},
+              "status": {
+                "enum": [
+                  "accepted",
+                  "rejected"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
