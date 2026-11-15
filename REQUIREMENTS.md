@@ -222,8 +222,8 @@ When the Dispatcher is invoked, it reads the loop state.
 It checks for and expires timed out sessions.
 If the loop is stopped, it exits.
 If an inactive operator or Auditor session exists, it launches a Curator, whatever the phase.
-Otherwise, if the phase is:
-  plan    -> launch Planner   (fails harmlessly if one is active)
+Then, by phase:
+  plan    -> launch Planner
   execute -> launch Workers while launches succeed, up to max workers active
   curate  -> launch Curator
 Launches fail harmlessly if the role's preconditions are not met.
@@ -247,6 +247,7 @@ Notes:
 Expired Planners and Curators need no special rule. The phase hasn't moved, so the next dispatcher run relaunches them. The next Planner's `cycle create` replaces an open cycle.
 A Curator that crashes before Publish leaves main unchanged, and the next Curator redoes the pass. One that crashes after Publish has already merged its work, so redoing the pass changes nothing. Sessions left by a crash after Publish are removed by the next Clean up.
 The Curator doesn't wait for active operator and Auditor sessions to finish before launching.
+A failing Planner or Curator is relaunched until it succeeds.
 
 ### Resume
 Only the operator can resume a stopped loop: 

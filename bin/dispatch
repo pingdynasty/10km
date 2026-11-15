@@ -63,17 +63,15 @@ launch() {
 # Inactive operator or Auditor work is curated as soon as it is done, in any phase.
 pending=$("$MSM" session list |
   jq '[.[] | select(.status != "active" and (.role == "operator" or .role == "auditor"))] | length')
-if (( pending > 0 )); then
-  launch curator || true
-else
-  case $(jq -r .phase <<<"$loop") in
-    plan) launch planner || true ;;
-    curate) launch curator || true ;;
-    execute)
-      active=$("$MSM" session list '{"role":"worker","status":"active"}' | jq length)
-      while (( active < ${MAX_WORKERS:-4} )) && launch worker; do active=$((active + 1)); done ;;
-  esac
-fi
+(( pending > 0 )) && { launch curator || true; }
+
+case $(jq -r .phase <<<"$loop") in
+  plan) launch planner || true ;;
+  curate) launch curator || true ;;
+  execute)
+    active=$("$MSM" session list '{"role":"worker","status":"active"}' | jq length)
+    while (( active < ${MAX_WORKERS:-4} )) && launch worker; do active=$((active + 1)); done ;;
+esac
 
 curated=$("$MSM" cycle list '{"status":"closed"}')
 if [ "$(jq length <<<"$curated")" -gt 0 ]; then
