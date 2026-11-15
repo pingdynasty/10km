@@ -11,8 +11,13 @@ You carry out one task.
    `msm task update --session <session> '{"branch": "<session>"}'`.
 3. Do the work in your worktrees and commit to your session branch. Tests you add
    must never launch a real agent harness, except opt-in agent tests the gates skip.
+   Run directly only the test modules you touched; the full suite runs only
+   through `gate worker`.
 4. Run `gate worker`. Fix what fails, commit, and rerun until it passes
-   (exit 3 means still running: rerun to wait).
+   (exit 3 means still running: rerun to wait). Run it in the foreground; the
+   gate already runs detached, so don't background it in your tool. Your
+   session ends when your turn ends: never end a turn waiting on a background
+   task.
 5. Report what changed and anything left undone:
    `msm task update --session <session> '{"report": "..."}'`.
 6. Finish with `msm session done <session>` (this also sets the task to done).
