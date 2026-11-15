@@ -155,17 +155,13 @@ def parse_json(text, kind=dict):
 
 
 class MSM:
-    """The state machine over an open transaction.
-
-    caller is the calling agent's session name (LOOP_SESSION), or None for the
-    operator and the Dispatcher. Changes from an expired or removed session are
-    refused, and agents can't start, resume or update a stopped loop.
-    """
+    """The state machine over an open transaction. caller is the caller's session
+    name (LOOP_SESSION, R86), or None for the operator and the Dispatcher."""
 
     def __init__(self, db, caller=None):
         self.db = db
         self.caller = caller or None
-        self.actions = []  # action log lines, written after the transaction commits
+        self.actions = []  # action log lines (R89), written after the commit
 
     # --- callers -----------------------------------------------------------
     def caller_session(self):
@@ -174,7 +170,7 @@ class MSM:
         return self.one("SELECT * FROM sessions WHERE name = ?", self.caller)
 
     def check_caller(self):
-        """Refuse changes from an expired or removed session."""
+        """R87."""
         if self.caller is None:
             return
         s = self.caller_session()
@@ -186,9 +182,8 @@ class MSM:
         return s is not None and s["role"] != "operator"
 
     def check_loop_record(self):
-        """While the loop is stopped, only the operator changes the loop record."""
-        if self.loop()["stopped"] and (self.is_agent() or
-                                       (self.caller and self.caller_session() is None)):
+        """R88. Call after check_caller."""
+        if self.loop()["stopped"] and self.is_agent():
             raise MSMError(EPERM, "only the operator can change a stopped loop")
 
     def log(self, command, **detail):
@@ -281,8 +276,7 @@ class MSM:
         return to_dict(self.loop())
 
     def check_no_blocking_escalation(self):
-        """Refuse while a blocking escalation assigned to the operator is open; an
-        answered one doesn't count (R313)."""
+        """R313."""
         row = self.one("SELECT id FROM issues WHERE type = 'escalation' AND status = 'open' "
                        "AND severity = 'blocking' AND assignee_role = 'operator' LIMIT 1")
         if row is not None:
@@ -311,7 +305,7 @@ class MSM:
         return self.one("SELECT 1 FROM sessions WHERE role = ? AND status = 'active'", role)
 
     def pending_contributions(self):
-        """Inactive operator or Auditor sessions: work the Curator can take in any phase."""
+        """Inactive operator or Auditor sessions (R91)."""
         return self.one("SELECT 1 FROM sessions WHERE role IN ('operator', 'auditor') "
                         "AND status != 'active'")
 
@@ -391,7 +385,7 @@ class MSM:
                                       (status, t, name)).rowcount
             if changed:
                 self.log(f"task {status}", worker=name)
-        # Phase transitions.
+        # Phase transitions (R109-R111).
         loop, cur = self.loop(), self.current_cycle()
         is_open = cur is not None and cur["status"] == "open"
         if role == "planner" and status == "done" and loop["phase"] == "plan" and is_open:

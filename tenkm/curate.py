@@ -1,17 +1,14 @@
-"""tenkm.curate: the Curator's deterministic steps.
+"""tenkm.curate: the Curator's scripted steps (R203-R259).
 
-    curate-prepare                     Step 1: remove leftover sessions
-    curate-select                      Step 2: choose the sessions to curate
-    curate-merge [ITEM...]             Step 3: make the Curator branch main plus the
-                                       items (sessions and commits), in order; no
-                                       items: main plus the Curator's own commits
+    curate-prepare                     Step 1 (R207)
+    curate-select                      Step 2 (R210)
+    curate-merge [ITEM...]             Step 3 (R216)
     curate-publish [--report TEXT | --report-file F] [--accepted S...] [--rejected S...]
-                                       Step 9: fast-forward main, close the cycle
-    curate-cleanup                     Step 10: remove the curated sessions
+                                       Step 9 (R249)
+    curate-cleanup                     Step 10 (R254)
 
-Every step runs as the Curator session in LOOP_SESSION and refuses to run unless
-that session is active. State between steps is kept in <session>/curation.json.
-Each step is safe to rerun.
+Every step runs as the Curator session in LOOP_SESSION (R205). State between steps
+is kept in <session>/curation.json. Each step is safe to rerun.
 
 Exit status: 0 done, 1 error, 2 refused (stop), 3 conflict (resolve, commit, rerun).
 """
@@ -120,6 +117,7 @@ def central_on_main(cfg, repo):
 
 # --- Step 1: prepare --------------------------------------------------------
 def prepare(cfg):
+    """R208, R209."""
     c = Curation(cfg)
     with msm.transaction(cfg.db) as m:
         all_sessions = m.list("session")
@@ -144,6 +142,7 @@ def prepare(cfg):
 
 # --- Step 2: select ---------------------------------------------------------
 def select(cfg):
+    """R211-R214."""
     c = Curation(cfg)
     with msm.transaction(cfg.db) as m:
         loop = m.loop_get()
@@ -210,10 +209,7 @@ def resolve_items(cfg, words):
 
 
 def merge(cfg, words):
-    """Make the Curator branch main plus the given items, in order, in every repo,
-    keeping the Curator's own commits. Stops at a conflict with instructions;
-    rerunning continues. A list that isn't an extension of the last one rebuilds;
-    an empty list leaves main plus the Curator's own commits."""
+    """R217-R223. A list that isn't an extension of the last one rebuilds."""
     c = Curation(cfg)
     selected = {s["name"] for s in c.load()["selection"] or []}
     empty = [w for w in words if w in selected and not branch_repos(cfg, w)]
@@ -506,10 +502,9 @@ def _verdicts(cfg, selection, accepted, rejected):
     return out
 
 
-# --- Step 9: cleanup --------------------------------------------------------
+# --- Step 10: cleanup -------------------------------------------------------
 def cleanup(cfg):
-    """Remove the selected sessions. Reports, per repo, removed branches with
-    commits that never reached main."""
+    """R256. Reports removed branches with commits that never reached main."""
     c = Curation(cfg)
     selection = c.selection()
     warnings = []

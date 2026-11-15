@@ -1,7 +1,7 @@
 """tenkm.gate: run the configured gates for a session.
 
     gate worker        WORKER_GATES (Workers, before done)
-    gate validation    VALIDATION_GATES (the Curator, Step 6)
+    gate validation    VALIDATION_GATES (the Curator, Step 7)
 
 Each gate is one line of the setting: `command`, or `repo: command` to run it in
 another repo's worktree (default: the first project repo). Gates run in the
@@ -83,8 +83,6 @@ def _new_log(evidence, name):
 def run_gate(cfg, session, repo, command, wait):
     """Run one gate. Returns (status, log): status 'passed', 'skipped', 'failed', 'running'."""
     cwd = os.path.join(session["working_directory"], repo)
-    # A pass is cached against the commit's tree; with uncommitted changes the
-    # result doesn't belong to that tree, so the cache is neither used nor updated.
     cacheable = not gitutil.git(cfg, cwd, "status", "--porcelain")
     tree = gitutil.git(cfg, cwd, "rev-parse", "HEAD^{tree}")
     key = f"{hashlib.sha1(command.encode()).hexdigest()[:12]}-{tree[:12]}"

@@ -62,11 +62,7 @@ class Config(dict):
         return [line.strip() for line in self.get(name, "").splitlines() if line.strip()]
 
     def projects(self):
-        """Project repo names: every git repo in central/ other than the loop repo.
-
-        The central worktrees are the source of truth for which repos the loop has;
-        each repo's own git config holds its settings (branch, author, remotes).
-        """
+        """Project repo names: every git repo in central/ other than the loop repo."""
         try:
             names = sorted(os.listdir(self.central))
         except OSError:
