@@ -10,12 +10,20 @@ prompts, scripts, plan, goals, deliverables, BACKLOG.md and LEARNINGS.md.
    audit, the loop start: the first commit with a trailer
    (`git log --reverse --grep='^Loop-Session:' --format=%cI main`, first line).
    `to` is now (`date -u +%Y-%m-%dT%H:%M:%SZ`).
-3. Gather the facts for the period, in each repo:
-   - Commits per session: `git log --since=<from> --format='%h %cI %(trailers:key=Loop-Session,valueonly,separator=%x2C) %s' main`.
-     The session name gives role and cycle, even after its branch is gone.
-   - Time per role and cycle: commit times, `msm cycle list` (planned_at,
-     curated_at) and `msm task list` (started_at, done_at).
-   - Harness metrics (tokens, credits), if the harness records them per session.
+3. Gather the facts for the period:
+   - Time, commits and harness metrics per role and cycle: `10km metrics --json`
+     (`--cycle N` for one cycle). `sessions` gives each session's role, cycle,
+     task, outcome, start, `duration_s`, `times_from`, commits on main per repo
+     and `usage` (agent time, turns, tokens, cost); `summary` totals them per
+     cycle and role; `notes` says what is missing. Durations with `times_from`
+     `actions` or `commits` (`~` in the text output) are activity windows, not
+     whole sessions. Harness metrics (tokens, cost) are there only if the
+     harness records them per session.
+   - Cross-checks, or fallbacks if metrics fails, in each repo: commits per
+     session: `git log --since=<from> --format='%h %cI %(trailers:key=Loop-Session,valueonly,separator=%x2C) %s' main`
+     (the session name gives role and cycle); time per role and cycle: commit
+     times, `msm cycle list` (planned_at, curated_at) and `msm task list`
+     (started_at, done_at).
    - Prompt sizes and growth: `wc -c prompts/*.md` and
      `git log --since=<from> --stat main -- prompts`.
    - Expired tasks (`msm task list '{"status":"expired"}'`), recurring ones,
