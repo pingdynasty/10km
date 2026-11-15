@@ -201,15 +201,21 @@ class MsmTest(unittest.TestCase):
         del self.env["LOOP_SESSION"]
         self.ok("session", "expired", b)
         self.ok("session", "remove", a)
+        p = self.ok("session", "create", "planner")["name"]
+        self.ok("session", "expired", p)
+        self.ok("session", "remove", p)
         with open(os.path.join(self.tmp.name, "actions.log")) as f:
             lines = [json.loads(x) for x in f.read().splitlines()]
-        got = [(x["command"], x["session"], x["name"], x["role"]) for x in lines
+        got = [(x["command"], x["session"], x["name"], x["role"], x["cycle"]) for x in lines
                if x["command"].startswith("session ")]
-        self.assertEqual(got, [("session create", None, a, "auditor"),
-                               ("session create", None, b, "operator"),
-                               ("session done", a, a, "auditor"),
-                               ("session expired", None, b, "operator"),
-                               ("session remove", None, a, "auditor")])
+        self.assertEqual(got, [("session create", None, a, "auditor", None),
+                               ("session create", None, b, "operator", None),
+                               ("session done", a, a, "auditor", None),
+                               ("session expired", None, b, "operator", None),
+                               ("session remove", None, a, "auditor", None),
+                               ("session create", None, p, "planner", 1),
+                               ("session expired", None, p, "planner", 1),
+                               ("session remove", None, p, "planner", 1)])
         self.assertTrue(all(x["at"] for x in lines))
 
     def test_stop_and_resume(self):
