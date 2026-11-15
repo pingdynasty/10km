@@ -28,7 +28,8 @@ MAP = {
     "R270": (A, "Expired tasks (`msm task list '{\"status\":\"expired\"}'`), recurring ones, "
                 "and long-running or expired sessions"),
     "R271": (A, "trim files that grew too large by summarising, culling or archiving"),
-    "R272": (A, "remove branches merged into main (`git branch --merged main`)"),
+    "R272": [(A, "remove branches merged into main (`git branch --merged <main>`)"),
+             (A, "Each repo merges into its own main branch, `git config tenkm.mainBranch`")],
     "R273": (A, "update role prompts"),
     "R274": (A, "the Planner to make smaller or bigger tasks or use fewer or more workers"),
     "R275": (A, "the Curator to relax or tighten validation"),

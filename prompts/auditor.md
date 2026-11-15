@@ -8,21 +8,24 @@ prompts, scripts, plan, goals, deliverables, BACKLOG.md and LEARNINGS.md.
    (`msm issue list '{"type":"escalation","status":"open"}'`) and answered issues
    raised by Auditors (`msm issue list '{"status":"answered","assigner_role":"auditor"}'`).
 2. Set the audit period. `from` is the last audit's `period.to`; for the first
-   audit, the loop start: the first commit with a trailer
-   (`git log --reverse --grep='^Loop-Session:' --format=%cI main`, first line).
-   `to` is now (`date -u +%Y-%m-%dT%H:%M:%SZ`).
+   audit, the loop start: the earliest session `start` in
+   `10km metrics --json --cycle 1` (repo histories may hold trailers from an
+   earlier loop, so don't take the first trailer). `to` is now
+   (`date -u +%Y-%m-%dT%H:%M:%SZ`).
+   Each repo merges into its own main branch, `git config tenkm.mainBranch` in
+   that repo (e.g. `loop`, not `main`); `<main>` below means that branch.
 3. Gather the facts for the period:
    - Time, commits and harness metrics per role and cycle: `10km metrics --json`
      (`--cycle N` for one cycle): `sessions` per session, `summary` per cycle and
-     role, `notes` for what is missing. Harness metrics (tokens and cost, or credits) are there
-     only if the harness records them per session.
+     role, `notes` for what is missing. Harness metrics (tokens and cost, or
+     credits) are there only if the harness records them per session.
    - Cross-checks, or fallbacks if metrics fails, in each repo: commits per
-     session: `git log --since=<from> --format='%h %cI %(trailers:key=Loop-Session,valueonly,separator=%x2C) %s' main`
+     session: `git log --since=<from> --format='%h %cI %(trailers:key=Loop-Session,valueonly,separator=%x2C) %s' <main>`
      (the session name gives role and cycle); time per role and cycle: commit
      times, `msm cycle list` (planned_at, curated_at) and `msm task list`
      (started_at, done_at).
    - Prompt sizes and growth: `wc -c prompts/*.md` and
-     `git log --since=<from> --stat main -- prompts`.
+     `git log --since=<from> --stat <main> -- prompts`.
    - Expired tasks (`msm task list '{"status":"expired"}'`), recurring ones,
      and long-running or expired sessions (`msm session list`).
    - Issues left answered for long (`msm issue list '{"status":"answered"}'`,
@@ -34,7 +37,7 @@ prompts, scripts, plan, goals, deliverables, BACKLOG.md and LEARNINGS.md.
    - trim files that grew too large by summarising, culling or archiving;
    - keep the shortnames (G1, DEL1, ESC1, PH1; `prompts/common.md`) consistent;
    - add scripts to bin/ that automate common agent tasks;
-   - remove branches merged into main (`git branch --merged main`), except main,
+   - remove branches merged into main (`git branch --merged <main>`), except main,
      branches of active sessions and branches referenced by unresolved issues.
 5. Instruct other roles through issues assigned to them, e.g. the Planner to make
    smaller or bigger tasks or use fewer or more workers, the Curator to relax or
