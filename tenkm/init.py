@@ -99,8 +99,10 @@ def write_hooks(gen, hooks, inherited):
 def install_hooks(cfg, path, hooks):
     """Point the repo at its generated hooks dir, unless its local core.hooksPath
     is set elsewhere. Reads config with --show-scope (git 2.26+)."""
-    _, out, _ = gitutil.run(cfg, path, "config", "--show-scope", "--type=path", "--get-all",
-                            "core.hooksPath")
+    rc, out, err = gitutil.run(cfg, path, "config", "--show-scope", "--type=path", "--get-all",
+                               "core.hooksPath")
+    if rc not in (0, 1):  # 1: not set
+        raise msm.MSMError(msm.EINVAL, f"10km init needs git 2.26 or later: {err}")
     values = dict(line.split("\t", 1) for line in out.splitlines() if "\t" in line)
     common = gitutil.git(cfg, path, "rev-parse", "--git-common-dir")
     gen = os.path.abspath(os.path.join(path, common, "tenkm-hooks"))

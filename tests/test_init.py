@@ -11,6 +11,9 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import testenv  # noqa: E402,F401  (test config, no caller env: tests/testenv.py)
 from test_scripts import ScriptLoop  # noqa: E402
+from unittest import mock  # noqa: E402
+
+from tenkm import gitutil, init, msm  # noqa: E402
 
 HOOK = "#!/bin/sh\n{}\n"
 
@@ -133,6 +136,15 @@ class InitHooksTest(unittest.TestCase):
         self.loop.ok("10km", "init")
         self.assertEqual(self.config("core.hooksPath"), self.inherited)
         self.assertEqual(self.generated(), ["prepare-commit-msg"])
+
+    def test_old_git_fails_without_touching_hooks_path(self):
+        self.make_loop()
+        self.loop.git(self.project, "config", "--local", "core.hooksPath", self.inherited)
+        old_git = (129, "", "error: unknown option `show-scope'")
+        with mock.patch.object(gitutil, "run", return_value=old_git):
+            with self.assertRaisesRegex(msm.MSMError, "git 2.26"):
+                init.install_hooks(None, self.project, self.inherited)
+        self.assertEqual(self.config("core.hooksPath"), self.inherited)
 
 
 if __name__ == "__main__":
