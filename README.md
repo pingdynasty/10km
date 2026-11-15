@@ -178,6 +178,44 @@ Commit everything before `session done`: the Curator merges commits only, and un
 | Have your agent change files, with you | an interactive session |
 | Have your agent change files from written instructions | a one-shot session |
 
+## Checking a loop
+
+Three commands help you find out whether a loop can run, before kickoff, after a
+configuration change, or when agents fail to start. Run them from your own shell
+(`LOOP_ROOT` and `PATH` set, `LOOP_SESSION` unset); none of them creates a session.
+
+```sh
+10km doctor                    # one line per check, ok or FAIL and why
+10km launch-test [role]        # a trivial agent through the launcher (default: worker)
+10km gate worker|validation    # a tier's gates in the central worktrees
+```
+
+`10km doctor` checks the tools (Bash, git, Python 3.9+), the git version (2.26+),
+the loop root and `config.env`, each central repo (its worktree, `tenkm.mainBranch`,
+`extensions.worktreeConfig` and the hooks dir `10km init` generates), the database,
+the launcher, every role's agent command and every gate. Commands are only looked
+up on the agents' `PATH`, never run, and the database is opened read-only: doctor
+changes nothing. It exits 1 if any check fails; most failures say what to run
+(often `10km init`).
+
+`10km launch-test [planner|worker|curator|auditor] [--timeout SECONDS]` launches
+that role's agent command through `LAUNCHER`, as the Dispatcher would, with a
+one-line prompt ("reply OK"), in a new temporary directory and with no session or
+cycle in msm. The agent gets the Dispatcher's environment plus `LAUNCH_TEST=1`,
+without `LOOP_SESSION`, and with `LOOP_ROOT` and `MSM_DB` pointing into the
+temporary directory, so it can't change the live loop. It follows the agent to the
+end (stopping it after the time-out, default 600 seconds) and prints its exit code,
+how long it ran and its log; the temporary directory is kept. This launches a real
+agent, so it costs what one short agent run costs.
+
+`10km gate worker|validation` runs a tier's gates as `gate` does, but outside any
+session: in the central worktrees as they are, waiting until they finish
+(interrupt it and the run carries on; rerun to wait for it). Its logs, pass cache
+and `SCRATCH_DIR` are in `<root>/.10km/evidence/operator/`, apart from the
+sessions' evidence, so an operator run is recorded against no session and never
+counts as a session's gate. `gate` itself still refuses without an active
+`LOOP_SESSION`.
+
 ## Metrics and logs
 
 `10km metrics [--cycle N] [--json]` lists every session the loop still knows of, by cycle and role: its task and outcome, start and duration, commits on main (by `Loop-Session:` trailer) and harness usage (agent time, turns, tokens, cost); then totals per cycle and role. Sessions are removed once curated, so times come from what survives: the session row, the Worker's task, the session's lines in the action log, and usage records. `--json` gives the same data for agents.

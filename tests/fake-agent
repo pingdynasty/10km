@@ -19,6 +19,15 @@
 # IDLE_CYCLE_LIMIT, and at Exit stops the loop if a blocking escalation is open,
 # with that escalation's reason (the first word of its title), else `blocked`.
 set -euo pipefail
+# `10km launch-test`: no loop state to work on; answer the one-line prompt.
+# FAKE_LAUNCH_TEST: hang (never finish) or an exit status (default 0).
+if [ -n "${LAUNCH_TEST-}" ]; then
+  echo "fake agent in $PWD: $FIRST_MESSAGE"
+  case ${FAKE_LAUNCH_TEST:-0} in
+    hang) sleep 3600 ;;
+    *) exit "${FAKE_LAUNCH_TEST:-0}" ;;
+  esac
+fi
 . "$(dirname "$0")/../bin/lib.sh"
 s=$SESSION
 dir="$LOOP_ROOT/$s"

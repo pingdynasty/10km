@@ -12,6 +12,10 @@
                                   create a session (prints JSON)
   10km session done <name>        mark a session done
   10km notify <title> [body] [--priority critical|default|passive] [--key K]
+  10km doctor                     check tools, repos, database, config, agents, gates
+  10km launch-test [role] [--timeout SECONDS]
+                                  launch a trivial agent outside the loop state
+  10km gate worker|validation     run a tier's gates in the central worktrees
   10km msm ...                    the state machine
 """
 import json
@@ -19,7 +23,8 @@ import os
 import subprocess
 import sys
 
-from . import config, dispatch, init, metrics, notify, sessions, msm, status
+from . import config, dispatch, doctor, gate, init, launchtest, metrics, notify, sessions, msm
+from . import status
 
 
 def _session(argv, cfg):
@@ -159,6 +164,8 @@ def main(argv=None):
     command, args = argv[0], argv[1:]
     if command == "msm":
         return msm.main(args)
+    if command == "gate":
+        return gate.operator_main(args)
     cfg = config.load()
     if command == "init":
         try:
@@ -180,6 +187,10 @@ def main(argv=None):
         return _kickoff(args, cfg)
     if command == "notify":
         return _notify(args, cfg)
+    if command == "doctor":
+        return doctor.main(cfg, args)
+    if command == "launch-test":
+        return launchtest.main(cfg, args)
     print(__doc__, file=sys.stderr)
     return 1
 
