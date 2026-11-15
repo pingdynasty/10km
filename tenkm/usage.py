@@ -1,20 +1,9 @@
-"""tenkm.usage: keep each agent run's harness usage after its session is removed.
+"""tenkm.usage: each agent run's harness usage, kept in Config.usage_log (R26, R267).
 
-One JSON object per finished agent run is appended to `Config.usage_log`
-(USAGE_LOG, else usage.jsonl next to the database):
-
-    session, role, cycle, recorded_at (UTC ISO), harness, and, when the harness
-    reports them: harness_session_id, duration_ms, num_turns, input_tokens,
-    output_tokens, cache_read_input_tokens, cache_creation_input_tokens,
-    total_cost_usd
-
-Figures the harness doesn't report are omitted, not zero. The figures come from
-the harness's JSON result in the session's agent.log (Claude Code with
-`--output-format json`); any other log still gets a record without figures.
-
-A session is recorded once: `record` skips sessions already in the log, so it is
-safe to call again after a crash. The Dispatcher records sessions whose agent has
-exited, and removing a session records it first if it wasn't yet.
+One JSON object per finished agent run: session, role, cycle, recorded_at (UTC),
+harness, harness_session_id and the FIGURES the harness reports (omitted, not
+zero, when it doesn't). The figures come from the harness's JSON result at the end
+of agent.log (Claude Code with `--output-format json`). A session is recorded once.
 """
 import json
 import os
@@ -24,8 +13,10 @@ from datetime import datetime, timezone
 from .locks import lock
 
 TAIL_BYTES = 1 << 20  # the result is at the end of the log
-USAGE_FIELDS = ("input_tokens", "output_tokens", "cache_read_input_tokens",
-                "cache_creation_input_tokens")
+RESULT = ("duration_ms", "num_turns", "total_cost_usd")  # top-level in the result
+TOKENS = ("input_tokens", "output_tokens", "cache_read_input_tokens",
+          "cache_creation_input_tokens")
+FIGURES = RESULT + TOKENS
 
 
 def harness_name(command):
@@ -37,16 +28,12 @@ def harness_name(command):
     return os.path.basename(words[0]) if words else ""
 
 
-def _number(value):
+def is_number(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def parse_result(text):
-    """The harness figures in an agent log, as a dict (empty if there are none).
-
-    Takes the last line (or the whole text) that is a JSON object with a
-    "type": "result" field, as Claude Code prints with --output-format json.
-    """
+    """The figures in the last JSON line (or whole text) with "type": "result", or {}."""
     candidates = [text] + text.splitlines()[::-1]
     for candidate in candidates:
         candidate = candidate.strip()
@@ -65,13 +52,13 @@ def _figures(data):
     out = {}
     if isinstance(data.get("session_id"), str):
         out["harness_session_id"] = data["session_id"]
-    for key in ("duration_ms", "num_turns", "total_cost_usd"):
-        if _number(data.get(key)):
+    for key in RESULT:
+        if is_number(data.get(key)):
             out[key] = data[key]
     usage = data.get("usage")
     if isinstance(usage, dict):
-        for key in USAGE_FIELDS:
-            if _number(usage.get(key)):
+        for key in TOKENS:
+            if is_number(usage.get(key)):
                 out[key] = usage[key]
     return out
 
@@ -113,10 +100,9 @@ def make_record(cfg, session, log_text, now=None):
 
 
 def record(cfg, session, now=None):
-    """Append a usage record for a session from its agent.log, once.
+    """Append a session's usage record from its agent.log, once; the record, or None.
 
-    Skips operator sessions and sessions whose agent never ran (no agent.log).
-    Returns the record written, or None.
+    Skips operator sessions and sessions without an agent.log.
     """
     if session.get("role") == "operator":
         return None
