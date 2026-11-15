@@ -351,6 +351,8 @@ class MSM:
         if task is not None:
             self.db.execute("UPDATE tasks SET session = ?, started_at = ?, status = 'active' "
                             "WHERE id = ?", (name, t, task["id"]))
+        self.log("session create", name=name, role=role)
+        if task is not None:
             self.log("task claim", task=task["id"], worker=name)
         return to_dict(self.get_row("session", name))
 
@@ -366,6 +368,7 @@ class MSM:
         t = now()
         self.update_row("session", name, {"status": status, "updated_at": t})
         role = s["role"]
+        self.log(f"session {status}", name=name, role=role)
         if role == "worker":
             changed = self.db.execute("UPDATE tasks SET status = ?, done_at = ? "
                                       "WHERE session = ? AND status = 'active'",
@@ -401,11 +404,12 @@ class MSM:
 
     def session_remove(self, name):
         self.check_caller()
-        self.get_row("session", name)
+        s = self.get_row("session", name)
         if self.db.execute("UPDATE tasks SET status = 'waiting', session = NULL, started_at = NULL "
                            "WHERE session = ? AND status = 'active'", (name,)).rowcount:
             self.log("task returned", worker=name)
         self.db.execute("DELETE FROM sessions WHERE name = ?", (name,))
+        self.log("session remove", name=name, role=s["role"])
         return {"removed": name}
 
     # --- tasks -------------------------------------------------------------

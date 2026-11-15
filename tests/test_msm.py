@@ -178,6 +178,27 @@ class MsmTest(unittest.TestCase):
             line = json.loads(f.read().splitlines()[-1])
         self.assertEqual((line["command"], line["session"]), ("issue create", None))
 
+    def test_session_create_end_and_remove_are_logged(self):
+        self.ok("loop", "start")
+        a = self.ok("session", "create", "auditor")["name"]
+        b = self.ok("session", "create", "operator", "mars")["name"]
+        self.env["LOOP_SESSION"] = a
+        self.ok("session", "done", a)
+        self.ok("session", "done", a)  # no change, no line
+        del self.env["LOOP_SESSION"]
+        self.ok("session", "expired", b)
+        self.ok("session", "remove", a)
+        with open(os.path.join(self.tmp.name, "actions.log")) as f:
+            lines = [json.loads(x) for x in f.read().splitlines()]
+        got = [(x["command"], x["session"], x["name"], x["role"]) for x in lines
+               if x["command"].startswith("session ")]
+        self.assertEqual(got, [("session create", None, a, "auditor"),
+                               ("session create", None, b, "operator"),
+                               ("session done", a, a, "auditor"),
+                               ("session expired", None, b, "operator"),
+                               ("session remove", None, a, "auditor")])
+        self.assertTrue(all(x["at"] for x in lines))
+
     def test_stop_and_resume(self):
         self.start_and_curate_kickoff()
         self.ok("loop", "stop", "blocked")
