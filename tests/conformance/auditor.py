@@ -13,7 +13,9 @@ MAP = {
     "R264": (A, "and open escalations (`msm issue list '{\"type\":\"escalation\",\"status\":\"open\"}'`)"),
     "R265": (A, "Commits per session: `git log --since=<from>"),
     "R266": (A, "Time per role and cycle: commit times"),
-    "R267": (A, "Harness metrics (tokens, credits), if the harness records them per session."),
+    "R267": [(A, "Harness metrics (tokens, credits), if the harness records them per session."),
+             "tests/test_metrics_e2e.py:TestMetricsOfACuratedLoop."
+             "test_metrics_report_every_session_of_a_curated_cycle"],
     "R268": (A, "Prompt sizes and growth: `wc -c prompts/*.md`"),
     "R269": (A, "Progress against the goals, deliverables and plan."),
     "R270": (A, "Expired tasks (`msm task list '{\"status\":\"expired\"}'`), recurring ones, "
