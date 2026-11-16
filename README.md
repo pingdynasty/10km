@@ -56,12 +56,11 @@ mkdir -p ~/myloop/central && cd ~/myloop
 git clone <10km or your fork> central/loop
 export LOOP_ROOT=~/myloop PATH=~/myloop/central/loop/bin:$PATH
 10km kickoff                     # create the database and set up the loop
-run-loop                         # the Dispatcher every DISPATCH_INTERVAL seconds
+run-loop                         # call the dispatcher every DISPATCH_INTERVAL seconds
 ```
 
 Keep `run-loop` running (in `tmux`, or as a service), or call `10km dispatch` from
-cron instead. Stopping `run-loop` only stops the dispatcher; start it again to carry
-on. To stop the loop itself, see [Interacting with a loop](docs/usage.md#interacting-with-a-loop).
+cron instead.
 
 Remember that the monkeys may use and abuse any tools you give them access to. It
 would be a mistake not to give them a sandbox.
@@ -72,35 +71,28 @@ would be a mistake not to give them a sandbox.
 repos in `central/`, gates, notifications and prompts. It ends by starting the loop,
 and the first Planner runs. `10km kickoff -- "<instructions>"` does it in one shot.
 
-## Commands
+## Some Commands
 
 ```
-10km init                       create the database; register the central repos
-10km kickoff [-- message]       set up the loop with OPERATOR_AGENT
+10km kickoff [-- message]       set up the loop
 10km status                     status report
-10km metrics [--cycle N] [--json]
-                                sessions, times, commits and usage per cycle and role
-10km dispatch                   one Dispatcher pass
-10km session start <username> [--no-agent] [-- message]
+10km dispatch                   launch any agents that are due
+10km session start <username> [--no-agent] [-- instruction]
                                 start an operator session
 10km session create <role> [username]
                                 create a session (prints JSON)
 10km session done <name>        mark a session done
-10km notify <title> [body] [--priority critical|default|passive] [--key K]
-10km doctor                     check that the loop can run
-10km launch-test [role] [--timeout SECONDS]
-                                launch a trivial agent outside the loop state
-10km gate worker|validation     run a tier's gates in the central worktrees
+10km doctor                     check that the loop is healthy
 10km msm ...                    the state machine
 ```
 
 ```sh
-msm loop start              # once, after kickoff: the first Planner runs
-msm loop stop <reason>      # launch nothing new; running agents finish
-msm loop resume             # continue a stopped loop from its phase
+msm loop stop <reason>      # stop the loop but let running agents finish
+msm loop resume             # continue a stopped loop
 ```
 
-Configuration, working with a running loop (escalations, backlog items, operator
-sessions), metrics and recovering from a stop are in [docs/usage.md](docs/usage.md).
+Configuration, escalations, backlog items, operator sessions, metrics and
+recovering from a stop are in [docs/usage.md](docs/usage.md).
+
 The requirements are in [docs/requirements.md](docs/requirements.md); testing and
 contributing in [docs/contributing.md](docs/contributing.md).
