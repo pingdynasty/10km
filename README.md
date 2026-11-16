@@ -14,7 +14,7 @@ In 10km, monkey agents have four roles:
 And there's you, the operator.
 
 You kick off a Monkey loop with goals, deliverables and a high-level plan. If you're
-short on any of  these, don't worry: just tell the loop what you want it to do. You
+short on hard specs, don't worry: just tell the loop what you want it to do. You
 can always change it later.
 
 The work is done in cycles, with sessions managed by a simple but effective state
@@ -60,10 +60,11 @@ run-loop                         # the Dispatcher every DISPATCH_INTERVAL second
 ```
 
 Keep `run-loop` running (in `tmux`, or as a service), or call `10km dispatch` from
-cron instead. Stopping `run-loop` only stops the Dispatcher; start it again to carry
+cron instead. Stopping `run-loop` only stops the dispatcher; start it again to carry
 on. To stop the loop itself, see [Interacting with a loop](#interacting-with-a-loop).
+
 Remember that the monkeys may use and abuse any tools you give them access to. It
-would be a mistake to let them out of their sandbox.
+would be a mistake not to give them a sandbox.
 
 ## Kickoff
 
