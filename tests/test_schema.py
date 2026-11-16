@@ -1,4 +1,4 @@
-"""loopstate.schema.json is generated from the State block of REQUIREMENTS.md."""
+"""loopstate.schema.json is generated from the State block of docs/requirements.md."""
 import os
 import sys
 import unittest

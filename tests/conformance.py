@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Conformance: every requirement ID in REQUIREMENTS.md maps to evidence.
+"""Conformance: every requirement ID in docs/requirements.md maps to evidence.
 
-The map is split into one file per REQUIREMENTS.md section, in tests/conformance/
+The map is split into one file per docs/requirements.md section, in tests/conformance/
 (plain Python, loaded by path). Each file sets:
 
     SECTION = "State Machine"          # the `#`/`##` heading, exactly
@@ -17,8 +17,8 @@ Evidence is checked to exist: a test by parsing its module for the class and
 method; a prompt by reading it and, if given, finding the phrase (whitespace is
 normalised, so phrases may span line breaks).
 
-It fails if an ID in REQUIREMENTS.md is neither mapped nor pending, if evidence is
-missing, if a file names an ID that isn't in REQUIREMENTS.md or isn't in its
+It fails if an ID in docs/requirements.md is neither mapped nor pending, if evidence is
+missing, if a file names an ID that isn't in docs/requirements.md or isn't in its
 section, or if an ID appears twice (in one file's MAP and PENDING, or in two
 files). PENDING must only shrink: it may hold only IDs up to LAST_PENDABLE, so a
 requirement added later must be mapped when it is added.
@@ -33,7 +33,7 @@ import sys
 
 TESTS = os.path.dirname(os.path.abspath(__file__))
 CODE = os.path.dirname(TESTS)
-REQUIREMENTS = os.path.join(CODE, "REQUIREMENTS.md")
+REQUIREMENTS = os.path.join(CODE, "docs", "requirements.md")
 MAP_DIR = os.path.join(TESTS, "conformance")
 
 # The highest ID when the conformance test was introduced; later IDs can't be pending.
@@ -50,7 +50,7 @@ def id_number(rid):
 
 
 def parse_requirements(text):
-    """Return ({id: section}, [duplicate ids]) from REQUIREMENTS.md text."""
+    """Return ({id: section}, [duplicate ids]) from docs/requirements.md text."""
     ids, dups = {}, []
     section, in_block = None, False
     for line in text.splitlines():
@@ -142,14 +142,14 @@ def check_evidence(evidence):
 
 
 def check(requirements_text=None, maps=None):
-    """Check the map against REQUIREMENTS.md. Returns a dict with lists:
+    """Check the map against docs/requirements.md. Returns a dict with lists:
     errors, unmapped (neither mapped nor pending), pending, mapped."""
     if requirements_text is None:
         with open(REQUIREMENTS) as f:
             requirements_text = f.read()
     ids, dups = parse_requirements(requirements_text)
     maps = load_maps() if maps is None else maps
-    errors = [f"REQUIREMENTS.md: {rid} appears more than once" for rid in dups]
+    errors = [f"docs/requirements.md: {rid} appears more than once" for rid in dups]
     sections = {s for s in ids.values()}
     seen, mapped, pending = {}, set(), set()
     files_by_section = {}
@@ -167,7 +167,7 @@ def check(requirements_text=None, maps=None):
                 continue
             seen[rid] = name
             if rid not in ids:
-                errors.append(f"{name}: {rid} is not in REQUIREMENTS.md")
+                errors.append(f"{name}: {rid} is not in docs/requirements.md")
             elif ids[rid] != section:
                 errors.append(f"{name}: {rid} belongs to section {ids[rid]!r}")
         for rid, evidence in mapping.items():

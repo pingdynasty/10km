@@ -50,7 +50,7 @@ class TestChecker(unittest.TestCase):
                         set()),
                        ("Two", {}, set()))
         errors = "\n".join(r["errors"])
-        for expected in ("R1 is also in", "no method nope", "R9 is not in REQUIREMENTS.md",
+        for expected in ("R1 is also in", "no method nope", "R9 is not in docs/requirements.md",
                          "R2 belongs to section 'One'", "phrase not found",
                          "section 'Two' is also in"):
             self.assertIn(expected, errors)

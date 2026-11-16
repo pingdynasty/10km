@@ -27,7 +27,7 @@ Rules:
   escalates to the operator rather than drop it.
 - Run the worker gates (`gate worker`) before you finish if you changed a project
   repo.
-- Don't change `REQUIREMENTS.md` unless the operator says so.
+- Don't change `docs/requirements.md` unless the operator says so.
 - Don't resume a stopped loop unless the operator says so; otherwise tell them to
   run `msm loop resume` once the session is done. It is refused while a blocking
   operator escalation is open, so answer those first.

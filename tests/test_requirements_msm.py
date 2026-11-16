@@ -1,4 +1,4 @@
-"""State machine requirements (REQUIREMENTS.md, State Machine) not covered by
+"""State machine requirements (docs/requirements.md, State Machine) not covered by
 tests/test_msm.py, through bin/msm. Each test names the IDs it checks.
 
 Run: python3 -m unittest discover tests

@@ -1,4 +1,4 @@
-"""tenkm.schema: generate loopstate.schema.json from the State block of REQUIREMENTS.md.
+"""tenkm.schema: generate loopstate.schema.json from the State block of docs/requirements.md.
 
     python3 -m tenkm.schema           write loopstate.schema.json
     python3 -m tenkm.schema --check   exit 1 if the committed file is out of date
@@ -21,7 +21,7 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-REQUIREMENTS = os.path.join(ROOT, "REQUIREMENTS.md")
+REQUIREMENTS = os.path.join(ROOT, "docs", "requirements.md")
 SCHEMA = os.path.join(ROOT, "loopstate.schema.json")
 
 SCALARS = {
@@ -38,7 +38,7 @@ def state_block(text):
     """The code block under `### State` in the requirements text."""
     match = re.search(r"^### State\s*\n```[^\n]*\n(.*?)^```", text, re.M | re.S)
     if not match:
-        raise ValueError("no ### State code block in REQUIREMENTS.md")
+        raise ValueError("no ### State code block in docs/requirements.md")
     return match.group(1)
 
 
@@ -174,7 +174,7 @@ def generate(text):
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "loopstate.schema.json",
         "title": "10km loop state",
-        "description": "Generated from the State block of REQUIREMENTS.md by "
+        "description": "Generated from the State block of docs/requirements.md by "
                        "`python3 -m tenkm.schema`; don't edit by hand.",
         "$defs": defs,
     }

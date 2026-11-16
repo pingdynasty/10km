@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "loopstate.schema.json",
   "title": "10km loop state",
-  "description": "Generated from the State block of REQUIREMENTS.md by `python3 -m tenkm.schema`; don't edit by hand.",
+  "description": "Generated from the State block of docs/requirements.md by `python3 -m tenkm.schema`; don't edit by hand.",
   "$defs": {
     "Loop": {
       "description": "Record (R95).",
