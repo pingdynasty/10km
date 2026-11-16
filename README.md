@@ -20,12 +20,11 @@ can always change it later.
 
 The work is done in cycles, with sessions managed by a simple but effective state
 machine. You can run your own sessions in parallel, with an agent or without. The
-Curator merges it all into the project, and if there are conflicts it can't resolve
-then it notifies you.
+Curator merges it all into the project, and if there are conflicts or validation
+errors that it can't resolve then it notifies you.
 
 10km is designed to run in a sandbox, and to work well with small models. The loop
-can use any harness or coding agent, with local or remote models. You can interfere 
-with the monkeys at any time.
+can use any harness or coding agent, with cloud or local models.
 
 ## Run it in a container
 
