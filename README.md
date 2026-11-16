@@ -101,6 +101,6 @@ msm loop resume             # continue a stopped loop from its phase
 ```
 
 Configuration, working with a running loop (escalations, backlog items, operator
-sessions), metrics, recovering from a stop and testing are in
-[docs/usage.md](docs/usage.md). The requirements are in
-[docs/requirements.md](docs/requirements.md).
+sessions), metrics and recovering from a stop are in [docs/usage.md](docs/usage.md).
+The requirements are in [docs/requirements.md](docs/requirements.md); testing and
+contributing in [docs/contributing.md](docs/contributing.md).

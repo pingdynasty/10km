@@ -1,4 +1,4 @@
-# Tests for 10km. See the Testing section of AGENTS.md.
+# Tests for 10km. See the Testing section of docs/contributing.md.
 IMAGE ?= 10km
 
 .PHONY: test agent-test scenarios smoke smoke-host

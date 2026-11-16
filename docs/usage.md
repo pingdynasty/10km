@@ -199,24 +199,3 @@ To resume (see [Interacting with a loop](#interacting-with-a-loop)):
 2. `msm loop resume`. msm refuses it while a blocking operator escalation is still open; answered ones don't count.
 
 The next Curator merges any operator sessions, then the loop carries on from its phase, and the roles that raised the escalations act on your answers.
-
-## Testing
-
-```sh
-make test         # unit and script tests, in parallel: python3 tests/run.py
-make smoke        # end to end with a fake agent, in the container (needs Docker)
-make smoke-host   # the same end-to-end test on this host (Linux or macOS)
-```
-
-`tests/run.py` runs each test (or test class with shared setup) in its own
-process: `python3 tests/run.py -j 4` sets the jobs (default: the CPU count;
-`make test JOBS=4`), `-v` lists every test, and patterns pick tests by id
-(`python3 tests/run.py test_msm TestDispatch`). It ends with the slowest tests.
-`python3 -m unittest discover tests` also works, serially. A loop's gates are
-plain commands, e.g. `WORKER_GATES="10km: python3 tests/run.py -j 4"`.
-`loopstate.schema.json` is generated from the State block of [docs/requirements.md](requirements.md):
-after changing that block run `python3 -m tenkm.schema` (a test checks it).
-
-The end-to-end test, `tests/smoke.sh`, needs Bash, git, jq and Python 3.9+. It
-runs in a temporary directory, removed on exit, and uses neither a live loop's
-settings nor your git config, so you can run it from inside a loop session.
