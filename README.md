@@ -11,6 +11,7 @@ In 10km, agents have four roles:
 - Workers: Perform tasks
 - Curator: Validates worker output
 - Auditor: Inspects and improves the loop
+
 And there's you, the operator.
 
 You kick off a Monkey loop with goals, deliverables and a high-level plan. If you're
