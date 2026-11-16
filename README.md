@@ -6,7 +6,7 @@ The Ralph loop iterates over a plan, the Karpathy loop optimises to a goal. The
 Monkey loop can do either, or both: it is a generalized loop, which you can be in,
 on, or outside.
 
-In 10km, monkey agents have four roles:
+In 10km, agents have four roles:
 - Planner: Refines the plan into tasks
 - Workers: Perform tasks
 - Curator: Validates worker output
