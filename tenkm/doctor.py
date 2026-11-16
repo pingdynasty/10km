@@ -1,5 +1,5 @@
 """tenkm.doctor: `10km doctor` checks that a loop can run, changing nothing (see
-README, "Checking a loop"). Commands are only resolved, never run; the database
+docs/usage.md, "Checking a loop"). Commands are only resolved, never run; the database
 is opened read-only.
 
     results = doctor.checks(cfg)      # [(ok, name, detail), ...]

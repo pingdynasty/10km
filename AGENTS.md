@@ -5,10 +5,11 @@ Guidance for agents working on 10km, and on loops forked from it.
 ## What this is
 
 10km is an agent loop: a Planner plans cycles of tasks, Workers carry them out,
-a Curator validates and merges, an Auditor improves the loop. `REQUIREMENTS.md` is
+a Curator validates and merges, an Auditor improves the loop. [`docs/requirements.md`](docs/requirements.md) is
 the source of truth. If the code and the requirements disagree, raise it; don't
-change `REQUIREMENTS.md` without the operator. Each requirement has a stable ID
+change `docs/requirements.md` without the operator. Each requirement has a stable ID
 (`R1`, `R2`, ...): cite IDs in tests and reports, and never renumber them.
+How operators use a loop: [`docs/usage.md`](docs/usage.md).
 
 ## Layout
 
@@ -47,7 +48,7 @@ change `REQUIREMENTS.md` without the operator. Each requirement has a stable ID
   `tests/smoke.sh` ignores a live loop's environment, so it is safe inside a loop
   session.
 - Requirement IDs map to tests or prompt phrases in `tests/conformance/`, one file
-  per `REQUIREMENTS.md` section; `python3 tests/conformance.py` lists what is
+  per `docs/requirements.md` section; `python3 tests/conformance.py` lists what is
   unmapped.
 
 Run the unit tests before every commit; run the smoke test when changing scripts,

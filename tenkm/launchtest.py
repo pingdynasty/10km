@@ -1,5 +1,5 @@
 """tenkm.launchtest: `10km launch-test` launches a role's agent with a one-line
-prompt, as the Dispatcher would but with no loop state (see README, "Checking a
+prompt, as the Dispatcher would but with no loop state (see docs/usage.md, "Checking a
 loop"). The temporary directory it runs in is kept, with the log and exit code.
 """
 import os
