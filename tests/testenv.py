@@ -20,6 +20,7 @@ TESTS = os.path.dirname(os.path.abspath(__file__))
 CODE = os.path.dirname(TESTS)
 BIN = os.path.join(CODE, "bin")
 CONFIG = os.path.join(TESTS, "config.env")
+DEFAULTS = os.path.join(TESTS, "defaults.env")
 FAKE_AGENT = os.path.join(TESTS, "fake-agent")
 AGENT_VARS = ("LOOP_AGENT", "PLANNER_AGENT", "WORKER_AGENT", "CURATOR_AGENT",
               "AUDITOR_AGENT", "OPERATOR_AGENT")
@@ -68,6 +69,10 @@ def make_template(dest):
     try:  # create_loop_repo reads the git identity from os.environ
         os.environ.update(GIT_ID)
         init.create_loop_repo(dest, source=CODE)
+        with open(DEFAULTS) as f, open(os.path.join(dest, "config.env"), "a") as out:
+            out.write("\n" + f.read())
+        subprocess.run(["git", "-C", dest, "commit", "-q", "-a", "--amend", "--no-edit"],
+                       env=dict(os.environ, **HOST_GIT_OFF), check=True, capture_output=True)
     finally:
         os.environ.clear()
         os.environ.update(saved)
