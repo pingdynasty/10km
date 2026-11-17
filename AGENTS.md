@@ -12,6 +12,13 @@ a Curator validates and merges, an Auditor improves the loop.
   commits. Run the unit tests (`make test`) before every commit.
 - [docs/usage.md](docs/usage.md): how operators run and work with a loop.
 
+## Interacting with the loop
+
+If you are asked to do work on a running loop, do it in a session. You probably
+want to use `10km session start --no-agent` and close it with `10km session done`.
+Exceptions include creating backlog items and answering escalations, which can be 
+done directly with `msm issue`.
+
 ## Customising the loop
 
 If you are running a loop in a 10km fork then feel free to adapt prompts and
