@@ -84,6 +84,7 @@ MAP = {
     "R87": M + "test_expired_or_removed_caller_cannot_change_state",
     "R88": M + "test_agents_cannot_restart_a_stopped_loop",
     "R89": [M + "test_changes_are_appended_to_the_action_log",
+            M + "test_loop_status_changes_are_logged",
             "tests/test_requirements_loop.py:TestStatePaths."
             "test_database_and_action_log_are_at_the_configured_paths"],
     # Role preconditions

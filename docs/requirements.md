@@ -126,7 +126,7 @@ The state machine returns exit status:
 ### Callers
 **R86** Agents call msm with their session name in `LOOP_SESSION`, set by the Dispatcher. **R87** If that session is expired or no longer exists, msm refuses any change with EPERM.
 **R88** While the loop is stopped, msm refuses agents' changes to the loop record (`loop start`, `loop resume`, `loop update`) with EPERM.
-**R89** msm appends every change to a cycle, task, audit or issue to an action log: a text file, one line per change with the time, the caller's session and the command.
+**R89** msm appends every change to a cycle, task, audit, issue, or loop status (start, stop, resume) to an action log: a text file, one line per change with the time, the caller's session and the command.
 
 ### Role Preconditions
 - **R90** Planner: phase = plan AND not stopped AND no active Planner
