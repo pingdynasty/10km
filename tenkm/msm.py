@@ -264,6 +264,7 @@ class MSM:
         if not self.loop()["stopped"]:
             raise MSMError(EPERM, "loop is not stopped")
         self.set_loop(stopped=0, reason=None, phase="plan")
+        self.log("loop start")
         return to_dict(self.loop())
 
     def loop_resume(self):
@@ -276,6 +277,7 @@ class MSM:
         self.check_no_blocking_escalation()
         phase = "curate" if loop["phase"] == "plan" else loop["phase"]
         self.set_loop(stopped=0, reason=None, phase=phase, empty_cycles=0)
+        self.log("loop resume")
         return to_dict(self.loop())
 
     def check_no_blocking_escalation(self):
@@ -293,6 +295,7 @@ class MSM:
             raise MSMError(EINVAL, "loop stop: a reason is required")
         self.loop()
         self.set_loop(stopped=1, reason=reason)
+        self.log("loop stop", reason=reason)
         return to_dict(self.loop())
 
     def loop_update(self, data):

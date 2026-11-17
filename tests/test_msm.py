@@ -226,6 +226,22 @@ class MsmTest(unittest.TestCase):
         loop = self.ok("loop", "resume")
         self.assertEqual((loop["stopped"], loop["phase"], loop["reason"]), (False, "curate", None))
 
+    def test_loop_status_changes_are_logged(self):
+        self.ok("loop", "start")
+        self.ok("loop", "stop", "blocked")
+        self.ok("loop", "resume")
+        with open(os.path.join(self.tmp.name, "actions.log")) as f:
+            lines = [json.loads(x) for x in f.read().splitlines()]
+        loop_actions = [x for x in lines if x["command"].startswith("loop ")]
+        self.assertEqual(len(loop_actions), 3)
+        self.assertEqual(loop_actions[0]["command"], "loop start")
+        self.assertIsNone(loop_actions[0]["session"])
+        self.assertEqual(loop_actions[1]["command"], "loop stop")
+        self.assertEqual(loop_actions[1]["reason"], "blocked")
+        self.assertEqual(loop_actions[2]["command"], "loop resume")
+        self.assertIsNone(loop_actions[2]["session"])
+        self.assertTrue(all(x["at"] for x in loop_actions))
+
     def test_audits_and_auditor_naming(self):
         self.ok("loop", "start")
         a = self.ok("session", "create", "auditor")["name"]
