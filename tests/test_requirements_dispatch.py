@@ -103,7 +103,7 @@ class TestDispatchRules(ScriptCase):
         self.loop.plan("a")
         auditor = self.loop.session("auditor")["name"]
         self.loop.done(auditor)
-        self.dispatch(MAX_CONCURRENT_SESSIONS="1")  # the Curator only
+        self.dispatch(MAX_CONCURRENT_AGENTS="1")  # the Curator only
         self.assertEqual(self.loop.msm("loop", "get")["phase"], "execute")
         self.assertEqual(len(self.loop.active("curator")), 1)
 

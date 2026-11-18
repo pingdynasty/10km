@@ -60,7 +60,7 @@ MAP = {
     "R29": L + "TestConfig.test_environment_overrides_config",
     "R30": [S + "TestDispatchScript.test_workers_up_to_max_then_as_slots_free",
             "tests/test_requirements_msm.py:TestLoopRecord.test_cycle_create_refuses_more_tasks_than_the_limit"],
-    "R329": S + "TestDispatchScript.test_session_limit_caps_every_role_curator_first",
+    "R329": S + "TestDispatchScript.test_agent_limit_caps_every_role_curator_first",
     "R31": [L + "TestAuditorDue.test_daily_time_in_timezone",
             L + "TestAuditorDue.test_cycle_limit"],
     "R32": ("prompts/curator.md", "`empty_cycles` at `IDLE_CYCLE_LIMIT`"),

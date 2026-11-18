@@ -272,7 +272,7 @@ class TestStopAndResume(ScenarioCase):
     def test_stop_mid_cycle_then_resume_continues_the_same_cycle(self):
         """R41, R76, R138, R139, R155, R169, R170, R172, R173, R75, R113, R140, R142,
         R212, R213, R110, R111, R325."""
-        settings = dict(FAKE_TASKS="a b c", MAX_TASKS_PER_CYCLE="3", MAX_CONCURRENT_SESSIONS="2",
+        settings = dict(FAKE_TASKS="a b c", MAX_TASKS_PER_CYCLE="3", MAX_CONCURRENT_AGENTS="2",
                         FAKE_WORKER1="slow", FAKE_DELAY="2", FAKE_WORKER2="hang")
         self.loop.start()
         self.drive(lambda: len(self.active("worker")) == 2, **settings)

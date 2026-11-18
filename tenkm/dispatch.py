@@ -113,18 +113,19 @@ class Pass:
             usage.safe_record(self.cfg, s, log)
 
     # --- launching ---------------------------------------------------------
-    def at_session_limit(self):
-        """R325: MAX_CONCURRENT_SESSIONS sessions are active, so no role is launched."""
-        limit = self.cfg.int("MAX_CONCURRENT_SESSIONS", 0)
+    def at_agent_limit(self):
+        """R325: MAX_CONCURRENT_AGENTS of the Dispatcher's agents are active."""
+        limit = self.cfg.int("MAX_CONCURRENT_AGENTS", 0)
         if limit <= 0:
             return False
         with msm.transaction(self.cfg.db) as m:
-            active = m.one("SELECT COUNT(*) FROM sessions WHERE status = 'active'")[0]
+            active = m.one("SELECT COUNT(*) FROM sessions WHERE status = 'active' "
+                           "AND role != 'operator'")[0]
         return active >= limit
 
     def launch(self, role):
         """R148-R151. Returns True if launched."""
-        if self.at_session_limit():
+        if self.at_agent_limit():
             return False
         session = None
         for _ in range(3):

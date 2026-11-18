@@ -255,7 +255,7 @@ Then, by phase:
   **R141** plan    -> launch Planner
   **R142** execute -> launch Workers while launches succeed
 **R144** Launches fail harmlessly if the role's preconditions are not met.
-**R325** The Dispatcher launches at most the configured number of concurrent agents. It launches in this order: Curator, the phase's role, Auditor. **R330** The operator may exceed the limit: msm doesn't enforce it, so `session create` never refuses for it.
+**R325** The Dispatcher launches at most the configured number of concurrent agents. It launches in this order: Curator, the phase's role, Auditor.
 **R326** The Planner creates at most the configured number of tasks per cycle: `cycle create` with more refuses with EINVAL.
 **R145** It launches an Auditor when the configured daily time, in the configured timezone, has passed and no audit has run since then, or when the configured number of cycles have been curated since the last audit. **R146** Either trigger can be disabled. **R147** The first Auditor runs only after a cycle has been curated.
 **R148** To launch a role, it attempts to create a session. **R149** If it fails with EAGAIN (4) it tries again, up to 3 times.

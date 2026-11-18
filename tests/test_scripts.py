@@ -523,44 +523,38 @@ class TestDispatchScript(ScriptCase):
     def test_workers_up_to_max_then_as_slots_free(self):
         self.loop.start()
         self.loop.plan("a", "b", "c")
-        self.dispatch(MAX_CONCURRENT_SESSIONS="2")
+        self.dispatch(MAX_CONCURRENT_AGENTS="2")
         workers = self.loop.sessions("worker")
         self.assertEqual(len(workers), 2)
-        self.dispatch(MAX_CONCURRENT_SESSIONS="2")
+        self.dispatch(MAX_CONCURRENT_AGENTS="2")
         self.assertEqual(len(self.loop.sessions("worker")), 2)
         self.loop.done(workers[0]["name"])
-        self.dispatch(MAX_CONCURRENT_SESSIONS="2")
+        self.dispatch(MAX_CONCURRENT_AGENTS="2")
         self.assertEqual(len(self.loop.sessions("worker")), 3)
-        self.dispatch(MAX_CONCURRENT_SESSIONS="5")  # no waiting task: launches fail harmlessly
+        self.dispatch(MAX_CONCURRENT_AGENTS="5")  # no waiting task: launches fail harmlessly
         self.assertEqual(len(self.loop.sessions("worker")), 3)
         self.assertEqual({t["status"] for t in self.loop.msm("task", "list")},
                          {"done", "active"})
         self.assertEqual(self.loop.sessions("curator"), [])
 
-    def test_session_limit_caps_every_role_curator_first(self):  # R325
+    def test_agent_limit_caps_every_role_curator_first(self):  # R325
         self.loop.start()
         self.loop.plan("a", "b", "c")
         self.loop.contribute()
-        self.dispatch(MAX_CONCURRENT_SESSIONS="2")
+        self.dispatch(MAX_CONCURRENT_AGENTS="2")
         self.assertEqual(sorted(s["role"] for s in self.loop.active()), ["curator", "worker"])
-        self.dispatch(MAX_CONCURRENT_SESSIONS="2")  # at the limit: nothing more
+        self.dispatch(MAX_CONCURRENT_AGENTS="2")  # at the limit: nothing more
         self.assertEqual(len(self.loop.active()), 2)
-        self.dispatch(MAX_CONCURRENT_SESSIONS="0")  # no limit
+        self.dispatch(MAX_CONCURRENT_AGENTS="0")  # no limit
         self.assertEqual(len(self.loop.active("worker")), 3)
 
-    def test_the_operator_may_exceed_the_limit(self):  # R330
+    def test_agent_limit_refuses_the_planner_too(self):  # R325
         self.loop.start()
-        self.dispatch(MAX_CONCURRENT_SESSIONS="1")
-        self.assertEqual(len(self.loop.active("planner")), 1)
-        self.loop.session("operator", "mars", env={"MAX_CONCURRENT_SESSIONS": "1"})
-        self.assertEqual(len(self.loop.active()), 2)
-
-    def test_session_limit_refuses_the_planner_too(self):  # R325
-        self.loop.start()
-        self.loop.session("operator", "mars")  # active: it counts
-        self.dispatch(MAX_CONCURRENT_SESSIONS="1")
+        self.loop.session("operator", "mars")  # operator sessions don't count
+        self.loop.session("auditor")  # an agent: it counts
+        self.dispatch(MAX_CONCURRENT_AGENTS="1")
         self.assertEqual(self.loop.sessions("planner"), [])
-        self.dispatch(MAX_CONCURRENT_SESSIONS="2")
+        self.dispatch(MAX_CONCURRENT_AGENTS="2")
         self.assertEqual(len(self.loop.active("planner")), 1)
 
     def test_agents_get_max_tasks_per_cycle_in_their_environment(self):  # R326
