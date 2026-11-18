@@ -20,7 +20,7 @@ def parse_time(text):
 
 
 def log(message):
-    print(message, flush=True)
+    print(f"{datetime.now().astimezone():%Y-%m-%d %H:%M:%S%z} {message}", flush=True)
 
 
 ESC = re.compile(r"ESC(\d{1,9})\b")
@@ -113,8 +113,19 @@ class Pass:
             usage.safe_record(self.cfg, s, log)
 
     # --- launching ---------------------------------------------------------
+    def at_session_limit(self):
+        """R325: MAX_CONCURRENT_SESSIONS sessions are active, so no role is launched."""
+        limit = self.cfg.int("MAX_CONCURRENT_SESSIONS", 0)
+        if limit <= 0:
+            return False
+        with msm.transaction(self.cfg.db) as m:
+            active = m.one("SELECT COUNT(*) FROM sessions WHERE status = 'active'")[0]
+        return active >= limit
+
     def launch(self, role):
         """R148-R151. Returns True if launched."""
+        if self.at_session_limit():
+            return False
         session = None
         for _ in range(3):
             try:
@@ -173,6 +184,7 @@ class Pass:
         code = loop_code if os.path.isdir(os.path.join(loop_code, "tenkm")) else CODE_ROOT
         env.update(SESSION=name, LOOP_SESSION=name, PROMPT_FILE=prompt_file,
                    FIRST_MESSAGE=first_message, LOOP_ROOT=self.cfg.root, MSM_DB=self.cfg.db,
+                   MAX_TASKS_PER_CYCLE=str(self.cfg.int("MAX_TASKS_PER_CYCLE", 0)),
                    MSM_LOG=self.cfg.action_log,
                    PATH=os.pathsep.join([os.path.join(code, "bin"), BIN, env.get("PATH", "")]),
                    PYTHONPATH=os.pathsep.join(p for p in (code, env.get("PYTHONPATH")) if p))
@@ -240,10 +252,8 @@ class Pass:
         elif phase == "curate":
             self.launch("curator")
         elif phase == "execute":
-            with msm.transaction(self.cfg.db) as m:
-                active = len(m.list("session", '{"role": "worker", "status": "active"}'))
-            while active < self.cfg.int("MAX_WORKERS", 4) and self.launch("worker"):
-                active += 1
+            while self.launch("worker"):
+                pass
         if auditor:
             self.launch("auditor")
 

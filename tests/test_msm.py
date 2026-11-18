@@ -224,7 +224,7 @@ class MsmTest(unittest.TestCase):
         self.assertEqual(self.ok("loop", "get")["reason"], "blocked")
         self.fails(2, "session", "create", "planner")
         loop = self.ok("loop", "resume")
-        self.assertEqual((loop["stopped"], loop["phase"], loop["reason"]), (False, "curate", None))
+        self.assertEqual((loop["stopped"], loop["phase"], loop["reason"]), (False, "plan", None))
 
     def test_loop_status_changes_are_logged(self):
         self.ok("loop", "start")

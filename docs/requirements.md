@@ -60,7 +60,8 @@ root/central/project-repo2/
 - **R27** Database and action log path
 - **R28** Launcher and agent commands
 - **R29** Session time-outs
-- **R30** Max workers
+- **R30** Max tasks per cycle (default 0, no limit)
+- **R329** Max concurrent agents (0: no limit)
 - **R31** Auditor daily time, timezone and cycle limit
 - **R32** Idle cycle limit
 - **R33** Backlog size
@@ -215,7 +216,7 @@ cycle curate  # R102
 **R110** Worker session `done|expired`: if no tasks remain waiting or active: `curate`.
 **R111** Curator session `done`: if the current cycle is not open: `plan`.
 **R112** `loop start`: `plan`.
-**R113** `loop resume`: if phase = plan: `curate`. Otherwise leave as is.
+**R113** `loop resume`: if phase = plan and inactive operator or Auditor work is waiting: `curate`, so it is merged before the Planner plans. Otherwise leave as is.
 
 ## Sessions
 **R114** Agents and operators do their work in sessions.
@@ -252,9 +253,11 @@ The script returns exit status:
 **R140** If an inactive operator or Auditor session exists, it launches a Curator, whatever the phase.
 Then, by phase:
   **R141** plan    -> launch Planner
-  **R142** execute -> launch Workers while launches succeed, up to max workers active
+  **R142** execute -> launch Workers while launches succeed
   **R143** curate  -> launch Curator
 **R144** Launches fail harmlessly if the role's preconditions are not met.
+**R325** The Dispatcher launches at most the configured number of concurrent agents. It launches in this order: Curator, the phase's role, Auditor. **R330** The operator may exceed the limit: msm doesn't enforce it, so `session create` never refuses for it.
+**R326** The Planner creates at most the configured number of tasks per cycle: `cycle create` with more refuses with EINVAL.
 **R145** It launches an Auditor when the configured daily time, in the configured timezone, has passed and no audit has run since then, or when the configured number of cycles have been curated since the last audit. **R146** Either trigger can be disabled. **R147** The first Auditor runs only after a cycle has been curated.
 **R148** To launch a role, it attempts to create a session. **R149** If it fails with EAGAIN (4) it tries again, up to 3 times.
 **R150** If it succeeds it reads the role prompt.

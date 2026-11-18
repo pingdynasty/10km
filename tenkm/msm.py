@@ -275,7 +275,8 @@ class MSM:
         if not loop["stopped"]:
             raise MSMError(EPERM, "loop is not stopped")
         self.check_no_blocking_escalation()
-        phase = "curate" if loop["phase"] == "plan" else loop["phase"]
+        pending = loop["phase"] == "plan" and self.pending_contributions()
+        phase = "curate" if pending else loop["phase"]  # R113
         self.set_loop(stopped=0, reason=None, phase=phase, empty_cycles=0)
         self.log("loop resume")
         return to_dict(self.loop())
@@ -458,6 +459,10 @@ class MSM:
             if not isinstance(t, dict) or set(t) != {"shortname", "instructions", "branch"} \
                     or not all(isinstance(v, str) for v in t.values()):
                 raise MSMError(EINVAL, "each task needs exactly shortname, instructions, branch")
+        limit = os.environ.get("MAX_TASKS_PER_CYCLE", "")
+        if limit.isdigit() and int(limit) > 0 and len(tasks) > int(limit):  # R326
+            raise MSMError(EINVAL, f"a cycle has at most MAX_TASKS_PER_CYCLE = {limit} tasks, "
+                                   f"not {len(tasks)}")
         loop = self.loop()
         if loop["phase"] != "plan" or loop["stopped"]:
             raise MSMError(EPERM, "cycle create needs phase = plan and not stopped")

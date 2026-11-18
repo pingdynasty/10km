@@ -71,7 +71,7 @@ class TestTwoProjectRepos(ScenarioCase):
     def test_worker_commits_in_both_repos_are_merged(self):
         """R11, R16, R23, R117, R118, R125, R217, R250, R255, R256, R20."""
         self.loop.start()
-        self.drive(self.cycle_planned(2), FAKE_TASKS="a b", MAX_WORKERS="2")
+        self.drive(self.cycle_planned(2), FAKE_TASKS="a b", MAX_TASKS_PER_CYCLE="2")
         tasks = self.tasks(1)
         self.assertEqual({k: t["status"] for k, t in tasks.items()},
                          {"a": "accepted", "b": "accepted"})

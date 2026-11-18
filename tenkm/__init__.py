@@ -10,3 +10,8 @@ Modules:
   dispatch   one Dispatcher pass
   status     the status report
 """
+import sys
+
+if sys.version_info < (3, 9):
+    sys.exit(f"10km needs Python 3.9 or later; this is {sys.version.split()[0]} "
+             f"({sys.executable})")

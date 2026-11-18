@@ -445,7 +445,7 @@ class TestGitCalls(CurateCase):
         repos = len(self.cfg.repos())
         calls, patcher = self.git_calls()
         with patcher:
-            dispatch.Pass(self.reload(MAX_WORKERS="3")).run()
+            dispatch.Pass(self.reload(MAX_TASKS_PER_CYCLE="3")).run()
         workers = [s["name"] for s in self.sessions("worker") if s["status"] == "active"]
         self.assertEqual(len(workers), 3)
         self.assertEqual(self.count(calls, "show-ref"), 0)  # checked only if add fails

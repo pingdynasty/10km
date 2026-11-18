@@ -402,6 +402,24 @@ class TestGateScript(GateCase):
         self.assertNotEqual(rerun[0]["log"], results[0]["log"])
 
 
+class TestEntryPoints(unittest.TestCase):
+    def test_old_python_exits_with_a_message(self):
+        path = os.path.join(CODE, "tenkm", "__init__.py")
+        with open(path) as f, mock.patch.object(sys, "version_info", (3, 7, 16)):
+            with self.assertRaises(SystemExit) as e:
+                exec(compile(f.read(), path, "exec"), {"__name__": "tenkm"})
+        self.assertIn("needs Python 3.9 or later", str(e.exception.code))
+
+    def test_msm_finds_the_root_from_its_code(self):
+        tmp = tempfile.mkdtemp(prefix="10km-root-")
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        testenv.loop_repo(os.path.join(tmp, "central", "loop"))
+        env = {k: v for k, v in testenv.clean_env().items() if k not in ("LOOP_ROOT", "MSM_DB")}
+        msm = os.path.join(tmp, "central", "loop", "bin", "msm")
+        subprocess.run([msm, "init"], env=env, check=True, capture_output=True)
+        self.assertTrue(os.path.exists(os.path.join(tmp, ".10km", "loop.db")))
+
+
 class TestGateWait(unittest.TestCase):
     def test_waiting_on_another_calls_run_polls_quickly_then_backs_off(self):
         # R34: a rerun waiting on a run it didn't start checks often at first,
@@ -477,19 +495,53 @@ class TestDispatchScript(ScriptCase):
     def test_workers_up_to_max_then_as_slots_free(self):
         self.loop.start()
         self.loop.plan("a", "b", "c")
-        self.dispatch(MAX_WORKERS="2")
+        self.dispatch(MAX_CONCURRENT_SESSIONS="2")
         workers = self.loop.sessions("worker")
         self.assertEqual(len(workers), 2)
-        self.dispatch(MAX_WORKERS="2")
+        self.dispatch(MAX_CONCURRENT_SESSIONS="2")
         self.assertEqual(len(self.loop.sessions("worker")), 2)
         self.loop.done(workers[0]["name"])
-        self.dispatch(MAX_WORKERS="2")
+        self.dispatch(MAX_CONCURRENT_SESSIONS="2")
         self.assertEqual(len(self.loop.sessions("worker")), 3)
-        self.dispatch(MAX_WORKERS="5")  # no waiting task: launches fail harmlessly
+        self.dispatch(MAX_CONCURRENT_SESSIONS="5")  # no waiting task: launches fail harmlessly
         self.assertEqual(len(self.loop.sessions("worker")), 3)
         self.assertEqual({t["status"] for t in self.loop.msm("task", "list")},
                          {"done", "active"})
         self.assertEqual(self.loop.sessions("curator"), [])
+
+    def test_session_limit_caps_every_role_curator_first(self):  # R325
+        self.loop.start()
+        self.loop.plan("a", "b", "c")
+        self.loop.contribute()
+        self.dispatch(MAX_CONCURRENT_SESSIONS="2")
+        self.assertEqual(sorted(s["role"] for s in self.loop.active()), ["curator", "worker"])
+        self.dispatch(MAX_CONCURRENT_SESSIONS="2")  # at the limit: nothing more
+        self.assertEqual(len(self.loop.active()), 2)
+        self.dispatch(MAX_CONCURRENT_SESSIONS="0")  # no limit
+        self.assertEqual(len(self.loop.active("worker")), 3)
+
+    def test_the_operator_may_exceed_the_limit(self):  # R330
+        self.loop.start()
+        self.dispatch(MAX_CONCURRENT_SESSIONS="1")
+        self.assertEqual(len(self.loop.active("planner")), 1)
+        self.loop.session("operator", "mars", env={"MAX_CONCURRENT_SESSIONS": "1"})
+        self.assertEqual(len(self.loop.active()), 2)
+
+    def test_session_limit_refuses_the_planner_too(self):  # R325
+        self.loop.start()
+        self.loop.session("operator", "mars")  # active: it counts
+        self.dispatch(MAX_CONCURRENT_SESSIONS="1")
+        self.assertEqual(self.loop.sessions("planner"), [])
+        self.dispatch(MAX_CONCURRENT_SESSIONS="2")
+        self.assertEqual(len(self.loop.active("planner")), 1)
+
+    def test_agents_get_max_tasks_per_cycle_in_their_environment(self):  # R326
+        self.loop.start()
+        self.dispatch(LOOP_AGENT="printenv MAX_TASKS_PER_CYCLE > max.txt; sleep 30", MAX_TASKS_PER_CYCLE="3")
+        [planner] = self.loop.sessions("planner")
+        path = os.path.join(planner["working_directory"], "max.txt")
+        self.assertTrue(wait_for(lambda: os.path.exists(path) and os.path.getsize(path)))
+        self.assertEqual(testenv.read(path).strip(), "3")
 
     def test_time_out_sends_sigterm_first_and_relaunches_the_role(self):
         self.loop.start()

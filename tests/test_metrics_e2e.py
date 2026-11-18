@@ -50,7 +50,7 @@ class TestMetricsOfACuratedLoop(ScenarioCase):
         # Both Workers change shared.txt: the second merge conflicts and is
         # rejected (quicker than a failing validation gate).
         settings = dict(FAKE_TASKS="one two", FAKE_WORKER="conflict",
-                        MAX_WORKERS="2", FAKE_USAGE="1", FAKE_CYCLE2_PLANNER="hang")
+                        MAX_TASKS_PER_CYCLE="2", FAKE_USAGE="1", FAKE_CYCLE2_PLANNER="hang")
 
         def curated_and_recorded():
             cycles = self.cycles()

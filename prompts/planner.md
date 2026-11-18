@@ -15,12 +15,13 @@ deliverables, BACKLOG.md and `config.env`.
 3. Decide the headline: the focus of this cycle. Update the plan and BACKLOG.md,
    and commit to your session branch. A task's `shortname` in `msm cycle create`
    is a label for the task, not a plan shortname (G1, DEL1, PH1).
-4. Plan the tasks. Up to `MAX_WORKERS` run in parallel, so make each task
-   independent of the others. For the full test suite, task instructions name
-   `gate worker`, never a direct suite run. Each task's `branch` is the base its
-   Worker rebases on: your session name for a new task. To continue a backlog item
-   that has a branch, rebase that branch on your session branch, use it as the
-   task's `branch`, and resolve the item.
+4. Plan the tasks. At most `MAX_TASKS_PER_CYCLE` (in your environment; 0 means no
+   limit). They may run in parallel, so make each task independent of the others.
+   For the full test suite, task instructions name `gate worker`, never a direct
+   suite run. Each task's `branch` is the base its Worker rebases on: your session
+   name for a new task. To continue a backlog item that has a branch, rebase that
+   branch on your session branch, use it as the task's `branch`, and resolve the
+   item.
 5. Before creating the cycle, rebase your session branch in each repo on that
    repo's main branch in central (`git config tenkm.mainBranch`): main may have
    moved while you planned, and Workers rebasing on a stale base replay its commits.

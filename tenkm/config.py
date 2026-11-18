@@ -6,7 +6,7 @@ worktree exists (during init), the config.env next to this code is used.
 
     from tenkm import config
     cfg = config.load()
-    cfg.root, cfg.central, cfg.repos(), cfg.int("MAX_WORKERS", 4)
+    cfg.root, cfg.central, cfg.repos(), cfg.int("MAX_TASKS_PER_CYCLE", 0)
 """
 import os
 import subprocess

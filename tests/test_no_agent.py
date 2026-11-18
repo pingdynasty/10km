@@ -31,7 +31,7 @@ class TestTestConfig(unittest.TestCase):
                 mock.patch.dict(os.environ, LOOP_ROOT=tmp):  # no test loop: code defaults
             cfg = config.load()
         self.assertEqual(cfg["LOOP_CONFIG_PATH"], testenv.CONFIG)
-        self.assertEqual(cfg["MAX_WORKERS"], "4")  # the code's other settings still apply
+        self.assertEqual(cfg["MAX_TASKS_PER_CYCLE"], "0")  # the code's other settings still apply
         for role in ROLES:
             command = cfg.agent_command(role)
             self.assertIn(f"10km tests: {role.upper()}_AGENT is not set", command)

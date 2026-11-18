@@ -38,7 +38,7 @@ the loop repo (`central/loop`). Commit straight to each repo's main branch.
    `WORKER_AGENT`, `CURATOR_AGENT` and `AUDITOR_AGENT` override it (e.g. a model
    per role). `OPERATOR_AGENT` runs kickoff and operator sessions. Check that a
    role's command starts an agent with `10km launch-test <role>` (a short real
-   run). Review the other `config.env` settings (time-outs, `MAX_WORKERS`, audit
+   run). Review the other `config.env` settings (time-outs, `MAX_TASKS_PER_CYCLE`, audit
    schedule) with the operator.
 6. **Agent files.** Agree what files agents may produce (research notes, reports,
    logs) and where (repo, directory, committed or scratch). Record it in

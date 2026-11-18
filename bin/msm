@@ -4,6 +4,9 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
+from tenkm import config  # noqa: E402
 from tenkm.msm import main  # noqa: E402
+
+os.environ.setdefault("LOOP_ROOT", config.default_root())
 
 sys.exit(main(sys.argv[1:]))

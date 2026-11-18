@@ -214,7 +214,7 @@ class TestExpiry(ScenarioCase):
         """R29, R138, R155, R157, R159, R67, R110, R225, R227, R175, R206, R73,
         R111, R141."""
         settings = dict(FAKE_TASKS="a b c", FAKE_WORKER2="hang", FAKE_WORKER3="die",
-                        MAX_WORKERS="3", START_GRACE="1")
+                        MAX_TASKS_PER_CYCLE="3", START_GRACE="1")
         self.loop.start()
         self.drive(lambda: self.committed("b") and self.tasks(1)["a"]["status"] == "done"
                    and self.tasks(1)["c"]["status"] == "expired", **settings)
@@ -248,7 +248,7 @@ class TestRejection(ScenarioCase):
         """R34, R221, R222, R225, R226, R233, R234, R236, R237, R239, R240, R242,
         R175, R206, R251, R83, R111, R141."""
         self.loop.start()
-        self.drive(self.cycle_planned(2), FAKE_TASKS="one two bad", MAX_WORKERS="3",
+        self.drive(self.cycle_planned(2), FAKE_TASKS="one two bad", MAX_TASKS_PER_CYCLE="3",
                    FAKE_WORKER1="conflict", FAKE_WORKER2="conflict", FAKE_WORKER3="broken",
                    VALIDATION_GATES="test ! -e broken.txt")
         tasks = self.tasks(1)
@@ -271,9 +271,9 @@ class TestRejection(ScenarioCase):
 class TestStopAndResume(ScenarioCase):
     def test_stop_mid_cycle_then_resume_continues_the_same_cycle(self):
         """R41, R76, R138, R139, R155, R169, R170, R172, R173, R75, R113, R140, R142,
-        R212, R213, R110, R111."""
-        settings = dict(FAKE_TASKS="a b c", MAX_WORKERS="2", FAKE_WORKER1="slow",
-                        FAKE_DELAY="2", FAKE_WORKER2="hang")
+        R212, R213, R110, R111, R325."""
+        settings = dict(FAKE_TASKS="a b c", MAX_TASKS_PER_CYCLE="3", MAX_CONCURRENT_SESSIONS="2",
+                        FAKE_WORKER1="slow", FAKE_DELAY="2", FAKE_WORKER2="hang")
         self.loop.start()
         self.drive(lambda: len(self.active("worker")) == 2, **settings)
         self.loop.msm("loop", "stop", "test")

@@ -129,6 +129,28 @@ class TestLoopRecord(MsmCase):
         self.assertEqual((loop["stopped"], loop["reason"], loop["phase"]),
                          (False, None, "execute"))
 
+    def test_resume_in_plan_curates_only_waiting_work(self):  # R113
+        self.ok("loop", "start")
+        self.ok("loop", "stop", "blocked")
+        self.assertEqual(self.ok("loop", "resume")["phase"], "plan")  # nothing to merge
+        op = self.ok("session", "create", "operator", "mars")["name"]
+        self.ok("session", "done", op)
+        self.ok("loop", "stop", "blocked")
+        self.assertEqual(self.ok("loop", "resume")["phase"], "curate")  # merge it first
+
+    def test_cycle_create_refuses_more_tasks_than_the_limit(self):  # R326
+        self.ok("loop", "start")
+        planner = self.ok("session", "create", "planner")["name"]
+        tasks = [{"shortname": s, "instructions": s, "branch": planner} for s in "abc"]
+        data = {"planner_session": planner, "headline": "h", "tasks": tasks}
+        self.env["MAX_TASKS_PER_CYCLE"] = "2"
+        self.fails(1, "cycle", "create", json.dumps(data))
+        self.env["MAX_TASKS_PER_CYCLE"] = "0"  # no limit
+        self.assertEqual(len(self.ok("cycle", "create", json.dumps(data))["tasks"]), 3)
+        self.env["MAX_TASKS_PER_CYCLE"] = "2"
+        data["tasks"] = tasks[:2]
+        self.assertEqual(len(self.ok("cycle", "create", json.dumps(data))["tasks"]), 2)
+
     def test_resume_resets_the_empty_cycle_count(self):  # R75 R324
         self.ok("loop", "start")
         self.plan()

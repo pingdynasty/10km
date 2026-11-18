@@ -104,8 +104,8 @@ class TestMigration(unittest.TestCase):
 
 class TestConfig(LoopCase):
     def test_environment_overrides_config(self):
-        self.assertEqual(self.cfg.int("MAX_WORKERS", 0), 4)
-        self.assertEqual(self.reload(MAX_WORKERS="7").int("MAX_WORKERS", 0), 7)
+        self.assertEqual(self.cfg.int("MAX_TASKS_PER_CYCLE", 9), 0)
+        self.assertEqual(self.reload(MAX_TASKS_PER_CYCLE="7").int("MAX_TASKS_PER_CYCLE", 0), 7)
         self.assertEqual(self.cfg.repos(), ["loop", "project"])
         self.assertEqual(self.reload(WORKER_TIMEOUT="5").timeout("worker"), 5)
         self.assertEqual(self.cfg.timeout("planner"), 3600)
@@ -124,7 +124,7 @@ class TestStatePaths(LoopCase):
 
 class TestBrokenConfig(LoopCase):
     def test_syntax_error_and_exit_are_reported(self):
-        for text in ("MAX_WORKERS=2\nif then\n", "exit 0\n"):
+        for text in ("MAX_TASKS_PER_CYCLE=2\nif then\n", "exit 0\n"):
             path = os.path.join(self.tmp.name, "bad.env")
             with open(path, "w") as f:
                 f.write(text)

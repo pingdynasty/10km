@@ -117,7 +117,8 @@ MAP = {
     "R111": [M + "test_full_cycle", M + "test_curator_runs_in_any_phase_for_contributions",
              IDLE, OFF_PHASE],
     "R112": [M + "test_preconditions", RM + "TestLoopRecord.test_start_clears_reason_and_goes_to_plan"],
-    "R113": [M + "test_stop_and_resume", RM + "TestLoopRecord.test_resume_outside_plan_keeps_the_phase"],
+    "R113": [M + "test_stop_and_resume", RM + "TestLoopRecord.test_resume_outside_plan_keeps_the_phase",
+             RM + "TestLoopRecord.test_resume_in_plan_curates_only_waiting_work"],
 }
 
 PENDING = set()

@@ -46,10 +46,14 @@ On first start the container creates the loop repo, `central/loop`, from its cop
 
 ## Run it on a host
 
-10km requires Python 3.9+ (standard library only), Bash, git 2.26+ and an agent
-CLI such as `pi`, `hermes`, `claude`, `codex` or `kiro-cli`. The loop root (`LOOP_ROOT`)
-is a directory holding 10km, your worktrees (`central/`) and the database (`.10km/loop.db`
-unless `MSM_DB` says otherwise).
+### Requirements
+
+Python 3.9+ (standard library only; an older one is refused with a message), Bash,
+git 2.26+ and an agent CLI such as `pi`, `hermes`, `claude`, `codex` or `kiro-cli`.
+
+The loop root (`LOOP_ROOT`) is a directory holding 10km, your worktrees (`central/`)
+and the database (`.10km/loop.db` unless `MSM_DB` says otherwise). If `LOOP_ROOT` isn't
+set, the scripts guess it from where they are.
 
 ```sh
 mkdir -p ~/myloop/central && cd ~/myloop
