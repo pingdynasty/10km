@@ -129,14 +129,16 @@ class TestLoopRecord(MsmCase):
         self.assertEqual((loop["stopped"], loop["reason"], loop["phase"]),
                          (False, None, "execute"))
 
-    def test_resume_in_plan_curates_only_waiting_work(self):  # R113
+    def test_resume_keeps_the_phase_and_the_planner_waits_for_work(self):  # R113 R90
         self.ok("loop", "start")
-        self.ok("loop", "stop", "blocked")
-        self.assertEqual(self.ok("loop", "resume")["phase"], "plan")  # nothing to merge
         op = self.ok("session", "create", "operator", "mars")["name"]
         self.ok("session", "done", op)
         self.ok("loop", "stop", "blocked")
-        self.assertEqual(self.ok("loop", "resume")["phase"], "curate")  # merge it first
+        self.assertEqual(self.ok("loop", "resume")["phase"], "plan")
+        cur = self.ok("session", "create", "curator")["name"]  # for the operator's work
+        self.fails(2, "session", "create", "planner")  # waits for the Curator
+        self.ok("session", "done", cur)
+        self.ok("session", "create", "planner")  # even if work is left uncurated
 
     def test_cycle_create_refuses_more_tasks_than_the_limit(self):  # R326
         self.ok("loop", "start")

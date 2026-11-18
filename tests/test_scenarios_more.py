@@ -33,12 +33,13 @@ class TestIdleStop(ScenarioCase):
 
 class TestOffPhaseCurator(ScenarioCase):
     def test_done_auditor_and_operator_work_is_curated_outside_the_curate_phase(self):
-        """R145, R140, R91, R212, R167, R250, R256, R111."""
+        """R145, R140, R91, R90, R212, R167, R250, R256, R111."""
         settings = dict(AUDIT_CYCLES_LIMIT="1", FAKE_CYCLE2_WORKER1="hang",
                         WORKER_TIMEOUT="3600")
         self.loop.start()
         self.drive(lambda: not self.sessions("auditor")
-                   and "smoke learning" in (self.show("main", "LEARNINGS.md", "loop") or ""),
+                   and "smoke learning" in (self.show("main", "LEARNINGS.md", "loop") or "")
+                   and self.loop.msm("loop", "get")["current_cycle"] == 2,  # after the Curator
                    **settings)
         self.assertEqual(self.loop.msm("loop", "get")["last_audit"], 1)
         self.assertEqual(len(self.loop.msm("audit", "list")), 1)

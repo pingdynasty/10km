@@ -130,7 +130,7 @@ The state machine returns exit status:
 **R89** msm appends every change to a cycle, task, audit, issue, or loop status (start, stop, resume) to an action log: a text file, one line per change with the time, the caller's session and the command.
 
 ### Role Preconditions
-- **R90** Planner: phase = plan AND not stopped AND no active Planner
+- **R90** Planner: phase = plan AND not stopped AND no active Planner AND no active Curator
 - **R91** Curator: not stopped AND no active Curator AND (phase = curate OR an inactive operator or Auditor session exists)
 - **R92** Worker: phase = execute AND not stopped AND a waiting task exists
 - **R93** Auditor: not stopped AND no Auditor session
@@ -216,7 +216,7 @@ cycle curate  # R102
 **R110** Worker session `done|expired`: if no tasks remain waiting or active: `curate`.
 **R111** Curator session `done`: if the current cycle is not open: `plan`.
 **R112** `loop start`: `plan`.
-**R113** `loop resume`: if phase = plan and inactive operator or Auditor work is waiting: `curate`, so it is merged before the Planner plans. Otherwise leave as is.
+**R113** `loop resume`: leave the phase as is.
 
 ## Sessions
 **R114** Agents and operators do their work in sessions.
@@ -250,11 +250,10 @@ The script returns exit status:
 **R137** When the Dispatcher is invoked, it reads the loop state.
 **R138** It checks for and expires timed out sessions.
 **R139** If the loop is stopped, it exits.
-**R140** If an inactive operator or Auditor session exists, it launches a Curator, whatever the phase.
+**R140** It tries to launch a Curator, whatever the phase.
 Then, by phase:
   **R141** plan    -> launch Planner
   **R142** execute -> launch Workers while launches succeed
-  **R143** curate  -> launch Curator
 **R144** Launches fail harmlessly if the role's preconditions are not met.
 **R325** The Dispatcher launches at most the configured number of concurrent agents. It launches in this order: Curator, the phase's role, Auditor. **R330** The operator may exceed the limit: msm doesn't enforce it, so `session create` never refuses for it.
 **R326** The Planner creates at most the configured number of tasks per cycle: `cycle create` with more refuses with EINVAL.

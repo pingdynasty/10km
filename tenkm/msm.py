@@ -275,9 +275,7 @@ class MSM:
         if not loop["stopped"]:
             raise MSMError(EPERM, "loop is not stopped")
         self.check_no_blocking_escalation()
-        pending = loop["phase"] == "plan" and self.pending_contributions()
-        phase = "curate" if pending else loop["phase"]  # R113
-        self.set_loop(stopped=0, reason=None, phase=phase, empty_cycles=0)
+        self.set_loop(stopped=0, reason=None, empty_cycles=0)
         self.log("loop resume")
         return to_dict(self.loop())
 
@@ -326,8 +324,9 @@ class MSM:
         stopped, phase, current = loop["stopped"], loop["phase"], loop["current_cycle"]
         cycle, task = None, None
         if role == "planner":
-            if phase != "plan" or stopped or self.active("planner"):
-                raise MSMError(EPERM, "planner needs phase = plan, not stopped, no active planner")
+            if phase != "plan" or stopped or self.active("planner") or self.active("curator"):
+                raise MSMError(EPERM, "planner needs phase = plan, not stopped, no active "
+                                      "planner or curator")
             cur = self.current_cycle()
             cycle = current if cur and cur["status"] == "open" else current + 1
             base = f"cycle{cycle}-planner"

@@ -240,18 +240,13 @@ class Pass:
         self.record_usage()
         with msm.transaction(self.cfg.db) as m:
             loop = m.loop_get()
-            pending = m.pending_contributions()
             auditor = not loop["stopped"] and self.auditor_due(m)
         if loop["stopped"]:
             return
-        if pending:
-            self.launch("curator")
-        phase = loop["phase"]
-        if phase == "plan":
+        self.launch("curator")
+        if loop["phase"] == "plan":
             self.launch("planner")
-        elif phase == "curate":
-            self.launch("curator")
-        elif phase == "execute":
+        elif loop["phase"] == "execute":
             while self.launch("worker"):
                 pass
         if auditor:

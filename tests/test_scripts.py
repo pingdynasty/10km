@@ -488,9 +488,9 @@ class TestDispatchScript(ScriptCase):
     def test_contributions_get_a_curator_in_any_phase(self):
         self.loop.start()
         self.loop.contribute()
-        self.dispatch()
+        self.dispatch()  # the Planner waits until the operator's work is merged
         self.assertEqual(sorted(s["role"] for s in self.loop.sessions()
-                                if s["status"] == "active"), ["curator", "planner"])
+                                if s["status"] == "active"), ["curator"])
 
     def test_workers_up_to_max_then_as_slots_free(self):
         self.loop.start()

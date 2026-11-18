@@ -88,7 +88,8 @@ MAP = {
             "tests/test_requirements_loop.py:TestStatePaths."
             "test_database_and_action_log_are_at_the_configured_paths"],
     # Role preconditions
-    "R90": [M + "test_preconditions", M + "test_stop_and_resume"],
+    "R90": [M + "test_preconditions", M + "test_stop_and_resume",
+            RM + "TestLoopRecord.test_resume_keeps_the_phase_and_the_planner_waits_for_work"],
     "R91": [M + "test_curator_runs_in_any_phase_for_contributions", M + "test_preconditions",
             OFF_PHASE],
     "R92": M + "test_full_cycle",
@@ -118,7 +119,7 @@ MAP = {
              IDLE, OFF_PHASE],
     "R112": [M + "test_preconditions", RM + "TestLoopRecord.test_start_clears_reason_and_goes_to_plan"],
     "R113": [M + "test_stop_and_resume", RM + "TestLoopRecord.test_resume_outside_plan_keeps_the_phase",
-             RM + "TestLoopRecord.test_resume_in_plan_curates_only_waiting_work"],
+             RM + "TestLoopRecord.test_resume_keeps_the_phase_and_the_planner_waits_for_work"],
 }
 
 PENDING = set()
