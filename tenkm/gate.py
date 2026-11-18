@@ -38,6 +38,7 @@ from .locks import lock
 EXIT_FAILED, EXIT_RUNNING = 1, 3
 OPERATOR = "operator"  # the name and evidence subdir of `10km gate` runs
 POLL_FIRST, POLL_MAX = 0.05, 1.0  # seconds between checks on a run, backing off
+STATUS_GRACE = 2.0  # seconds a finished run's status file may take to appear
 
 
 def recording(command, rc_path):
@@ -146,16 +147,40 @@ def run_gate(cfg, session, repo, command, wait, evidence=None, scratch=None):
         return "passed", run["log"]
 
 
+def _record(run, rc):
+    """Record rc as the run's status, unless the run recorded its own."""
+    if not os.path.exists(run["rc"]):
+        with open(run["rc"] + ".new", "w") as f:
+            f.write(f"{rc}\n")
+        os.replace(run["rc"] + ".new", run["rc"])
+
+
+def _appears(path, grace):
+    """True if path exists now or within grace seconds."""
+    deadline = time.monotonic() + grace
+    while not os.path.exists(path):
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(POLL_FIRST)
+    return True
+
+
 def _wait(run, child, wait):
     """Wait up to wait seconds for the run to record its status; True once it has.
-    A run whose process group is gone without a status was killed: record 137.
-    Waits on child (the run, if this call started it), else polls with back-off."""
+    If this call started the run, child is its process: it is waited on, and its
+    exit code is the status (the wrapper exits with it). A run started by an
+    earlier call is polled with back-off; once none of its processes are left, its
+    status file should appear within STATUS_GRACE, else it was killed: record 137."""
     deadline = time.monotonic() + wait
     interval = POLL_FIRST
     while not os.path.exists(run["rc"]):
-        if not process._group_exists(run["pgid"]) and not os.path.exists(run["rc"]):
-            with open(run["rc"], "w") as f:  # killed before it could record its status
-                f.write("137\n")
+        if child is not None and child.poll() is not None:
+            code = child.returncode
+            _record(run, code if code >= 0 else 128 - code)
+            return True
+        if child is None and not process._group_exists(run["pgid"]) \
+                and not _appears(run["rc"], STATUS_GRACE):
+            _record(run, 137)  # killed before it could record its status
             return True
         left = deadline - time.monotonic()
         if left <= 0:

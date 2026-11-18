@@ -11,6 +11,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -442,6 +443,33 @@ class TestGateWait(unittest.TestCase):
         with mock.patch.object(gate.time, "sleep", sleep):
             self.assertTrue(gate._wait(run, None, 60))
         self.assertEqual(steps, [0.05, 0.1, 0.2, 0.4, 0.8, 1.0, 1.0, 1.0])
+
+    def test_a_quick_run_gives_its_own_status_whatever_ps_says(self):  # R34
+        # A gate that finishes at once must not be taken for killed, even if ps
+        # misses its process group.
+        from tenkm import gate
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        for command, status in (("true", 0), ("exit 3", 3)):
+            run = {"rc": os.path.join(tmp, f"{status}.rc")}
+            child = subprocess.Popen(["bash", "-c", gate.recording(command, run["rc"])],
+                                     start_new_session=True)
+            run["pgid"] = child.pid
+            with mock.patch.object(gate.process, "_group_exists", return_value=False):
+                self.assertTrue(gate._wait(run, child, 10))
+            self.assertEqual(gate._rc(run), status)
+
+    def test_a_late_status_of_another_calls_run_is_not_taken_for_killed(self):  # R34
+        from tenkm import gate
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        run = {"rc": os.path.join(tmp, "gate.rc"), "pgid": 999999}
+        writer = threading.Timer(0.5, lambda: open(run["rc"], "w").write("0\n"))
+        writer.start()
+        self.addCleanup(writer.cancel)
+        with mock.patch.object(gate.process, "_group_exists", return_value=False):
+            self.assertTrue(gate._wait(run, None, 10))
+        self.assertEqual(gate._rc(run), 0)
 
 
 # --- dispatch ----------------------------------------------------------------
