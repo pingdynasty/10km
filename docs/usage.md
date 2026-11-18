@@ -41,7 +41,7 @@ There are two ways to act on a running loop: change its state directly with `msm
 Run the commands from your own shell, with `LOOP_ROOT` and `PATH` set as in [Run it on a host](../README.md#run-it-on-a-host); in the container both are set already. Unset `LOOP_SESSION`: msm treats a set `LOOP_SESSION` as an agent's session.
 
 ```sh
-10km status               # phase, cycle, tasks, sessions, issues, audits, repos
+10km status               # phase, cycle, Dispatcher, tasks, sessions, issues, audits, repos
 ```
 
 For example:
@@ -49,6 +49,7 @@ For example:
 ```
 10km loop, Nov 15 19:47 CET
 Loop: running, phase curate, cycle 1
+Dispatcher: last pass 19:46, 40s ago (ok); run-loop running (pid 4120)
 
 Cycle 1 (open, planned 19:35, 12m ago):
   PH1: DEL2 (resume resets the idle count) and DEL3 (small bugs)
@@ -100,16 +101,21 @@ msm issue create '{"type": "backlog", "title": "<one line>",
 
 Search first (`msm issue list '{"status": "open"}'`) and update a similar item instead of adding another. Say in the description if you approve a change that would otherwise need you, such as a change to `docs/requirements.md`.
 
-**Start, stop and resume.**
+**Start, pause, resume and stop.**
 
 ```sh
-msm loop start              # once, after kickoff: the first Planner runs
-msm loop stop <reason>      # the Dispatcher launches nothing new; running agents finish
-msm loop resume             # continue a stopped loop from its phase
+10km start                  # start run-loop unless one runs; resume a stopped loop
+10km pause [--now] [reason] # stop the loop: the Dispatcher launches nothing new
+10km resume                 # continue a stopped loop from its phase
+10km stop [--now]           # stop the loop and run-loop
 msm loop get                # stopped or not, the reason, phase and cycle
 ```
 
-A stopped loop keeps its state and worktrees. Agents can't restart it: msm refuses loop changes from agent sessions while the loop is stopped. `msm loop resume` is refused while a blocking escalation assigned to you is open; answer it first.
+Without `--now`, running agents finish their work; with it, they and their gate runs are stopped and their sessions expired (operator sessions are left alone). After `pause` the Dispatcher still runs, so it expires timed-out sessions and records usage; after `stop` nothing does until `10km start`. `run-loop` logs to `<root>/.10km/run-loop.log`; only one runs per loop. In the container `run-loop` is the main process, so `10km stop` ends the container: use `pause` there.
+
+`run-loop` is optional: anything that runs `10km dispatch` every `DISPATCH_INTERVAL` seconds will do, such as cron (`* * * * * LOOP_ROOT=<root> <root>/central/loop/bin/dispatch >> <root>/.10km/dispatch.log 2>&1`), a systemd timer or launchd. Then use `pause` and `resume`, and start or stop the scheduler yourself. `10km status` shows the last Dispatcher pass, and flags it OVERDUE when passes stop coming while the loop runs.
+
+Kickoff starts the loop with `msm loop start`; `10km resume` is `msm loop resume`, and `10km pause` is `msm loop stop` with a reason. A stopped loop keeps its state and worktrees. Agents can't restart it: msm refuses loop changes from agent sessions while the loop is stopped. `10km resume` is refused while a blocking escalation assigned to you is open; answer it first.
 
 ### 2. In an operator session: files and repos
 
@@ -152,7 +158,7 @@ Commit everything before `session done`: the Curator merges commits only, and un
 |---|---|
 | Answer an escalation with a decision | `msm issue update` |
 | Ask for work | `msm issue create` (backlog item) |
-| Pause or continue the loop | `msm loop stop` / `msm loop resume` |
+| Pause or continue the loop | `10km pause` / `10km resume` |
 | Change files yourself | a manual session |
 | Have your agent change files, with you | an interactive session |
 | Have your agent change files from written instructions | a one-shot session |

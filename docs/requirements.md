@@ -285,6 +285,15 @@ Notes:
 
 **R313** `msm loop resume` refuses with EPERM while a blocking escalation assigned to the operator is open; an answered one doesn't count.
 
+### Start, Pause, Resume, Stop
+**R331** `10km start` starts `run-loop`, which runs a Dispatcher pass every configured interval, in the background unless one is running, and resumes the loop if it is stopped. A loop not kicked off yet stays stopped.
+**R332** At most one `run-loop` runs per loop; another one exits.
+**R333** `10km pause` stops the loop and leaves `run-loop` running.
+**R334** `10km resume` resumes a stopped loop.
+**R335** `10km stop` stops the loop and `run-loop`.
+**R336** Without `--now`, running agents finish their work. With `--now`, `pause` and `stop` also stop the agents of all but operator sessions, and their gate runs, and expire those sessions.
+**R337** Each Dispatcher pass records when it ran and its result. The status report shows the last pass, and warns when passes are overdue while the loop isn't stopped.
+
 ## Issues
 **R174** There are two types of issues: Escalation, and Backlog.
 **R175** Issues from unmerged work (expired, incomplete, or rejected) should reference its branch.

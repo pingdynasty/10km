@@ -60,11 +60,11 @@ mkdir -p ~/myloop/central && cd ~/myloop
 git clone <10km or your fork> central/loop
 export LOOP_ROOT=~/myloop PATH=~/myloop/central/loop/bin:$PATH
 10km kickoff                     # create the database and set up the loop
-run-loop                         # call the dispatcher every DISPATCH_INTERVAL seconds
+10km start                       # run the dispatcher every DISPATCH_INTERVAL seconds
 ```
 
-Keep `run-loop` running (in `tmux`, or as a service), or call `10km dispatch` from
-cron instead.
+`10km start` runs `run-loop` in the background; `10km pause`, `resume` and `stop`
+control the loop. Or call `10km dispatch` from cron or another scheduler instead.
 
 Remember that the monkeys may use and abuse any tools you give them access to. It
 would be a mistake not to give them a sandbox.
@@ -80,6 +80,9 @@ and the first Planner runs. `10km kickoff -- "<instructions>"` does it in one sh
 ```
 10km kickoff [-- message]       set up the loop
 10km status                     status report
+10km start                      start the dispatcher; resume a stopped loop
+10km pause|resume               stop or continue the loop
+10km stop [--now]               stop the loop and the dispatcher (--now: and the agents)
 10km dispatch                   launch any agents that are due
 10km session start <username> [--no-agent] [-- instruction]
                                 start an operator session

@@ -3,6 +3,11 @@
   10km init                       create the database; register the central repos
   10km kickoff [-- message]       set up the loop with OPERATOR_AGENT
   10km status                     status report
+  10km start                      start run-loop unless one runs; resume a stopped loop
+  10km pause [--now] [reason]     stop the loop; run-loop keeps running
+  10km resume                     resume a stopped loop
+  10km stop [--now]               stop the loop and run-loop
+                                  (--now: also stop running agents and their gates)
   10km metrics [--cycle N] [--json]
                                   sessions, times, commits and usage per cycle and role
   10km dispatch                   one Dispatcher pass
@@ -23,7 +28,7 @@ import os
 import subprocess
 import sys
 
-from . import (config, dispatch, doctor, gate, init, launchtest, metrics, msm, notify,
+from . import (config, control, dispatch, doctor, gate, init, launchtest, metrics, msm, notify,
                sessions, status)
 
 
@@ -175,6 +180,8 @@ def main(argv=None):
     if command == "status":
         print(status.report(cfg))
         return 0
+    if command in ("start", "pause", "resume", "stop"):
+        return control.main(cfg, command, args)
     if command == "metrics":
         return _metrics(args, cfg)
     if command == "dispatch":

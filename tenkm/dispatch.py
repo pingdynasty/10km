@@ -1,8 +1,11 @@
 """tenkm.dispatch: one Dispatcher pass (R136-R160).
 
 It records the usage of agents that have exited, and notifies only fatal errors
-(R300), after the pass and outside the dispatch lock.
+(R300), after the pass and outside the dispatch lock. Each pass records when it
+ended and how in <state dir>/dispatch.json, the heartbeat `10km status` reports
+(R337).
 """
+import json
 import os
 import re
 import sqlite3
@@ -63,18 +66,34 @@ class Pass:
                 stopped = launcher is not None and launcher.stop(self.cfg, handle)
                 self.expire(s["name"], "timed out")
                 if not stopped:
-                    self.escalate_unstopped(s, handle)
+                    self.escalate_unstopped(s, handle, "timed out")
             elif launcher is not None and age > self.cfg.int("START_GRACE", 180) \
                     and launcher.alive(self.cfg, handle) is False:
                 self.expire(s["name"], "not running")
 
-    def escalate_unstopped(self, s, handle):
+    def stop_agents(self):
+        """R336: stop the running agents of every session but operator sessions, and
+        expire them. Waits for a pass in progress, so none launches meanwhile."""
+        with lock(self.cfg, "dispatch"):
+            with msm.transaction(self.cfg.db) as m:
+                active = [s for s in m.list("session", '{"status": "active"}')
+                          if s["role"] != "operator"]
+            for s in active:
+                handle = s.get("handle")
+                launcher = launchers.for_handle(handle) if handle else None
+                stopped = launcher is not None and launcher.stop(self.cfg, handle)
+                self.expire(s["name"], "stopped by the operator")
+                if not stopped:
+                    self.escalate_unstopped(s, handle, "was stopped by the operator")
+        return [s["name"] for s in active]
+
+    def escalate_unstopped(self, s, handle, what):
         """R158."""
         with msm.transaction(self.cfg.db) as m:
             m.create("issue", {
                 "type": "escalation",
                 "title": f"{next_escalation(m)}: Agent may still be running: {s['name']}",
-                "description": f"Session {s['name']} timed out and was expired, but its "
+                "description": f"Session {s['name']} {what} and was expired, but its "
                                f"launcher could not confirm the agent stopped (handle "
                                f"{handle}). Stop it by hand if it is still running.",
                 "assignee_role": "operator", "severity": "high"})
@@ -258,31 +277,72 @@ class Pass:
             notify.send(self.cfg, title, body, priority, key)
 
 
+HEARTBEAT = "dispatch.json"
+
+
+def record_heartbeat(cfg, started, result):
+    """R337: write the pass's start and end times and result, atomically."""
+    path = os.path.join(cfg.state_dir, HEARTBEAT)
+    beat = {"started_at": started, "finished_at": f"{datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ}",
+            "pid": os.getpid(), "result": result}
+    try:
+        os.makedirs(cfg.state_dir, exist_ok=True)
+        with open(path + ".new", "w", encoding="utf-8") as f:
+            json.dump(beat, f)
+        os.replace(path + ".new", path)
+    except OSError as e:
+        log(f"heartbeat not recorded: {e}")
+
+
+def last_heartbeat(cfg):
+    """The last pass's heartbeat (a dict), or None if none was recorded."""
+    try:
+        with open(os.path.join(cfg.state_dir, HEARTBEAT), encoding="utf-8") as f:
+            beat = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return beat if isinstance(beat, dict) else None
+
+
 def run_pass(cfg=None, now=None):
     """One Dispatcher pass. Returns an exit status."""
     os.environ.pop("LOOP_SESSION", None)  # the Dispatcher acts for the operator
     cfg = cfg or config.load()
+    started = f"{datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ}"
+    result = "failed"
+    try:
+        result = _pass(cfg, now)
+        return 0
+    finally:
+        if result is not None:  # None: another pass holds the lock
+            record_heartbeat(cfg, started, result)
+
+
+def _pass(cfg, now):
+    """The pass; returns its result for the heartbeat, None if another runs."""
     if cfg.get("TENKM_CONFIG_ERROR"):
         log(f"config error: {cfg['TENKM_CONFIG_ERROR']}")
     p = Pass(cfg, now)
     with lock(cfg, "dispatch", blocking=False) as locked:
         if not locked:
-            return 0
+            return None
         if not os.path.exists(cfg.db):
             if os.path.isdir(cfg.central):
                 p.notice("Loop database missing", f"No database at {cfg.db}, but the loop "
                          f"exists at {cfg.root}. Check MSM_DB.", "critical", key="db-missing")
                 p.flush()
-            return 0
+            return "no database"
         notify.forget(cfg, "db-missing")
+        result = "ok"
         try:
             p.run()
             notify.forget(cfg, "db-unreadable")
         except (sqlite3.DatabaseError, DatabaseUnreadable) as e:  # other MSMErrors raise
             p.notice("Loop database unreadable", f"{cfg.db}: {e}. The Dispatcher starts "
                      "nothing until it can read the database.", "critical", key="db-unreadable")
+            result = "database unreadable"
     p.flush()
-    return 0
+    return result
 
 
 def main(argv=None):

@@ -16,7 +16,18 @@ SM = "tests/test_scenarios_more.py:"
 IDLE = SM + "TestIdleStop.test_idle_limit_of_empty_cycles_stops_the_loop"
 OFF_PHASE = SM + "TestOffPhaseCurator.test_done_auditor_and_operator_work_is_curated_outside_the_curate_phase"
 
+LC = RD + "TestLoopControl."
+
 MAP = {
+    "R331": [LC + "test_start_runs_one_run_loop_and_stop_ends_it",
+             LC + "test_start_before_kickoff_leaves_the_loop_stopped"],
+    "R332": LC + "test_start_runs_one_run_loop_and_stop_ends_it",
+    "R333": LC + "test_pause_keeps_run_loop_and_resume_continues",
+    "R334": [LC + "test_pause_keeps_run_loop_and_resume_continues",
+             LC + "test_resume_is_refused_while_a_blocking_escalation_is_open"],
+    "R335": LC + "test_start_runs_one_run_loop_and_stop_ends_it",
+    "R336": [LC + "test_now_stops_agents_and_gate_runs", LC + "test_without_now_agents_run_on"],
+    "R337": LC + "test_status_reports_the_last_pass_and_overdue_passes",
     "R136": RD + "TestDispatchRules.test_run_loop_dispatches_every_interval",
     "R137": [D + "test_stopped_loop_launches_nothing", LAUNCHES],
     "R138": [TIME_OUT, STOP_RESUME],
