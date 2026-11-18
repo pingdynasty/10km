@@ -28,9 +28,9 @@ def _parse(handle):
 
 def _group_exists(pgid):
     """True if any process in the group is running (zombies don't count)."""
-    p = subprocess.run(["ps", "-A", "-o", "pgid=,stat="], capture_output=True, text=True,
+    p = subprocess.run(["ps", "-A", "-o", "pgid,stat"], capture_output=True, text=True,
                        env=PS_ENV)
-    for line in p.stdout.splitlines():
+    for line in p.stdout.splitlines()[1:]:  # the first row is the header
         fields = line.split()
         if len(fields) == 2 and fields[0] == str(pgid) and not fields[1].startswith("Z"):
             return True
