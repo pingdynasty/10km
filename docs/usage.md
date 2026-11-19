@@ -11,8 +11,9 @@ checkout it runs from (yours, or your fork's):
   branch is the loop repo's main for the loop; `main` itself keeps following 10km.
 - Remotes, both fetch only (pushes go to `no-push`): `origin` is where the checkout
   came from; `local` is the checkout. To take 10km's updates, merge `origin/main` or
-  `local/main` into the loop's branch in an operator session. From a shallow source,
-  updates come from `origin`, after `git fetch --unshallow origin` once.
+  `local/main` into the loop's branch in an operator session; `prompts/session.md`
+  says how, and agents never push to either. From a shallow source, updates come
+  from `origin`, after `git fetch --unshallow origin` once.
 - `host.env` gets the preset's agent commands (`claude`, `kiro`, `codex`), or none.
 - The database is created, so `10km status` and `10km doctor` work before kickoff.
 
