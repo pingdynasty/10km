@@ -51,17 +51,22 @@ On first start the container creates the loop repo, `central/loop`, from its cop
 Python 3.9+ (standard library only; an older one is refused with a message), Bash,
 git 2.26+ and an agent CLI such as `pi`, `hermes`, `claude`, `codex` or `kiro-cli`.
 
-The loop root (`LOOP_ROOT`) is a directory holding 10km, your worktrees (`central/`)
-and the database (`.10km/loop.db` unless `MSM_DB` says otherwise). If `LOOP_ROOT` isn't
-set, the scripts guess it from where they are.
+The loop root (`LOOP_ROOT`) is a directory holding 10km, your worktrees (`central/`),
+this host's settings (`host.env`) and the database (`.10km/loop.db` unless `MSM_DB`
+says otherwise). If `LOOP_ROOT` isn't set, the scripts guess it from where they are.
 
 ```sh
-mkdir -p ~/myloop/central && cd ~/myloop
-git clone <10km or your fork> central/loop
+git clone <10km or your fork> ~/10km
+~/10km/bin/10km create ~/myloop --agent claude   # or kiro, codex
 export LOOP_ROOT=~/myloop PATH=~/myloop/central/loop/bin:$PATH
-10km kickoff                     # create the database and set up the loop
+10km kickoff                     # set up the loop with your agent
 10km start                       # run the dispatcher every DISPATCH_INTERVAL seconds
 ```
+
+`10km create` clones 10km into `central/loop` on a branch of the loop's own (`myloop`;
+`--branch` to choose), so the loop's changes stay off `main`, and 10km's updates can be
+merged from `origin` (where your 10km came from) or `local` (`~/10km`), both fetch
+only. It writes `host.env` with the agent's commands, and creates the database.
 
 `10km start` runs `run-loop` in the background; `10km pause`, `resume` and `stop`
 control the loop. Or call `10km dispatch` from cron or another scheduler instead.
@@ -78,6 +83,7 @@ and the first Planner runs. `10km kickoff -- "<instructions>"` does it in one sh
 ## Some Commands
 
 ```
+10km create <dir> [--agent NAME] a new loop, from this 10km checkout
 10km kickoff [-- message]       set up the loop
 10km status                     status report
 10km start                      start the dispatcher; resume a stopped loop

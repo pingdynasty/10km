@@ -435,6 +435,11 @@ If the selection includes a Planner session:
 **R285** Files can be used for agents to communicate, for example for workers to save research.
 **R286** What type of files that agents may produce, and where, is determined during kickoff.
 
+## Create
+**R339** `10km create <dir>` makes a loop root from the 10km checkout it runs from: it clones it into `central/loop`, on a new branch for the loop (not main), so main keeps following the source. It refuses if `central/loop` exists or the source isn't a git checkout.
+**R340** In the clone, `local` is the source and `origin` is the source's origin; nothing is pushed to either.
+**R341** It writes `host.env`, with a preset's agent commands if one is named, and runs init, so the status report works before kickoff.
+
 ## Kickoff
 **R287** The operator runs Kickoff (`10km kickoff`) before the loop starts.
 **R288** Kickoff can be interactive, or a one-shot operator instruction.

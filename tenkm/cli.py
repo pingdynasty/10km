@@ -1,5 +1,7 @@
 """10km: the loop's command-line entry point.
 
+  10km create <dir> [--agent NAME] [--branch NAME]
+                                  a new loop in <dir>, from this 10km checkout
   10km init                       create the database; register the central repos
   10km kickoff [-- message]       set up the loop with OPERATOR_AGENT
   10km status                     status report
@@ -174,6 +176,9 @@ def main(argv=None):
     command, args = argv[0], argv[1:]
     if command == "msm":
         return msm.main(args)
+    if command == "create":  # before loading any loop's config
+        from . import create
+        return create.main(args)
     cfg = config.load()
     if command == "init":
         try:
