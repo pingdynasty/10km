@@ -50,7 +50,7 @@ def _state(handle):
 def launch(cfg, session, role, env, log_path):
     command = cfg.agent_command(role)
     if not command:
-        raise RuntimeError(f"no agent command for {role}: set LOOP_AGENT or {role.upper()}_AGENT")
+        raise RuntimeError(f"no agent command for {role}: set LOOP_AGENT or {role.upper()}_AGENT in host.env")
     with open(log_path, "ab") as log:
         p = subprocess.Popen(["bash", "-c", command], cwd=session["working_directory"],
                              env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=log,

@@ -10,7 +10,7 @@ from datetime import timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
 from test_loop import LoopCase  # noqa: E402
-from tenkm import config, sessions, status  # noqa: E402
+from tenkm import config, presets, sessions, status  # noqa: E402
 
 
 class TestStatus(LoopCase):
@@ -100,6 +100,19 @@ class TestCentralConfig(LoopCase):
         os.environ.pop("LOOP_CONFIG")  # as the loop runs; LoopCase restores it
         self.assertEqual(config.load()["LOOP_CONFIG_PATH"], path)
         self.assertEqual(config.load()["TENKM_TEST_SETTING"], "from central")
+
+    def test_unset_agent_commands_are_empty(self):  # R153
+        cfg = config.Config()
+        self.assertEqual((cfg.agent_command("worker"), cfg.agent_command("operator")), ("", ""))
+
+    def test_presets_write_host_env_lines_the_environment_overrides(self):  # R153
+        host = config.host_env_path(self.root)
+        with open(host, "w") as f:
+            f.write("\n".join(presets.host_env_lines("kiro")) + "\n")
+        os.environ.pop("LOOP_AGENT")
+        cfg = config.load()
+        self.assertEqual(cfg.agent_command("worker"), presets.command("kiro", "LOOP_AGENT"))
+        self.assertEqual(self.reload(LOOP_AGENT="mine").agent_command("worker"), "mine")
 
     def test_agent_command_per_role_falls_back_to_loop_agent(self):  # R28
         cfg = self.reload(LOOP_AGENT="loop-agent", WORKER_AGENT="worker-agent",

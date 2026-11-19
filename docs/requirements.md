@@ -262,7 +262,7 @@ Then, by phase:
 **R148** To launch a role, it attempts to create a session. **R149** If it fails with EAGAIN (4) it tries again, up to 3 times.
 **R150** If it succeeds it reads the role prompt.
 **R151** It writes the role prompt to a file in the session directory, launches the agent through the configured launcher with the session name and prompt file path in its first message, and records the launcher's handle in the session.
-**R152** The launcher is configured for the loop. **R153** The default process launcher runs an agent command, configured for the loop or specialised for each role:
+**R152** The launcher is configured for the loop. **R153** The default process launcher runs an agent command, configured for the host (`host.env`) or specialised for each role:
 **R154** `LOOP|PLANNER|WORKER|CURATOR|AUDITOR_AGENT=...`
 
 ### Session Time-out

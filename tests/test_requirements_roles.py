@@ -6,14 +6,13 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
 from test_loop import LoopCase  # noqa: E402
 from test_requirements_msm import MSM, MsmCase  # noqa: E402
 from test_scripts import ScriptCase  # noqa: E402
-from tenkm import config, dispatch, msm  # noqa: E402
+from tenkm import config, dispatch, msm, presets  # noqa: E402
 
 
 class TestReplacedCycleCount(MsmCase):
@@ -48,19 +47,18 @@ for a in "$@"; do printf '%s\\n' "$a"; done >"$ARGS_FILE"
 
 
 class TestHarnessSessionName(unittest.TestCase):
-    """The default agent commands in config.env, run as the launchers run them."""
+    """The Claude Code preset's agent commands, run as the launchers run them."""
 
     def run_default(self, role, **env):
-        """Run the default agent command for role with a fake claude; its argv."""
+        """Run the preset's command for role with a fake claude; its argv."""
         with tempfile.TemporaryDirectory() as tmp:
             claude = os.path.join(tmp, "claude")
             with open(claude, "w") as f:
                 f.write(FAKE_CLAUDE)
             os.chmod(claude, 0o755)
-            base = {k: v for k, v in os.environ.items() if k != "LOOP_CONFIG"}
-            base.update(LOOP_ROOT=os.path.join(tmp, "root"))  # no central: the code's config
-            with mock.patch.dict(os.environ, base, clear=True):
-                command = config.load().agent_command(role)
+            base = dict(os.environ)
+            command = presets.command("claude", "OPERATOR_AGENT" if role == "operator"
+                                      else "LOOP_AGENT")
             args = os.path.join(tmp, "args")
             run_env = dict(base, PATH=tmp + os.pathsep + base.get("PATH", ""),
                            ARGS_FILE=args, **env)

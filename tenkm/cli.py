@@ -96,7 +96,12 @@ def run_operator_agent(cfg, cwd, message="", session=None, one_shot=False):
         env["FIRST_MESSAGE"] = message
     if one_shot:
         env["ONE_SHOT"] = "1"
-    return subprocess.call(["bash", "-c", cfg.agent_command("operator")], cwd=cwd, env=env)
+    command = cfg.agent_command("operator")
+    if not command:
+        print("no agent command for the operator: set OPERATOR_AGENT in host.env",
+              file=sys.stderr)
+        return 1
+    return subprocess.call(["bash", "-c", command], cwd=cwd, env=env)
 
 
 def _kickoff(argv, cfg):

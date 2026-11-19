@@ -61,7 +61,11 @@ MAP = {
              L + "test_failed_prompt_write_removes_the_session"],
     "R152": RD + "TestLaunching.test_launcher_is_configured_for_the_loop",
     "R153": [LAUNCHES, "tests/test_requirements_loop.py:TestCentralConfig."
-             "test_agent_command_per_role_falls_back_to_loop_agent"],
+             "test_agent_command_per_role_falls_back_to_loop_agent",
+             "tests/test_requirements_loop.py:TestCentralConfig."
+             "test_unset_agent_commands_are_empty",
+             "tests/test_requirements_loop.py:TestCentralConfig."
+             "test_presets_write_host_env_lines_the_environment_overrides"],
     "R154": "tests/test_requirements_loop.py:TestCentralConfig."
             "test_agent_command_per_role_falls_back_to_loop_agent",
     # Session Time-out

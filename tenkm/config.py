@@ -88,10 +88,11 @@ class Config(dict):
         return self.int(f"{role.upper()}_TIMEOUT", self.int("SESSION_TIMEOUT", 3600))
 
     def agent_command(self, role):
-        """The agent command for a role: <ROLE>_AGENT, else LOOP_AGENT. The operator's
-        agent is interactive, so OPERATOR_AGENT doesn't fall back to LOOP_AGENT."""
+        """The agent command for a role: <ROLE>_AGENT, else LOOP_AGENT; empty if
+        neither is set. The operator's agent is interactive, so OPERATOR_AGENT
+        doesn't fall back to LOOP_AGENT."""
         if role == "operator":
-            return self.get("OPERATOR_AGENT") or "claude"
+            return self.get("OPERATOR_AGENT", "")
         return self.get(f"{role.upper()}_AGENT") or self.get("LOOP_AGENT", "")
 
 
