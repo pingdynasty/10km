@@ -19,6 +19,8 @@ MAP = {
     "R13": RL + "TestStatePaths.test_database_and_action_log_are_at_the_configured_paths",
     "R14": [RL + "TestCentralConfig.test_scripts_read_config_env_from_the_central_loop_worktree",
             L + "TestConfig.test_environment_overrides_config"],
+    "R338": ["tests/test_loop.py:TestHostEnv.test_host_env_is_read_first_and_exported",
+             "tests/test_loop.py:TestHostEnv.test_broken_host_env_is_reported"],
     "R15": RL + "TestCentralConfig.test_scripts_read_config_env_from_the_central_loop_worktree",
     "R16": [("prompts/kickoff.md", "then clone, copy or create each one in `central/<name>`"),
             TWO_REPOS],

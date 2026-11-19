@@ -111,6 +111,29 @@ class TestConfig(LoopCase):
         self.assertEqual(self.cfg.timeout("planner"), 3600)
 
 
+class TestHostEnv(LoopCase):
+    def write_host_env(self, text):
+        with open(config.host_env_path(self.root), "w") as f:
+            f.write(text)
+
+    def test_host_env_is_read_first_and_exported(self):  # R338
+        self.write_host_env('MAX_TASKS_PER_CYCLE="${MAX_TASKS_PER_CYCLE-4}"\n'
+                            'HOST_TOOL="${HOST_TOOL-/opt/tool}"\n')
+        os.environ.pop("HOST_TOOL", None)
+        cfg = config.load()
+        self.assertEqual(cfg.int("MAX_TASKS_PER_CYCLE", 0), 4)  # over config.env's 0
+        self.assertEqual(os.environ["HOST_TOOL"], "/opt/tool")  # agents and gates get it
+        self.assertNotIn("DISPATCH_INTERVAL", set(os.environ) - set(self.patch.values))
+        cfg = self.reload(MAX_TASKS_PER_CYCLE="7", HOST_TOOL="/usr/bin/tool")
+        self.assertEqual(cfg.int("MAX_TASKS_PER_CYCLE", 0), 7)  # the environment wins
+        self.assertEqual(cfg["HOST_TOOL"], "/usr/bin/tool")
+
+    def test_broken_host_env_is_reported(self):  # R338
+        self.write_host_env("exit 3\n")
+        cfg = config.load()
+        self.assertIn("host.env failed", cfg["TENKM_CONFIG_ERROR"])
+
+
 class TestStatePaths(LoopCase):
     def test_relative_state_paths_are_under_the_loop_root(self):
         names = ("MSM_DB", "MSM_LOG", "USAGE_LOG")

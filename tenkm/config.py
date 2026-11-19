@@ -111,25 +111,48 @@ def config_path(root):
     return path
 
 
+def _pairs(items):
+    return dict(item.split("=", 1) for item in items if "=" in item)
+
+
+def host_env_path(root):
+    """This host's settings: <root>/host.env, outside the repos."""
+    return os.path.join(root, "host.env")
+
+
 def load(root=None):
-    """Read config.env with the current environment applied, and return a Config."""
+    """Read host.env, then config.env, with the current environment applied, and
+    return a Config. Settings are written X="${X-default}", so the environment
+    overrides both, and host.env overrides config.env. What host.env sets is also
+    exported, so agents, gates and every command they run inherit it."""
     env = dict(os.environ)
     if root:
         env["LOOP_ROOT"] = root
     env.setdefault("LOOP_ROOT", default_root())
     path = config_path(env["LOOP_ROOT"])
-    if os.path.exists(path):
-        script = 'set -a; . "$1" >&2 || exit $?; set +a; printf "TENKM_CONFIG_OK=1\\0"; env -0'
-        out = subprocess.run(["bash", "-c", script, "config", path],
+    host = host_env_path(env["LOOP_ROOT"])
+    if os.path.exists(path) or os.path.exists(host):
+        script = ('set -a; if [ -f "$2" ]; then . "$2" >&2 || exit $?; fi; printf "TENKM_HOST_ENV=1\\0"; env -0; printf "TENKM_HOST_ENV=0\\0"; '
+                  'if [ -f "$1" ]; then . "$1" >&2 || exit $?; fi; set +a; '
+                  'printf "TENKM_CONFIG_OK=1\\0"; env -0')
+        out = subprocess.run(["bash", "-c", script, "config", path, host],
                              env=env, capture_output=True, check=False)
-        loaded = dict(item.split("=", 1) for item in out.stdout.decode().split("\0") if "=" in item)
-        if out.returncode == 0 and loaded.pop("TENKM_CONFIG_OK", None) == "1":
-            env = loaded
+        items = out.stdout.decode().split("\0")
+        if out.returncode == 0 and "TENKM_CONFIG_OK=1" in items:
+            hosted = _pairs(items[items.index("TENKM_HOST_ENV=1") + 1:
+                                  items.index("TENKM_HOST_ENV=0")])
+            for k, v in hosted.items():
+                if env.get(k) != v:
+                    os.environ[k] = v
+            env = _pairs(items[items.index("TENKM_CONFIG_OK=1") + 1:])
         else:
             # A broken config must not stop the loop; keep the environment and report.
-            env["TENKM_CONFIG_ERROR"] = out.stderr.decode().strip() or "config.env failed"
+            failed = "config.env" if "TENKM_HOST_ENV=0" in items else "host.env"
+            env["TENKM_CONFIG_ERROR"] = (f"{failed} failed: " + out.stderr.decode().strip()
+                                         ).rstrip(": ")
     cfg = Config(env)
     cfg["LOOP_CONFIG_PATH"] = path
+    cfg["LOOP_HOST_ENV_PATH"] = host
     # Exported, so msm calls in this process and its children use the same files.
     for name in STATE_PATHS:
         if cfg.get(name):

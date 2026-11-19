@@ -24,6 +24,7 @@
 **R12** The loop repo contains its scripts and prompts, the plan, goals, deliverables, BACKLOG.md, LEARNINGS.md.
 **R13** The database and action log are at a configured path, outside the repos.
 **R14** Configuration is in `config.env` in the loop repo (see Configuration below). **R15** Scripts read it from the central loop worktree.
+**R338** This host's settings are in `host.env` in the loop root, outside the repos. Scripts read it before `config.env`, and what it sets reaches agents, gates and the commands they run. The environment overrides both.
 **R16** The operator may provide one or more pre-existing project repos for the loop to work on.
 **R17** If not, a new project repo is created during kickoff.
 **R18** Each session has a directory with git worktrees and scratch files.
