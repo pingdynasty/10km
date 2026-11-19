@@ -48,5 +48,6 @@ the loop repo (`central/loop`). Commit straight to each repo's main branch.
    test commands, conventions, workflow (for example, whether the Curator publishes
    by opening pull requests), and what each role must check. Keep them short.
 8. **Finish.** Commit in every central worktree you changed, and leave them clean
-   and on their main branch. Run `10km doctor` and fix what fails. Then
-   `msm loop start`: the first Planner runs.
+   and on their main branch. Run `10km doctor` and fix what fails. Don't start
+   the loop: tell the operator it is ready. When you exit, `10km kickoff` offers
+   to start it; otherwise `10km start` does.

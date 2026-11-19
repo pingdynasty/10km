@@ -1,6 +1,6 @@
 """tenkm.control: the operator's start, pause, resume and stop (R331-R336).
 
-    10km start               start run-loop unless one runs; resume a stopped loop
+    10km start               start run-loop unless one runs; start or resume the loop
     10km pause [--now] [reason]
                              stop the loop; run-loop keeps running
     10km resume              resume a stopped loop
@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 
-from . import dispatch, gate, msm, runloop, timefmt
+from . import dispatch, gate, init, msm, runloop, timefmt
 from .config import BIN
 
 START_WAIT = 10  # seconds `start` waits for run-loop to take its lock
@@ -27,9 +27,16 @@ def _loop(cfg):
         return m.loop_get()
 
 
-def kicked_off(loop):
-    """False before kickoff's `loop start`: msm init leaves phase curate, cycle 0."""
-    return not (loop["phase"] == "curate" and loop["current_cycle"] == 0)
+def never_started(loop):
+    """True before the first `loop start`: msm init leaves phase curate, cycle 0."""
+    return loop["phase"] == "curate" and loop["current_cycle"] == 0
+
+
+def never_ran(cfg):
+    """No database, action log or heartbeat: the loop has never run, here or
+    with another MSM_DB."""
+    beat = os.path.join(cfg.state_dir, dispatch.HEARTBEAT)
+    return not any(os.path.exists(p) for p in (cfg.db, cfg.action_log, beat))
 
 
 def _wait(predicate, seconds):
@@ -55,6 +62,18 @@ def spawn(cfg):
 
 
 def start(cfg):
+    """R331 R342."""
+    if not os.path.exists(cfg.db):
+        if not never_ran(cfg):
+            print(f"No database at {cfg.db}, but this loop has run before: check MSM_DB, "
+                  "or run `10km init`.", file=sys.stderr)
+            return 1
+        try:
+            init.run(cfg)
+        except msm.MSMError as e:
+            print(f"{e.code}: {e.message}", file=sys.stderr)
+            return e.code
+        print(f"Initialised the loop: {cfg.db}")
     pid = runloop.running(cfg)
     if pid is None:
         pid, log = spawn(cfg)
@@ -68,15 +87,38 @@ def start(cfg):
     if not loop["stopped"]:
         print("Loop: running")
         return 0
+    if never_started(loop):
+        with msm.transaction(cfg.db) as m:
+            m.loop_start()
+        print("Loop: started, phase plan: the first Planner runs")
+        return 0
     return resume(cfg)
+
+
+def offer_start(cfg, interactive, ask=input):
+    """After kickoff (R296): ask whether to start the loop, if it is stopped and
+    someone is there to answer; else say how."""
+    if not _loop(cfg)["stopped"]:
+        return 0
+    if not interactive:
+        print("When the loop is ready: `10km start`.")
+        return 0
+    try:
+        answer = ask("Start the loop now? [Y/n] ").strip().lower()
+    except EOFError:
+        answer = "n"
+    if answer in ("", "y", "yes"):
+        return start(cfg)
+    print("Later: `10km start`.")
+    return 0
 
 
 def resume(cfg):
     loop = _loop(cfg)
     if not loop["stopped"]:
         print("Loop: running")
-    elif not kicked_off(loop):
-        print("The loop hasn't been kicked off: `10km kickoff` starts it.", file=sys.stderr)
+    elif never_started(loop):
+        print("The loop has never started: `10km start` starts it.", file=sys.stderr)
         return 1
     else:
         try:

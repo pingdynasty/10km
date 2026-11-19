@@ -22,8 +22,9 @@ checkout it runs from (yours, or your fork's):
 with no session, after creating the database. With you, it sets the goals,
 deliverables, plan, configuration, gates and prompts, and clones or creates the
 project repos in `central/`, each with its branch and author in its own git
-config. It commits to main and finishes with `msm loop start`; the first Planner
-runs next. `10km kickoff -- "<instructions>"` does it in one shot. See
+config. It commits to main and leaves the loop stopped; when the agent exits,
+`10km kickoff` asks whether to start it (`10km start`: the first Planner runs).
+`10km kickoff -- "<instructions>"` does it in one shot, and leaves starting to you. See
 [prompts/kickoff.md](../prompts/kickoff.md).
 
 To add a repo later, clone it into `central/`, set its `tenkm.mainBranch` and
@@ -125,7 +126,7 @@ Search first (`msm issue list '{"status": "open"}'`) and update a similar item i
 **Start, pause, resume and stop.**
 
 ```sh
-10km start                  # start run-loop unless one runs; resume a stopped loop
+10km start                  # start run-loop unless one runs; start or resume the loop
 10km pause [--now] [reason] # stop the loop: the Dispatcher launches nothing new
 10km resume                 # continue a stopped loop from its phase
 10km stop [--now]           # stop the loop and run-loop
@@ -136,7 +137,7 @@ Without `--now`, running agents finish their work; with it, they and their gate 
 
 `run-loop` is optional: anything that runs `10km dispatch` every `DISPATCH_INTERVAL` seconds will do, such as cron (`* * * * * LOOP_ROOT=<root> <root>/central/loop/bin/dispatch >> <root>/.10km/dispatch.log 2>&1`), a systemd timer or launchd. Then use `pause` and `resume`, and start or stop the scheduler yourself. `10km status` shows the last Dispatcher pass, and flags it OVERDUE when passes stop coming while the loop runs.
 
-Kickoff starts the loop with `msm loop start`; `10km resume` is `msm loop resume`, and `10km pause` is `msm loop stop` with a reason. A stopped loop keeps its state and worktrees. Agents can't restart it: msm refuses loop changes from agent sessions while the loop is stopped. `10km resume` is refused while a blocking escalation assigned to you is open; answer it first.
+`10km start` initialises a loop that has never run, and starts one that has never started (`msm loop start`, phase plan); `10km resume` is `msm loop resume`, and `10km pause` is `msm loop stop` with a reason. A stopped loop keeps its state and worktrees. Agents can't restart it: msm refuses loop changes from agent sessions while the loop is stopped. `10km resume` is refused while a blocking escalation assigned to you is open; answer it first.
 
 ### 2. In an operator session: files and repos
 

@@ -77,8 +77,9 @@ would be a mistake not to give them a sandbox.
 ## Kickoff
 
 `10km kickoff` sets up the loop with you: goals, deliverables and plan, the project
-repos in `central/`, gates, notifications and prompts. It ends by starting the loop,
-and the first Planner runs. `10km kickoff -- "<instructions>"` does it in one shot.
+repos in `central/`, gates, notifications and prompts. It ends by asking whether to
+start the loop (`10km start`): the first Planner runs. `10km kickoff -- "<instructions>"`
+does it in one shot, and leaves starting to you.
 
 ## Some Commands
 
@@ -86,7 +87,7 @@ and the first Planner runs. `10km kickoff -- "<instructions>"` does it in one sh
 10km create <dir> [--agent NAME] a new loop, from this 10km checkout
 10km kickoff [-- message]       set up the loop
 10km status                     status report
-10km start                      start the dispatcher; resume a stopped loop
+10km start                      start the dispatcher; start or resume the loop
 10km pause|resume               stop or continue the loop
 10km stop [--now]               stop the loop and the dispatcher (--now: and the agents)
 10km dispatch                   launch any agents that are due

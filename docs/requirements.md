@@ -287,7 +287,8 @@ Notes:
 **R313** `msm loop resume` refuses with EPERM while a blocking escalation assigned to the operator is open; an answered one doesn't count.
 
 ### Start, Pause, Resume, Stop
-**R331** `10km start` starts `run-loop`, which runs a Dispatcher pass every configured interval, in the background unless one is running, and resumes the loop if it is stopped. A loop not kicked off yet stays stopped.
+**R331** `10km start` starts `run-loop`, which runs a Dispatcher pass every configured interval, in the background unless one is running, and resumes the loop if it is stopped, or starts it (`loop start`) if it has never started.
+**R342** On a loop that has never run (no database, action log or heartbeat), `10km start` runs init first. If the database is missing but the loop has run, it refuses.
 **R332** At most one `run-loop` runs per loop; another one exits.
 **R333** `10km pause` stops the loop and leaves `run-loop` running.
 **R334** `10km resume` resumes a stopped loop.
@@ -450,7 +451,7 @@ If the selection includes a Planner session:
 **R293** It clones or creates the central project worktrees and configures them with `git config`.
 **R294** It ensures that loop prompts meet the project needs.
 **R295** It should leave the central worktrees clean.
-**R296** When done, kickoff calls `loop start`, and the first Planner runs.
+**R296** Kickoff doesn't start the loop. When the operator's agent exits, an interactive `10km kickoff` asks whether to start it (`10km start`); a one-shot or non-interactive one says how.
 
 ## Notification
 **R297** The operator notification mechanism should be a deterministic action configured during Kickoff.

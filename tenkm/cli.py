@@ -5,7 +5,7 @@
   10km init                       create the database; register the central repos
   10km kickoff [-- message]       set up the loop with OPERATOR_AGENT
   10km status                     status report
-  10km start                      start run-loop unless one runs; resume a stopped loop
+  10km start                      start run-loop unless one runs; start or resume the loop
   10km pause [--now] [reason]     stop the loop; run-loop keeps running
   10km resume                     resume a stopped loop
   10km stop [--now]               stop the loop and run-loop
@@ -126,7 +126,11 @@ def _kickoff(argv, cfg):
              f"central loop worktree {loop}. Read prompts/kickoff.md there and follow it.")
     if message:
         intro += f"\n\nThe operator's instructions: {' '.join(message)}"
-    return run_operator_agent(cfg, loop, intro, one_shot=bool(message))
+    rc = run_operator_agent(cfg, loop, intro, one_shot=bool(message))
+    if rc:
+        return rc
+    interactive = not message and sys.stdin.isatty() and sys.stdout.isatty()
+    return control.offer_start(cfg, interactive)
 
 
 def _notify(argv, cfg):

@@ -20,7 +20,9 @@ LC = RD + "TestLoopControl."
 
 MAP = {
     "R331": [LC + "test_start_runs_one_run_loop_and_stop_ends_it",
-             LC + "test_start_before_kickoff_leaves_the_loop_stopped"],
+             LC + "test_start_starts_a_loop_that_never_started"],
+    "R342": [LC + "test_start_initialises_a_loop_that_never_ran",
+             LC + "test_start_refuses_a_missing_database_of_a_loop_that_ran"],
     "R332": LC + "test_start_runs_one_run_loop_and_stop_ends_it",
     "R333": LC + "test_pause_keeps_run_loop_and_resume_continues",
     "R334": [LC + "test_pause_keeps_run_loop_and_resume_continues",

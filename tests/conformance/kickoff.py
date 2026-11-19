@@ -20,7 +20,9 @@ MAP = {
                 "set with `git config` in that repo"),
     "R294": (K, "Adapt `prompts/*.md` to the project"),
     "R295": (K, "leave them clean and on their main branch"),
-    "R296": (K, "Then `msm loop start`: the first Planner runs."),
+    "R296": [(K, "Don't start\n   the loop: tell the operator it is ready."),
+             f"{T}.test_kickoff_leaves_the_loop_stopped_and_says_how_to_start",
+             f"{T}.test_interactive_kickoff_offers_to_start"],
 }
 
 PENDING = set()

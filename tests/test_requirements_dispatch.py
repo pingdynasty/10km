@@ -241,12 +241,30 @@ class TestLoopControl(ScriptCase):
         loop = self.loop.msm("loop", "get")
         self.assertEqual((loop["stopped"], loop["reason"]), (1, "stopped by the operator"))
 
-    def test_start_before_kickoff_leaves_the_loop_stopped(self):  # R331
+    def test_start_starts_a_loop_that_never_started(self):  # R331
+        self.assertExit(self.loop.run("10km", "resume"), 1)  # nothing to resume yet
+        p = self.loop.run("10km", "start")
+        self.assertExit(p, 0)
+        self.assertIn("the first Planner runs", p.stdout)
+        loop = self.loop.msm("loop", "get")
+        self.assertEqual((loop["stopped"], loop["phase"]), (0, "plan"))
+        self.assertTrue(self.runner())
+
+    def test_start_initialises_a_loop_that_never_ran(self):  # R342
+        os.remove(self.loop.db)
+        p = self.loop.run("10km", "start")
+        self.assertExit(p, 0)
+        self.assertIn("Initialised the loop", p.stdout)
+        self.assertEqual(self.loop.msm("loop", "get")["phase"], "plan")
+
+    def test_start_refuses_a_missing_database_of_a_loop_that_ran(self):  # R342
+        self.dispatch()  # a heartbeat
+        os.remove(self.loop.db)
         p = self.loop.run("10km", "start")
         self.assertExit(p, 1)
-        self.assertIn("kickoff", p.stderr)
-        self.assertTrue(self.runner())
-        self.assertTrue(self.loop.msm("loop", "get")["stopped"])
+        self.assertIn("has run before", p.stderr)
+        self.assertFalse(os.path.exists(self.loop.db))
+        self.assertIsNone(self.runner())
 
     def test_pause_keeps_run_loop_and_resume_continues(self):  # R333 R334
         self.loop.start()
