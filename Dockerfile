@@ -1,7 +1,12 @@
 # Ten Thousand Monkeys loop. No ports are exposed: the loop only runs local
-# processes. Mount a host directory on /loop/central, so the central worktrees
-# (the loop repo and the project repos) live on the host, and a volume on /data
-# for the database. On first start the loop repo is created from this image.
+# processes. One volume on /home/monkey holds the loop (LOOP_ROOT: worktrees,
+# database, logs, host.env) and the harnesses' logins; a host directory may be
+# mounted on /home/monkey/loop/central to see and edit the central worktrees. On
+# first start the loop is created from this image's 10km (`10km create`).
+#
+#   docker build --build-arg AGENTS="claude kiro" -t 10km .
+#   docker run -d --name myloop -e AGENT=claude -e LOOP_NAME=myloop \
+#     -v myloop-home:/home/monkey 10km
 FROM debian:bookworm-slim
 
 RUN apt-get update \
@@ -9,16 +14,19 @@ RUN apt-get update \
       bash ca-certificates git jq procps python3 sqlite3 tini tzdata util-linux \
  && rm -rf /var/lib/apt/lists/*
 
-# Install the agent harnesses you use, for example:
-# RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
-#  && npm install -g @anthropic-ai/claude-code && rm -rf /var/lib/apt/lists/*
+# The harnesses to install (docker/install-agent.sh; tenkm/presets.py names them).
+ARG AGENTS=claude
+COPY docker/install-agent.sh /usr/local/sbin/install-agent
+RUN install-agent $AGENTS
 
 RUN useradd --create-home --uid 1000 monkey \
- && mkdir -p /loop/central /data && chown -R monkey:monkey /loop /data
+ && mkdir -p /home/monkey/loop && chown -R monkey:monkey /home/monkey
+# With its .git (full history), so loops can merge a later image's 10km.
 COPY --chown=monkey:monkey . /opt/10km
 
 USER monkey
-ENV LOOP_ROOT=/loop MSM_DB=/data/loop.db PATH=/loop/central/loop/bin:/opt/10km/bin:$PATH
-VOLUME ["/loop/central", "/data"]
+ENV AGENTS=$AGENTS LOOP_ROOT=/home/monkey/loop \
+    PATH=/home/monkey/loop/central/loop/bin:/opt/10km/bin:$PATH
+VOLUME ["/home/monkey"]
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["/opt/10km/bin/container-start"]

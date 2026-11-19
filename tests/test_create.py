@@ -1,6 +1,8 @@
 """10km create (R339-R341)."""
 import os
+import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -9,7 +11,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
 from testenv import BIN, CODE  # noqa: E402
-from tenkm import create, presets  # noqa: E402
+from tenkm import config, create, presets, runloop  # noqa: E402
 
 
 class CreateCase(unittest.TestCase):
@@ -133,6 +135,44 @@ class TestCreate(CreateCase):
         self.change(self.src, "UPSTREAM.md", "upstream fix")
         self.git(loop, "fetch", "-q", "--unshallow", "origin")
         self.assertMerges(loop, "origin/main")
+
+class TestContainer(CreateCase):
+    def test_install_agent_knows_the_presets_and_checks_names_first(self):  # R341
+        script = os.path.join(CODE, "docker", "install-agent.sh")
+        with open(script) as f:
+            names = re.search(r"^    ([a-z|]+)\) ;;$", f.read(), re.M).group(1).split("|")
+        self.assertEqual(sorted(names), sorted(presets.PRESETS))
+        p = subprocess.run(["bash", script, "claude", "nope"], capture_output=True, text=True)
+        self.assertEqual(p.returncode, 1)  # before installing anything
+        self.assertIn("unknown agent: nope", p.stderr)
+
+    def start_container(self, root):
+        """Run container-start as the image does; wait for its run-loop; stop it."""
+        env = dict(self.env, TENKM_SOURCE=self.src, LOOP_ROOT=root, AGENTS="kiro claude",
+                   LOOP_NAME="myloop")
+        env.pop("LOOP_CONFIG")
+        log = os.path.join(self.tmp, "container.log")
+        with open(log, "w") as f:
+            p = subprocess.Popen([os.path.join(BIN, "container-start")], env=env, stdout=f,
+                                 stderr=subprocess.STDOUT, start_new_session=True)
+        self.addCleanup(lambda: p.poll() is None and os.killpg(p.pid, signal.SIGKILL))
+        cfg = config.Config(LOOP_ROOT=root)
+        self.assertTrue(testenv.wait_for(lambda: runloop.running(cfg)), testenv.read(log))
+        os.killpg(p.pid, signal.SIGTERM)
+        p.wait(timeout=testenv.DEADLINE)
+        return testenv.read(log)
+
+    def test_container_start_creates_the_loop_once(self):  # R339 R341
+        root = os.path.join(self.tmp, "home", "loop")
+        os.makedirs(root)
+        out = self.start_container(root)
+        self.assertIn("Created the loop", out)
+        loop = os.path.join(root, "central", "loop")
+        self.assertEqual(self.git(loop, "symbolic-ref", "--short", "HEAD"), "myloop")
+        with open(os.path.join(root, "host.env")) as f:
+            self.assertIn(presets.command("kiro", "LOOP_AGENT"), f.read())  # AGENTS' first
+        self.assertNotIn("Created the loop", self.start_container(root))
+
 
 if __name__ == "__main__":
     unittest.main()

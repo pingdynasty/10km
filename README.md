@@ -33,16 +33,26 @@ user, no exposed ports, and only the directories you mount. Network egress contr
 a good idea.
 
 ```sh
-docker build -t 10km .            # add your agent harness to the Dockerfile first
-mkdir central
-docker run -d --name 10km -v "$PWD/central:/loop/central" -v 10km-data:/data 10km
-docker exec -it 10km 10km kickoff
+docker build --build-arg AGENTS="claude kiro" -t 10km .   # harnesses: claude, kiro, codex
+docker run -d --name myloop -e AGENT=claude -e LOOP_NAME=myloop \
+  -v myloop-home:/home/monkey 10km
+docker exec -it myloop claude                              # log in once
+docker exec -it myloop 10km kickoff
 ```
 
-The central worktrees (the loop repo and the project repos) live in a host mount in
-`central/`, so you can see and edit them. The database is in a volume called `10km-data`.
-On first start the container creates the loop repo, `central/loop`, from its copy of
-10km, then runs `run-loop`, which calls a dispatcher every `DISPATCH_INTERVAL` seconds.
+The volume `myloop-home` holds everything: the loop (`/home/monkey/loop`: worktrees,
+database, logs, `host.env`) and the harnesses' logins, so a new container on the same
+volume carries on. Add `-v "$PWD/central:/home/monkey/loop/central"` to see and edit
+the central worktrees on the host (on Linux the directory must be writable by uid 1000).
+
+On first start the container runs `10km create` from its copy of 10km, with `AGENT`'s
+agent commands (default: the first of `AGENTS`) and the branch `LOOP_NAME` (default
+`loop`), then runs `run-loop`. The loop's `local` remote is the image's 10km, so after
+a new image, `local/main` has its updates.
+
+Log in with the harness's own command, in the container: `claude` (then `/login`; or
+`claude setup-token` and pass `-e CLAUDE_CODE_OAUTH_TOKEN`), or
+`kiro-cli login --use-device-flow`. Keys passed with `-e` are visible to the agents.
 
 ## Run it on a host
 

@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# Container entry point. On first start, makes the central loop worktree from the
-# image's copy of 10km (central/ is a host mount, so it persists), then runs the
-# loop from it.
+# Container entry point. On first start, creates the loop in LOOP_ROOT from the
+# image's 10km (`10km create`, with AGENT's preset: default the first of AGENTS,
+# and branch LOOP_NAME: default loop), then runs the loop from it. The home
+# volume (or a central/ host mount) keeps it across containers.
 set -euo pipefail
-LOOP_ROOT=${LOOP_ROOT:-/loop}
+LOOP_ROOT=${LOOP_ROOT:-/home/monkey/loop}
+source=${TENKM_SOURCE:-/opt/10km}
 loop="$LOOP_ROOT/central/loop"
 if [ ! -e "$loop/.git" ]; then
-  mkdir -p "$LOOP_ROOT/central"
-  python3 -c 'import sys; sys.path.insert(0, "/opt/10km")
-from tenkm.init import create_loop_repo
-create_loop_repo(sys.argv[1], source="/opt/10km")' "$loop"
-  echo "Created the loop repo in $loop. Next: 10km kickoff"
+  agents=${AGENTS:-}
+  agent=${AGENT:-${agents%% *}}
+  "$source/bin/10km" create "$LOOP_ROOT" ${agent:+--agent "$agent"} --branch "${LOOP_NAME:-loop}"
+  echo "Next: log in to your agent (docker exec -it <container> <agent>), then"
+  echo "      docker exec -it <container> 10km kickoff"
 fi
 exec "$loop/bin/run-loop"
