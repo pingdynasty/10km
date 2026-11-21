@@ -2,14 +2,30 @@
 
 See the [README](../README.md) for what 10km is and how to run it.
 
+## Create
+
+`10km create <dir> [--agent NAME] [--branch NAME]` makes a loop root from the 10km
+checkout it runs from (yours, or your fork's):
+
+- `central/loop` is a clone, on the loop's own branch (default: `<dir>`'s name). That
+  branch is the loop repo's main for the loop; `main` itself keeps following 10km.
+- Remotes, both fetch only (pushes go to `no-push`): `origin` is where the checkout
+  came from; `local` is the checkout. To take 10km's updates, merge `origin/main` or
+  `local/main` into the loop's branch in an operator session; `prompts/session.md`
+  says how, and agents never push to either. From a shallow source, updates come
+  from `origin`, after `git fetch --unshallow origin` once.
+- `host.env` gets the preset's agent commands (`claude`, `kiro`, `codex`), or none.
+- The database is created, so `10km status` and `10km doctor` work before kickoff.
+
 ## Kickoff
 
 `10km kickoff` runs the operator's agent (`OPERATOR_AGENT`) in `central/loop`,
 with no session, after creating the database. With you, it sets the goals,
 deliverables, plan, configuration, gates and prompts, and clones or creates the
 project repos in `central/`, each with its branch and author in its own git
-config. It commits to main and finishes with `msm loop start`; the first Planner
-runs next. `10km kickoff -- "<instructions>"` does it in one shot. See
+config. It commits to main and leaves the loop stopped; when the agent exits,
+`10km kickoff` asks whether to start it (`10km start`: the first Planner runs).
+`10km kickoff -- "<instructions>"` does it in one shot, and leaves starting to you. See
 [prompts/kickoff.md](../prompts/kickoff.md).
 
 To add a repo later, clone it into `central/`, set its `tenkm.mainBranch` and
@@ -28,9 +44,16 @@ merged them into main. The ones operators usually set:
 | `WORKER_GATES` | Commands Workers run (`gate worker`) before done; one per line, or `repo: command`. |
 | `VALIDATION_GATES` | Commands the Curator runs (`gate validation`); same format. |
 | `NOTIFY_CMD` | Notification commands, one per line, run with `TENKM_PRIORITY`, `TENKM_TITLE`, `TENKM_BODY` and `TENKM_PROJECT` set. Empty: append to `NOTIFICATIONS.md` in the central loop worktree. |
+
+Settings for this host, rather than for the loop (agent commands, tool locations, gate inputs, `PATH`), go in `<root>/host.env`, outside the repos. It is sourced before `config.env`, so its values win over `config.env`'s, and what it sets is exported to agents, gates and the commands they run. Write each setting as `X="${X-value}"` so the environment can still override it. Agents don't change it, and don't put keys in it: agents can read it.
+
+| Setting (`host.env`) | Meaning |
+|---|---|
 | `LOOP_AGENT` | Agent command for every role, run with `SESSION`, `PROMPT_FILE` and `FIRST_MESSAGE` set. |
 | `PLANNER_AGENT`, `WORKER_AGENT`, `CURATOR_AGENT`, `AUDITOR_AGENT` | Per-role overrides of `LOOP_AGENT`, e.g. to choose a model. |
 | `OPERATOR_AGENT` | The operator's agent, for kickoff and operator sessions; run with `FIRST_MESSAGE` and, for one-shot instructions, `ONE_SHOT=1`. It doesn't fall back to `LOOP_AGENT`. |
+
+[tenkm/presets.py](../tenkm/presets.py) has commands for Claude Code, kiro-cli and codex. There is no default: with no command set, launches fail and `10km doctor` says so. Usage figures (`10km metrics`) come only from harnesses that print them: Claude Code with `--output-format json`, kiro-cli with `--output-format stream-json`.
 
 Also in `config.env`: `SESSION_TIMEOUT` (and per-role `PLANNER_TIMEOUT` etc.), `MAX_TASKS_PER_CYCLE` (tasks per cycle, default no limit), `MAX_CONCURRENT_AGENTS` (agents the Dispatcher runs at once, 2 or more so the Auditor gets a place; operator sessions don't count), `BACKLOG_SIZE`, `AUDIT_TIME`, `AUDIT_TIMEZONE`, `AUDIT_CYCLES_LIMIT`, `IDLE_CYCLE_LIMIT`, `DISPATCH_INTERVAL`, `KILL_GRACE`, `START_GRACE`, `GATE_WAIT` (how long `gate` waits before exiting 3; keep it under the agent's tool-call limit), `LAUNCHER`, `PROJECT_NAME`, `MSM_DB`, `MSM_LOG` and `USAGE_LOG`. Each is described in the file.
 
@@ -41,7 +64,7 @@ There are two ways to act on a running loop: change its state directly with `msm
 Run the commands from your own shell, with `LOOP_ROOT` and `PATH` set as in [Run it on a host](../README.md#run-it-on-a-host); in the container both are set already. Unset `LOOP_SESSION`: msm treats a set `LOOP_SESSION` as an agent's session.
 
 ```sh
-10km status               # phase, cycle, tasks, sessions, issues, audits, repos
+10km status               # phase, cycle, Dispatcher, tasks, sessions, issues, audits, repos
 ```
 
 For example:
@@ -49,6 +72,7 @@ For example:
 ```
 10km loop, Nov 15 19:47 CET
 Loop: running, phase curate, cycle 1
+Dispatcher: last pass 19:46, 40s ago (ok); run-loop running (pid 4120)
 
 Cycle 1 (open, planned 19:35, 12m ago):
   PH1: DEL2 (resume resets the idle count) and DEL3 (small bugs)
@@ -100,16 +124,21 @@ msm issue create '{"type": "backlog", "title": "<one line>",
 
 Search first (`msm issue list '{"status": "open"}'`) and update a similar item instead of adding another. Say in the description if you approve a change that would otherwise need you, such as a change to `docs/requirements.md`.
 
-**Start, stop and resume.**
+**Start, pause, resume and stop.**
 
 ```sh
-msm loop start              # once, after kickoff: the first Planner runs
-msm loop stop <reason>      # the Dispatcher launches nothing new; running agents finish
-msm loop resume             # continue a stopped loop from its phase
+10km start                  # start run-loop unless one runs; start or resume the loop
+10km pause [--now] [reason] # stop the loop: the Dispatcher launches nothing new
+10km resume                 # continue a stopped loop from its phase
+10km stop [--now]           # stop the loop and run-loop
 msm loop get                # stopped or not, the reason, phase and cycle
 ```
 
-A stopped loop keeps its state and worktrees. Agents can't restart it: msm refuses loop changes from agent sessions while the loop is stopped. `msm loop resume` is refused while a blocking escalation assigned to you is open; answer it first.
+Without `--now`, running agents finish their work; with it, they and their gate runs are stopped and their sessions expired (operator sessions are left alone). After `pause` the Dispatcher still runs, so it expires timed-out sessions and records usage; after `stop` nothing does until `10km start`. `run-loop` logs to `<root>/.10km/run-loop.log`; only one runs per loop. In the container `run-loop` is the main process, so `10km stop` ends the container: use `pause` there.
+
+`run-loop` is optional: anything that runs `10km dispatch` every `DISPATCH_INTERVAL` seconds will do, such as cron (`* * * * * LOOP_ROOT=<root> <root>/central/loop/bin/dispatch >> <root>/.10km/dispatch.log 2>&1`), a systemd timer or launchd. Then use `pause` and `resume`, and start or stop the scheduler yourself. `10km status` shows the last Dispatcher pass, and flags it OVERDUE when passes stop coming while the loop runs.
+
+`10km start` initialises a loop that has never run, and starts one that has never started (`msm loop start`, phase plan); `10km resume` is `msm loop resume`, and `10km pause` is `msm loop stop` with a reason. A stopped loop keeps its state and worktrees. Agents can't restart it: msm refuses loop changes from agent sessions while the loop is stopped. `10km resume` is refused while a blocking escalation assigned to you is open; answer it first.
 
 ### 2. In an operator session: files and repos
 
@@ -152,7 +181,7 @@ Commit everything before `session done`: the Curator merges commits only, and un
 |---|---|
 | Answer an escalation with a decision | `msm issue update` |
 | Ask for work | `msm issue create` (backlog item) |
-| Pause or continue the loop | `msm loop stop` / `msm loop resume` |
+| Pause or continue the loop | `10km pause` / `10km resume` |
 | Change files yourself | a manual session |
 | Have your agent change files, with you | an interactive session |
 | Have your agent change files from written instructions | a one-shot session |

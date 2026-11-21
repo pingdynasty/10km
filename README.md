@@ -33,16 +33,26 @@ user, no exposed ports, and only the directories you mount. Network egress contr
 a good idea.
 
 ```sh
-docker build -t 10km .            # add your agent harness to the Dockerfile first
-mkdir central
-docker run -d --name 10km -v "$PWD/central:/loop/central" -v 10km-data:/data 10km
-docker exec -it 10km 10km kickoff
+docker build --build-arg AGENTS="claude kiro" -t 10km .   # harnesses: claude, kiro, codex
+docker run -d --name myloop -e AGENT=claude -e LOOP_NAME=myloop \
+  -v myloop-home:/home/monkey 10km
+docker exec -it myloop claude                              # log in once
+docker exec -it myloop 10km kickoff
 ```
 
-The central worktrees (the loop repo and the project repos) live in a host mount in
-`central/`, so you can see and edit them. The database is in a volume called `10km-data`.
-On first start the container creates the loop repo, `central/loop`, from its copy of
-10km, then runs `run-loop`, which calls a dispatcher every `DISPATCH_INTERVAL` seconds.
+The volume `myloop-home` holds everything: the loop (`/home/monkey/loop`: worktrees,
+database, logs, `host.env`) and the harnesses' logins, so a new container on the same
+volume carries on. Add `-v "$PWD/central:/home/monkey/loop/central"` to see and edit
+the central worktrees on the host (on Linux the directory must be writable by uid 1000).
+
+On first start the container runs `10km create` from its copy of 10km, with `AGENT`'s
+agent commands (default: the first of `AGENTS`) and the branch `LOOP_NAME` (default
+`loop`), then runs `run-loop`. The loop's `local` remote is the image's 10km, so after
+a new image, `local/main` has its updates.
+
+Log in with the harness's own command, in the container: `claude` (then `/login`; or
+`claude setup-token` and pass `-e CLAUDE_CODE_OAUTH_TOKEN`), or
+`kiro-cli login --use-device-flow`. Keys passed with `-e` are visible to the agents.
 
 ## Run it on a host
 
@@ -51,20 +61,25 @@ On first start the container creates the loop repo, `central/loop`, from its cop
 Python 3.9+ (standard library only; an older one is refused with a message), Bash,
 git 2.26+ and an agent CLI such as `pi`, `hermes`, `claude`, `codex` or `kiro-cli`.
 
-The loop root (`LOOP_ROOT`) is a directory holding 10km, your worktrees (`central/`)
-and the database (`.10km/loop.db` unless `MSM_DB` says otherwise). If `LOOP_ROOT` isn't
-set, the scripts guess it from where they are.
+The loop root (`LOOP_ROOT`) is a directory holding 10km, your worktrees (`central/`),
+this host's settings (`host.env`) and the database (`.10km/loop.db` unless `MSM_DB`
+says otherwise). If `LOOP_ROOT` isn't set, the scripts guess it from where they are.
 
 ```sh
-mkdir -p ~/myloop/central && cd ~/myloop
-git clone <10km or your fork> central/loop
+git clone <10km or your fork> ~/10km
+~/10km/bin/10km create ~/myloop --agent claude   # or kiro, codex
 export LOOP_ROOT=~/myloop PATH=~/myloop/central/loop/bin:$PATH
-10km kickoff                     # create the database and set up the loop
-run-loop                         # call the dispatcher every DISPATCH_INTERVAL seconds
+10km kickoff                     # set up the loop with your agent
+10km start                       # run the dispatcher every DISPATCH_INTERVAL seconds
 ```
 
-Keep `run-loop` running (in `tmux`, or as a service), or call `10km dispatch` from
-cron instead.
+`10km create` clones 10km into `central/loop` on a branch of the loop's own (`myloop`;
+`--branch` to choose), so the loop's changes stay off `main`, and 10km's updates can be
+merged from `origin` (where your 10km came from) or `local` (`~/10km`), both fetch
+only. It writes `host.env` with the agent's commands, and creates the database.
+
+`10km start` runs `run-loop` in the background; `10km pause`, `resume` and `stop`
+control the loop. Or call `10km dispatch` from cron or another scheduler instead.
 
 Remember that the monkeys may use and abuse any tools you give them access to. It
 would be a mistake not to give them a sandbox.
@@ -72,14 +87,19 @@ would be a mistake not to give them a sandbox.
 ## Kickoff
 
 `10km kickoff` sets up the loop with you: goals, deliverables and plan, the project
-repos in `central/`, gates, notifications and prompts. It ends by starting the loop,
-and the first Planner runs. `10km kickoff -- "<instructions>"` does it in one shot.
+repos in `central/`, gates, notifications and prompts. It ends by asking whether to
+start the loop (`10km start`): the first Planner runs. `10km kickoff -- "<instructions>"`
+does it in one shot, and leaves starting to you.
 
 ## Some Commands
 
 ```
+10km create <dir> [--agent NAME] a new loop, from this 10km checkout
 10km kickoff [-- message]       set up the loop
 10km status                     status report
+10km start                      start the dispatcher; start or resume the loop
+10km pause|resume               stop or continue the loop
+10km stop [--now]               stop the loop and the dispatcher (--now: and the agents)
 10km dispatch                   launch any agents that are due
 10km session start <username> [--no-agent] [-- instruction]
                                 start an operator session

@@ -24,6 +24,7 @@
 **R12** The loop repo contains its scripts and prompts, the plan, goals, deliverables, BACKLOG.md, LEARNINGS.md.
 **R13** The database and action log are at a configured path, outside the repos.
 **R14** Configuration is in `config.env` in the loop repo (see Configuration below). **R15** Scripts read it from the central loop worktree.
+**R338** This host's settings are in `host.env` in the loop root, outside the repos. Scripts read it before `config.env`, and what it sets reaches agents, gates and the commands they run. The environment overrides both.
 **R16** The operator may provide one or more pre-existing project repos for the loop to work on.
 **R17** If not, a new project repo is created during kickoff.
 **R18** Each session has a directory with git worktrees and scratch files.
@@ -261,7 +262,7 @@ Then, by phase:
 **R148** To launch a role, it attempts to create a session. **R149** If it fails with EAGAIN (4) it tries again, up to 3 times.
 **R150** If it succeeds it reads the role prompt.
 **R151** It writes the role prompt to a file in the session directory, launches the agent through the configured launcher with the session name and prompt file path in its first message, and records the launcher's handle in the session.
-**R152** The launcher is configured for the loop. **R153** The default process launcher runs an agent command, configured for the loop or specialised for each role:
+**R152** The launcher is configured for the loop. **R153** The default process launcher runs an agent command, configured for the host (`host.env`) or specialised for each role:
 **R154** `LOOP|PLANNER|WORKER|CURATOR|AUDITOR_AGENT=...`
 
 ### Session Time-out
@@ -284,6 +285,16 @@ Notes:
 - **R173** call `loop resume`
 
 **R313** `msm loop resume` refuses with EPERM while a blocking escalation assigned to the operator is open; an answered one doesn't count.
+
+### Start, Pause, Resume, Stop
+**R331** `10km start` starts `run-loop`, which runs a Dispatcher pass every configured interval, in the background unless one is running, and resumes the loop if it is stopped, or starts it (`loop start`) if it has never started.
+**R342** On a loop that has never run (no database, action log or heartbeat), `10km start` runs init first. If the database is missing but the loop has run, it refuses.
+**R332** At most one `run-loop` runs per loop; another one exits.
+**R333** `10km pause` stops the loop and leaves `run-loop` running.
+**R334** `10km resume` resumes a stopped loop.
+**R335** `10km stop` stops the loop and `run-loop`.
+**R336** Without `--now`, running agents finish their work. With `--now`, `pause` and `stop` also stop the agents of all but operator sessions, and their gate runs, and expire those sessions.
+**R337** Each Dispatcher pass records when it ran and its result. The status report shows the last pass, and warns when passes are overdue while the loop isn't stopped.
 
 ## Issues
 **R174** There are two types of issues: Escalation, and Backlog.
@@ -425,6 +436,11 @@ If the selection includes a Planner session:
 **R285** Files can be used for agents to communicate, for example for workers to save research.
 **R286** What type of files that agents may produce, and where, is determined during kickoff.
 
+## Create
+**R339** `10km create <dir>` makes a loop root from the 10km checkout it runs from: it clones it into `central/loop`, on a new branch for the loop (not main), so main keeps following the source. It refuses if `central/loop` exists or the source isn't a git checkout.
+**R340** In the clone, `local` is the source and `origin` is the source's origin; nothing is pushed to either.
+**R341** It writes `host.env`, with a preset's agent commands if one is named, and runs init, so the status report works before kickoff.
+
 ## Kickoff
 **R287** The operator runs Kickoff (`10km kickoff`) before the loop starts.
 **R288** Kickoff can be interactive, or a one-shot operator instruction.
@@ -435,7 +451,7 @@ If the selection includes a Planner session:
 **R293** It clones or creates the central project worktrees and configures them with `git config`.
 **R294** It ensures that loop prompts meet the project needs.
 **R295** It should leave the central worktrees clean.
-**R296** When done, kickoff calls `loop start`, and the first Planner runs.
+**R296** Kickoff doesn't start the loop. When the operator's agent exits, an interactive `10km kickoff` asks whether to start it (`10km start`); a one-shot or non-interactive one says how.
 
 ## Notification
 **R297** The operator notification mechanism should be a deterministic action configured during Kickoff.

@@ -19,6 +19,12 @@ What an operator session is for:
   directly those with no `assigner_session`, such as the Dispatcher's.
 - **Direct work.** Change the project repos yourself, as a Worker would.
 - **Settings.** Change `config.env`; it takes effect once merged.
+- **10km updates.** In your loop worktree, `git fetch origin` (in a container,
+  `git fetch local`: the image's 10km) and merge `origin/main` (or `local/main`)
+  into your session branch. Keep the loop's own changes and take 10km's fixes; a
+  conflict in `docs/requirements.md` or in a change the operator made is theirs to
+  decide. Run `make test` before you finish. If `git fetch` says the repo is
+  shallow, run `git fetch --unshallow origin` once.
 - **Status.** For a status report, follow `prompts/status.md`.
 
 Rules:
@@ -29,7 +35,7 @@ Rules:
   repo.
 - Don't change `docs/requirements.md` unless the operator says so.
 - Don't resume a stopped loop unless the operator says so; otherwise tell them to
-  run `msm loop resume` once the session is done. It is refused while a blocking
+  run `10km resume` once the session is done. It is refused while a blocking
   operator escalation is open, so answer those first.
 - Operator sessions never time out. When finished, commit, then `msm session done
   "$LOOP_SESSION"`, and tell the operator what you changed and what is left for

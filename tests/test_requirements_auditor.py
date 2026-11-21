@@ -4,12 +4,13 @@ import signal
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
 from test_loop import LoopCase  # noqa: E402
 from test_scripts import ScriptCase  # noqa: E402
-from tenkm import dispatch, notify, sessions  # noqa: E402
+from tenkm import config, control, dispatch, notify, sessions  # noqa: E402
 
 
 class TestAuditorLaunch(LoopCase):
@@ -80,6 +81,25 @@ class TestKickoff(ScriptCase):
         self.assertEqual(self.loop.sessions(), [])
         self.assertTrue(self.loop.msm("loop", "get")["stopped"])
         self.assertIn("prompts/kickoff.md", message)
+
+    def test_kickoff_leaves_the_loop_stopped_and_says_how_to_start(self):  # R296
+        out = os.path.join(self.tmp, "kickoff")
+        p = self.loop.run("10km", "kickoff", env={"OPERATOR_AGENT": f"true > {out}"})
+        self.assertExit(p, 0)  # no terminal: it doesn't ask
+        self.assertIn("`10km start`", p.stdout)
+        self.assertTrue(self.loop.msm("loop", "get")["stopped"])
+
+    def test_interactive_kickoff_offers_to_start(self):  # R296
+        for answer, starts in (("", True), ("y", True), ("n", False), (EOFError, False)):
+            def ask(prompt):
+                self.assertIn("[Y/n]", prompt)
+                if answer is EOFError:
+                    raise EOFError
+                return answer
+            with mock.patch.object(control, "start", return_value=0) as start, \
+                    mock.patch.dict(os.environ, self.loop.env):
+                self.assertEqual(control.offer_start(config.load(), True, ask), 0)
+            self.assertEqual(start.called, starts, answer)
 
     def test_kickoff_is_interactive_or_one_shot(self):  # R288
         _, env, _ = self.kickoff()

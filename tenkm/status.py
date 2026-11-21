@@ -1,7 +1,7 @@
 """tenkm.status: a plain-text status report from the database and git (R10)."""
 import os
 
-from . import gitutil, msm, timefmt
+from . import control, dispatch, gitutil, msm, runloop, timefmt
 from .metrics import table
 
 
@@ -26,6 +26,25 @@ def _loop_line(loop):
     n = loop["empty_cycles"]
     if n > 0:
         line += f", {n} empty cycle{'s' if n != 1 else ''} in a row"
+    return line
+
+
+def _dispatcher_line(cfg, loop, now, tz):
+    """R337: the last Dispatcher pass, whether run-loop runs, and a warning when
+    passes are overdue on a loop that isn't stopped."""
+    beat = dispatch.last_heartbeat(cfg)
+    if beat:
+        at = beat.get("finished_at")
+        line = (f"Dispatcher: last pass {timefmt.clock(at, now, tz)}, {timefmt.ago(at, now)}"
+                f" ({beat.get('result', '?')})")
+    else:
+        line = "Dispatcher: no pass recorded"
+    pid = runloop.running(cfg)
+    if pid is not None:
+        line += f"; run-loop running (pid {pid or '?'})"
+    if not loop["stopped"] and control.overdue(cfg, now):
+        line += (f"; OVERDUE (DISPATCH_INTERVAL {cfg.get('DISPATCH_INTERVAL') or 60}s): "
+                 "`10km start`, or check your scheduler")
     return line
 
 
@@ -65,7 +84,8 @@ def report(cfg, now=None, tz=None):
     def when(t):
         return f"{timefmt.clock(t, now, tz)}, {timefmt.ago(t, now)}"
 
-    lines = [f"{cfg.project_name} loop, {timefmt.stamp(now, tz)}", _loop_line(loop)]
+    lines = [f"{cfg.project_name} loop, {timefmt.stamp(now, tz)}", _loop_line(loop),
+             _dispatcher_line(cfg, loop, now, tz)]
     if cycle:
         lines.append(f"\nCycle {cycle['id']} ({cycle['status']}, planned "
                      f"{when(cycle.get('planned_at'))}):")

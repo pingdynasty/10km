@@ -18,7 +18,7 @@ scenarios:
 
 # End-to-end smoke test and scenarios in the container.
 smoke:
-	docker build -t $(IMAGE) .
+	docker build --build-arg AGENTS= -t $(IMAGE) .
 	docker run --rm $(IMAGE) sh -c '/opt/10km/tests/smoke.sh && cd /opt/10km && python3 -m unittest -v tests/test_scenarios.py'
 
 # End-to-end smoke test on this host (needs bash, git, jq and python3).

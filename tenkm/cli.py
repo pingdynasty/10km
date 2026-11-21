@@ -1,8 +1,15 @@
 """10km: the loop's command-line entry point.
 
+  10km create <dir> [--agent NAME] [--branch NAME]
+                                  a new loop in <dir>, from this 10km checkout
   10km init                       create the database; register the central repos
   10km kickoff [-- message]       set up the loop with OPERATOR_AGENT
   10km status                     status report
+  10km start                      start run-loop unless one runs; start or resume the loop
+  10km pause [--now] [reason]     stop the loop; run-loop keeps running
+  10km resume                     resume a stopped loop
+  10km stop [--now]               stop the loop and run-loop
+                                  (--now: also stop running agents and their gates)
   10km metrics [--cycle N] [--json]
                                   sessions, times, commits and usage per cycle and role
   10km dispatch                   one Dispatcher pass
@@ -23,7 +30,7 @@ import os
 import subprocess
 import sys
 
-from . import (config, dispatch, doctor, gate, init, launchtest, metrics, msm, notify,
+from . import (config, control, dispatch, doctor, gate, init, launchtest, metrics, msm, notify,
                sessions, status)
 
 
@@ -91,7 +98,12 @@ def run_operator_agent(cfg, cwd, message="", session=None, one_shot=False):
         env["FIRST_MESSAGE"] = message
     if one_shot:
         env["ONE_SHOT"] = "1"
-    return subprocess.call(["bash", "-c", cfg.agent_command("operator")], cwd=cwd, env=env)
+    command = cfg.agent_command("operator")
+    if not command:
+        print("no agent command for the operator: set OPERATOR_AGENT in host.env",
+              file=sys.stderr)
+        return 1
+    return subprocess.call(["bash", "-c", command], cwd=cwd, env=env)
 
 
 def _kickoff(argv, cfg):
@@ -114,7 +126,11 @@ def _kickoff(argv, cfg):
              f"central loop worktree {loop}. Read prompts/kickoff.md there and follow it.")
     if message:
         intro += f"\n\nThe operator's instructions: {' '.join(message)}"
-    return run_operator_agent(cfg, loop, intro, one_shot=bool(message))
+    rc = run_operator_agent(cfg, loop, intro, one_shot=bool(message))
+    if rc:
+        return rc
+    interactive = not message and sys.stdin.isatty() and sys.stdout.isatty()
+    return control.offer_start(cfg, interactive)
 
 
 def _notify(argv, cfg):
@@ -164,6 +180,9 @@ def main(argv=None):
     command, args = argv[0], argv[1:]
     if command == "msm":
         return msm.main(args)
+    if command == "create":  # before loading any loop's config
+        from . import create
+        return create.main(args)
     cfg = config.load()
     if command == "init":
         try:
@@ -175,6 +194,8 @@ def main(argv=None):
     if command == "status":
         print(status.report(cfg))
         return 0
+    if command in ("start", "pause", "resume", "stop"):
+        return control.main(cfg, command, args)
     if command == "metrics":
         return _metrics(args, cfg)
     if command == "dispatch":

@@ -83,7 +83,9 @@ def check_config(cfg):
         config = (False, "config.env", f"{path}: missing")
     else:
         config = (not error, "config.env", f"{path}: {error}" if error else path)
-    return [(os.path.isdir(cfg.root), "loop root", cfg.root), config]
+    host = cfg.get("LOOP_HOST_ENV_PATH", "")
+    host_env = (True, "host.env", host if os.path.exists(host) else f"{host}: none")
+    return [(os.path.isdir(cfg.root), "loop root", cfg.root), host_env, config]
 
 
 def check_repo(cfg, repo):

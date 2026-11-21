@@ -20,7 +20,7 @@ def run(cfg, role="worker", timeout=600, poll=0.5):
     timed out, log path)."""
     command = cfg.agent_command(role)
     if not command:
-        raise RuntimeError(f"no agent command for {role}: set LOOP_AGENT or {role.upper()}_AGENT")
+        raise RuntimeError(f"no agent command for {role}: set LOOP_AGENT or {role.upper()}_AGENT in host.env")
     directory = tempfile.mkdtemp(prefix=f"10km-launch-test-{role}-")
     name = f"launch-test-{role}"
     log = os.path.join(directory, "agent.log")

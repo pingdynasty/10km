@@ -1,6 +1,7 @@
 """Requirements on sessions, the Dispatcher, session time-out and resume not
 covered elsewhere."""
 import fcntl
+import json
 import os
 import shutil
 import signal
@@ -13,7 +14,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import testenv  # noqa: E402  (test config, no caller env: tests/testenv.py)
-from testenv import BIN, SUFFIX  # noqa: E402
+from testenv import BIN, SUFFIX, wait_for  # noqa: E402
 from test_curate_scripts import CurateScriptCase  # noqa: E402
 from test_loop import LoopCase  # noqa: E402
 from test_scripts import ScriptCase  # noqa: E402
@@ -195,6 +196,142 @@ class TestCuratorCrash(CurateScriptCase):
         self.step_ok(third, "publish")
         self.assertEqual((self.main("loop"), self.main("project")), published)
         self.assertEqual(self.tasks()[w1], "accepted")
+
+
+class TestLoopControl(ScriptCase):
+    """`10km start|pause|resume|stop` and the Dispatcher heartbeat."""
+
+    settings = {"DISPATCH_INTERVAL": "1"}
+
+    def runner(self):
+        """The running run-loop's pid, or None."""
+        from tenkm import config, runloop
+        return runloop.running(config.load(self.loop.root))
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(self.kill_runner)
+
+    def kill_runner(self):
+        pid = self.runner()
+        if pid:
+            os.kill(pid, signal.SIGKILL)
+
+    def heartbeat(self):
+        return testenv.read(os.path.join(self.loop.root, ".10km", "dispatch.json"))
+
+    def test_start_runs_one_run_loop_and_stop_ends_it(self):  # R331 R332 R335
+        self.loop.start()
+        self.loop.msm("loop", "stop", "operator")
+        p = self.loop.run("10km", "start")
+        self.assertExit(p, 0)
+        self.assertIn("run-loop started", p.stdout)
+        self.assertFalse(self.loop.msm("loop", "get")["stopped"])  # resumed
+        pid = self.runner()
+        self.assertTrue(pid)
+        self.assertTrue(wait_for(lambda: "run-loop started" in (testenv.read(
+            os.path.join(self.loop.root, ".10km", "run-loop.log")) or "")))
+        p = self.loop.run("10km", "start")
+        self.assertIn(f"already running (pid {pid})", p.stdout)
+        self.assertExit(self.loop.run("run-loop"), 1)  # R332: one per loop
+        self.assertEqual(self.runner(), pid)
+        p = self.loop.run("10km", "stop")
+        self.assertExit(p, 0)
+        self.assertIsNone(self.runner())
+        loop = self.loop.msm("loop", "get")
+        self.assertEqual((loop["stopped"], loop["reason"]), (1, "stopped by the operator"))
+
+    def test_start_starts_a_loop_that_never_started(self):  # R331
+        self.assertExit(self.loop.run("10km", "resume"), 1)  # nothing to resume yet
+        p = self.loop.run("10km", "start")
+        self.assertExit(p, 0)
+        self.assertIn("the first Planner runs", p.stdout)
+        loop = self.loop.msm("loop", "get")
+        self.assertEqual((loop["stopped"], loop["phase"]), (0, "plan"))
+        self.assertTrue(self.runner())
+
+    def test_start_initialises_a_loop_that_never_ran(self):  # R342
+        os.remove(self.loop.db)
+        p = self.loop.run("10km", "start")
+        self.assertExit(p, 0)
+        self.assertIn("Initialised the loop", p.stdout)
+        self.assertEqual(self.loop.msm("loop", "get")["phase"], "plan")
+
+    def test_start_refuses_a_missing_database_of_a_loop_that_ran(self):  # R342
+        self.dispatch()  # a heartbeat
+        os.remove(self.loop.db)
+        p = self.loop.run("10km", "start")
+        self.assertExit(p, 1)
+        self.assertIn("has run before", p.stderr)
+        self.assertFalse(os.path.exists(self.loop.db))
+        self.assertIsNone(self.runner())
+
+    def test_pause_keeps_run_loop_and_resume_continues(self):  # R333 R334
+        self.loop.start()
+        self.loop.ok("10km", "start")
+        pid = self.runner()
+        p = self.loop.run("10km", "pause", "for", "lunch")
+        self.assertExit(p, 0)
+        loop = self.loop.msm("loop", "get")
+        self.assertEqual((loop["stopped"], loop["reason"]), (1, "for lunch"))
+        self.assertEqual(self.runner(), pid)
+        self.loop.ok("10km", "pause")  # an earlier reason is kept
+        self.assertEqual(self.loop.msm("loop", "get")["reason"], "for lunch")
+        self.assertExit(self.loop.run("10km", "resume"), 0)
+        self.assertFalse(self.loop.msm("loop", "get")["stopped"])
+
+    def test_resume_is_refused_while_a_blocking_escalation_is_open(self):  # R334 R313
+        self.loop.start()
+        self.loop.msm("issue", "create", '{"type": "escalation", "title": "ESC1: help", '
+                      '"assignee_role": "operator", "severity": "blocking"}')
+        self.loop.msm("loop", "stop", "blocked")
+        self.assertExit(self.loop.run("10km", "resume"), 2)  # EPERM
+        self.assertTrue(self.loop.msm("loop", "get")["stopped"])
+
+    def test_without_now_agents_run_on(self):  # R336
+        self.loop.start()
+        self.dispatch()
+        self.assertEqual([s["role"] for s in self.loop.active()], ["planner"])
+        self.loop.ok("10km", "pause")
+        self.assertEqual([s["role"] for s in self.loop.active()], ["planner"])
+
+    def test_now_stops_agents_and_gate_runs(self):  # R336
+        self.loop.start()
+        op = self.loop.session("operator", "mars")["name"]
+        self.dispatch()
+        planner = self.loop.active("planner")[0]
+        gate_run = subprocess.Popen(["sleep", "600"], start_new_session=True)
+        self.addCleanup(gate_run.kill)
+        from tenkm.launchers import process
+        evidence = os.path.join(self.loop.root, ".10km", "evidence")
+        os.makedirs(evidence, exist_ok=True)
+        with open(os.path.join(evidence, "running-x.json"), "w") as f:
+            json.dump({"pgid": gate_run.pid, "started": process._ps(gate_run.pid, "lstart"),
+                       "rc": os.path.join(evidence, "x.rc"), "log": "x.log"}, f)
+        p = self.loop.run("10km", "pause", "--now")
+        self.assertExit(p, 0)
+        self.assertIn("Stopped 1 agent", p.stdout)
+        self.assertIn("1 gate run", p.stdout)
+        status = {s["name"]: s["status"] for s in self.loop.sessions()}
+        self.assertEqual((status[planner["name"]], status[op]), ("expired", "active"))
+        self.assertFalse(process.alive(None, planner["handle"]))
+        self.assertIsNotNone(gate_run.wait(timeout=testenv.DEADLINE))
+
+    def test_status_reports_the_last_pass_and_overdue_passes(self):  # R337
+        self.loop.start()
+        self.assertIn("Dispatcher: no pass recorded; OVERDUE", self.loop.ok("10km", "status"))
+        self.dispatch()
+        beat = json.loads(self.heartbeat())
+        self.assertEqual(beat["result"], "ok")
+        text = self.loop.ok("10km", "status")
+        self.assertIn("Dispatcher: last pass", text)
+        self.assertNotIn("OVERDUE", text)
+        beat["finished_at"] = "2026-01-01T00:00:00Z"
+        with open(os.path.join(self.loop.root, ".10km", "dispatch.json"), "w") as f:
+            json.dump(beat, f)
+        self.assertIn("OVERDUE", self.loop.ok("10km", "status"))
+        self.loop.msm("loop", "stop", "operator")
+        self.assertNotIn("OVERDUE", self.loop.ok("10km", "status"))  # stopped: not due
 
 
 if __name__ == "__main__":

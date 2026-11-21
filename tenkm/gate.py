@@ -24,6 +24,7 @@ and it waits until they finish. Its logs, pass cache and SCRATCH_DIR are in
 
 Exit status: 0 all passed, 1 a gate failed, 2 refused, 3 still running (rerun to wait).
 """
+import glob
 import hashlib
 import json
 import os
@@ -129,7 +130,7 @@ def run_gate(cfg, session, repo, command, wait, evidence=None, scratch=None):
                                          start_new_session=True,
                                          env=dict(os.environ, SCRATCH_DIR=scratch))
             run = {"log": log, "rc": rc_path, "command": command, "repo": repo,
-                   "pgid": child.pid}
+                   "pgid": child.pid, "started": process._ps(child.pid, "lstart")}
             _save(running_path, run)
     if not _wait(run, child, wait):
         return "running", run["log"]
@@ -145,6 +146,22 @@ def run_gate(cfg, session, repo, command, wait, evidence=None, scratch=None):
             passed[key] = run["log"]
             _save(passed_path, passed)
         return "passed", run["log"]
+
+
+def stop_runs(cfg):
+    """R336: stop the gate runs still running, in every evidence dir. Returns how
+    many it stopped. A run recorded without its start time is left alone: its
+    process group id may have been reused."""
+    stopped = 0
+    pattern = os.path.join(cfg.state_dir, "evidence", "**", "running-*.json")
+    for path in glob.glob(pattern, recursive=True):
+        run = _load(path, None)
+        if not isinstance(run, dict) or not run.get("started") or os.path.exists(run["rc"]):
+            continue
+        handle = f"process:{run['pgid']}:{run['started']}"
+        if process.alive(cfg, handle) and process.stop(cfg, handle):
+            stopped += 1
+    return stopped
 
 
 def _record(run, rc):
