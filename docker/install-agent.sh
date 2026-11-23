@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install agent harnesses for the user, in ~/.local (the home volume), with each
 # vendor's own installer:
-#   docker/install-agent.sh [claude] [kiro] [codex]
+#   docker/install-agent.sh [claude] [kiro] [codex] [pi] [hermes]
 # The names are the presets in tenkm/presets.py. A harness already on PATH is left
 # alone. container-start runs it for AGENT; the image itself ships no harness, so
 # each is downloaded under its own licence by whoever runs the container.
@@ -9,8 +9,8 @@ set -euo pipefail
 
 for agent in "$@"; do  # check every name before installing any
   case "$agent" in
-    claude|kiro|codex) ;;
-    *) echo "install-agent: unknown agent: $agent (known: claude kiro codex)" >&2; exit 1 ;;
+    claude|kiro|codex|pi|hermes) ;;
+    *) echo "install-agent: unknown agent: $agent (known: claude kiro codex pi hermes)" >&2; exit 1 ;;
   esac
 done
 
@@ -26,11 +26,22 @@ install_codex() {
   npm install -g --prefix "$HOME/.local" @openai/codex
 }
 
+install_pi() {  # its own installer is interactive; this is its npm route
+  npm install -g --prefix "$HOME/.local" --ignore-scripts @earendil-works/pi-coding-agent
+}
+
+install_hermes() {  # into ~/.hermes, with its own Python; set it up with `hermes model`
+  curl -fsSL https://hermes-agent.nousresearch.com/install.sh \
+    | bash -s -- --skip-setup --skip-browser --skip-computer-use
+}
+
 command_of() {
   case "$1" in
     claude) echo claude ;;
     kiro) echo kiro-cli ;;
     codex) echo codex ;;
+    pi) echo pi ;;
+    hermes) echo hermes ;;
   esac
 }
 

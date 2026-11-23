@@ -27,6 +27,16 @@ PRESETS = {
         "LOOP_AGENT": 'codex exec "$FIRST_MESSAGE"',
         "OPERATOR_AGENT": 'codex ${ONE_SHOT:+exec} ${FIRST_MESSAGE:+"$FIRST_MESSAGE"}',
     },
+    "pi": {  # pi asks no permissions; --no-approve: ignore a project's own pi config
+        "LOOP_AGENT": 'pi --no-session --no-approve -n "$SESSION" -p "$FIRST_MESSAGE"',
+        "OPERATOR_AGENT": 'pi ${SESSION:+-n "$SESSION"} ${ONE_SHOT:+-p} '
+                          '${FIRST_MESSAGE:+"$FIRST_MESSAGE"}',
+    },
+    "hermes": {
+        "LOOP_AGENT": 'hermes chat --oneshot --quiet --yolo -q "$FIRST_MESSAGE"',
+        "OPERATOR_AGENT": 'hermes chat ${ONE_SHOT:+--oneshot --quiet --yolo} '
+                          '${FIRST_MESSAGE:+-q "$FIRST_MESSAGE"}',
+    },
 }
 
 

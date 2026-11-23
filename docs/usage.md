@@ -53,7 +53,7 @@ Settings for this host, rather than for the loop (agent commands, tool locations
 | `PLANNER_AGENT`, `WORKER_AGENT`, `CURATOR_AGENT`, `AUDITOR_AGENT` | Per-role overrides of `LOOP_AGENT`, e.g. to choose a model. |
 | `OPERATOR_AGENT` | The operator's agent, for kickoff and operator sessions; run with `FIRST_MESSAGE` and, for one-shot instructions, `ONE_SHOT=1`. It doesn't fall back to `LOOP_AGENT`. |
 
-[tenkm/presets.py](../tenkm/presets.py) has commands for Claude Code, kiro-cli and codex. There is no default: with no command set, launches fail and `10km doctor` says so. Usage figures (`10km metrics`) come only from harnesses that print them: Claude Code with `--output-format json`, kiro-cli with `--output-format stream-json`.
+[tenkm/presets.py](../tenkm/presets.py) has commands for Claude Code, kiro-cli, codex, pi and Hermes. There is no default: with no command set, launches fail and `10km doctor` says so. Usage figures (`10km metrics`) come only from harnesses that print them: Claude Code with `--output-format json`, kiro-cli with `--output-format stream-json`.
 
 Also in `config.env`: `SESSION_TIMEOUT` (and per-role `PLANNER_TIMEOUT` etc.), `MAX_TASKS_PER_CYCLE` (tasks per cycle, default no limit), `MAX_CONCURRENT_AGENTS` (agents the Dispatcher runs at once, 2 or more so the Auditor gets a place; operator sessions don't count), `BACKLOG_SIZE`, `AUDIT_TIME`, `AUDIT_TIMEZONE`, `AUDIT_CYCLES_LIMIT`, `IDLE_CYCLE_LIMIT`, `DISPATCH_INTERVAL`, `KILL_GRACE`, `START_GRACE`, `GATE_WAIT` (how long `gate` waits before exiting 3; keep it under the agent's tool-call limit), `LAUNCHER`, `PROJECT_NAME`, `MSM_DB`, `MSM_LOG` and `USAGE_LOG`. Each is described in the file.
 
