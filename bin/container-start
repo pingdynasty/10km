@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
-# Container entry point. On first start, creates the loop in LOOP_ROOT from the
-# image's 10km (`10km create`, with AGENT's preset: default the first of AGENTS,
-# and branch LOOP_NAME: default loop), then runs the loop from it. The home
-# volume (or a central/ host mount) keeps it across containers.
+# Container entry point. Installs the harness AGENT names (claude, kiro or codex)
+# in the home volume if it isn't there. On first start, creates the loop in
+# LOOP_ROOT from the image's 10km (`10km create`, with AGENT's preset and branch
+# LOOP_NAME: default loop). Then runs the loop from it. The home volume (or a
+# central/ host mount) keeps it across containers.
 set -euo pipefail
 LOOP_ROOT=${LOOP_ROOT:-/home/monkey/loop}
 source=${TENKM_SOURCE:-/opt/10km}
 loop="$LOOP_ROOT/central/loop"
+agent=${AGENT:-}
+if [ -n "$agent" ]; then
+  "$source/docker/install-agent.sh" "$agent"
+fi
 if [ ! -e "$loop/.git" ]; then
-  agents=${AGENTS:-}
-  agent=${AGENT:-${agents%% *}}
   "$source/bin/10km" create "$LOOP_ROOT" ${agent:+--agent "$agent"} --branch "${LOOP_NAME:-loop}"
   echo "Next: log in to your agent (docker exec -it <container> <agent>), then"
   echo "      docker exec -it <container> 10km kickoff"
