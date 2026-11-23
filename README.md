@@ -34,16 +34,16 @@ network egress controls in place.
 
 ```sh
 docker run -d --name myloop -e AGENT=claude -e LOOP_NAME=myloop \
-  -v myloop-home:/home/monkey ghcr.io/pingdynasty/10km    # AGENT: claude, kiro or codex
+  -v myloop-home:/home/monkey ghcr.io/pingdynasty/10km    # AGENT: claude, kiro, codex, pi, hermes
 docker exec -it myloop claude                              # log in once
 docker exec -it myloop 10km kickoff
 ```
 
-On start the container installs the `AGENT` harness with its vendor's installer, if it
-isn't installed yet. On first start it creates the loop on branch `LOOP_NAME`
-(default `loop`), and runs it. Log in with the harness's own command: `claude` then
-`/login`, `kiro-cli login --use-device-flow` or `codex login`. Keys passed with `-e`
-are visible to the agents.
+The image comes with pi; on start the container installs any other `AGENT` harness
+with its vendor's installer, if it isn't installed yet. On first start it creates the
+loop on branch `LOOP_NAME` (default `loop`), and runs it. Log in with the harness's own
+command: `claude` or `pi` then `/login`, `kiro-cli login --use-device-flow`,
+`codex login` or `hermes model`. Keys passed with `-e` are visible to the agents.
 
 The volume holds the loop, the harness and its login, so a new container (or image) on
 it carries on; the new image's 10km is on the loop's `local` remote, to merge when you

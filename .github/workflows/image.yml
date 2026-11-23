@@ -1,15 +1,15 @@
 name: image
 
-# Publishes ghcr.io/<owner>/10km. The image ships no agent harness: Claude Code's
-# and kiro-cli's licences don't allow redistributing them. The container installs
-# the one AGENT names on start (docker/install-agent.sh).
+# Publishes ghcr.io/<owner>/10km. Of the harnesses, the image ships only pi (MIT):
+# Claude Code's and kiro-cli's licences don't allow redistributing them. The
+# container installs the one AGENT names on start (docker/install-agent.sh).
 
 on:
   push:
     branches: [main]
     tags: ["v*"]
   schedule:
-    - cron: "17 4 * * 1"  # weekly, for Debian updates
+    - cron: "17 4 * * 1"  # weekly, for Debian and pi updates
   workflow_dispatch:
 
 permissions:
