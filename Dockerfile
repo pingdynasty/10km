@@ -12,11 +12,13 @@
 #     -v myloop-home:/home/monkey 10km
 FROM node:22-bookworm-slim
 
-# curl and unzip for the harness installers, libatomic1 for hermes's Node.
+# curl and unzip for the harness installers, libatomic1 for hermes's Node,
+# ripgrep and fd for the harnesses' searches (or pi downloads them).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      bash ca-certificates curl git jq libatomic1 procps python3 sqlite3 tini \
-      tzdata unzip util-linux \
+      bash ca-certificates curl fd-find git jq libatomic1 procps python3 ripgrep \
+      sqlite3 tini tzdata unzip util-linux \
+ && ln -s /usr/bin/fdfind /usr/local/bin/fd \
  && rm -rf /var/lib/apt/lists/*
 
 # pi system-wide, so a new image brings a new version.
