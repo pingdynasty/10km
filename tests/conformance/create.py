@@ -16,4 +16,5 @@ MAP = {
     "R341": [C + "test_writes_host_env_and_initialises", C + "test_without_an_agent_says_so",
              K + "test_install_agent_knows_the_presets_and_checks_names_first",
              K + "test_container_start_creates_the_loop_once"],
+    "R343": [C + "test_host_env_sets_up_a_shell"],
 }

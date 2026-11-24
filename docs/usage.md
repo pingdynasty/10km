@@ -15,6 +15,8 @@ checkout it runs from (yours, or your fork's):
   says how, and agents never push to either. From a shallow source, updates come
   from `origin`, after `git fetch --unshallow origin` once.
 - `host.env` gets the preset's agent commands (`claude`, `kiro`, `codex`), or none.
+  It also sets up your shell when you source it (`. <dir>/host.env`): `LOOP_ROOT`,
+  unless set, and the loop's `central/loop/bin` on `PATH`.
 - The database is created, so `10km status` and `10km doctor` work before kickoff.
 
 ## Kickoff
