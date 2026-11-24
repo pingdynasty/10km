@@ -19,7 +19,11 @@ env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/10km
 
 jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
   image:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
