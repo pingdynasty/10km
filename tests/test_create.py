@@ -1,4 +1,4 @@
-"""10km create (R339-R341)."""
+"""10km create (R339-R341, R343)."""
 import os
 import re
 import shutil
@@ -68,6 +68,27 @@ class TestCreate(CreateCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn("Loop: stopped", p.stdout)
         self.assertTrue(os.path.exists(os.path.join(root, ".10km", "loop.db")))
+
+    def test_host_env_sets_up_a_shell(self):  # R343
+        self.assertEqual(self.create("myloop").returncode, 0)
+        root = os.path.realpath(os.path.join(self.tmp, "myloop"))
+        host = os.path.join(root, "host.env")
+        bindir = os.path.join(root, "central", "loop", "bin")
+        script = ('unset LOOP_ROOT; LOOP_SESSION=s1; cd /; . "$1"; . "$1"; '
+                  'printf "%s\\n%s\\n%s\\n" "$LOOP_ROOT" "$PATH" "$LOOP_SESSION"')
+        shells = [s for s in ("bash", "zsh") if shutil.which(s)]
+        for sh in shells:
+            p = subprocess.run([sh, "-c", script, sh, host], env=self.env,
+                               capture_output=True, text=True)
+            self.assertEqual(p.returncode, 0, f"{sh}: {p.stderr}")
+            loop_root, path, session = p.stdout.splitlines()
+            self.assertEqual(os.path.realpath(loop_root), root, sh)
+            self.assertEqual([os.path.realpath(d) for d in path.split(":")].count(bindir), 1, sh)
+            self.assertEqual(session, "s1", sh)
+        p = subprocess.run(["bash", "-c", '. "$1"; printf "%s" "$LOOP_ROOT"', "bash", host],
+                           env=dict(self.env, LOOP_ROOT="/elsewhere"),
+                           capture_output=True, text=True)
+        self.assertEqual(p.stdout, "/elsewhere")
 
     def test_without_an_agent_says_so(self):  # R341
         p = self.create("myloop")

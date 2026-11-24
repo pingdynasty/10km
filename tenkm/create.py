@@ -6,8 +6,9 @@ It clones the checkout into <dir>/central/loop, on a branch of the loop's own
 (default: <dir>'s name), so main keeps following the source and updates can be
 merged from it. In the clone, `local` is the checkout and `origin` the
 checkout's origin, both fetched from and never pushed to. It writes <dir>/host.env,
-with a preset's agent commands if --agent names one, and runs init: `10km
-status` works at once, and kickoff comes next.
+with a preset's agent commands if --agent names one and the lines that let an
+operator's shell source it to get LOOP_ROOT and the loop's commands (R343), and
+runs init: `10km status` works at once, and kickoff comes next.
 """
 import os
 import subprocess
@@ -42,6 +43,16 @@ def host_env_text(dest, agent):
              "# Don't put keys here: agents can read this file.",
              "#",
              '# PATH="$HOME/tools/bin:$PATH"',
+             "",
+             "# For your shell: `. ./host.env` sets LOOP_ROOT and puts this loop's 10km and",
+             "# msm on PATH. 10km reads this file with LOOP_ROOT already set. Don't unset",
+             "# LOOP_SESSION here: agents' sessions read this file too.",
+             'LOOP_ROOT="${LOOP_ROOT-$(cd "$(dirname "${BASH_SOURCE[0]:-${(%):-%x}}")" && pwd)}"',
+             'case ":$PATH:" in',
+             '  *":$LOOP_ROOT/central/loop/bin:"*) ;;',
+             '  *) PATH="$LOOP_ROOT/central/loop/bin:$PATH" ;;',
+             "esac",
+             "export LOOP_ROOT PATH",
              ""]
     if agent:
         lines += presets.host_env_lines(agent)
@@ -97,7 +108,7 @@ def run(dest, agent=None, branch=None, source=CODE_ROOT, out=print):
         + (f"\n  origin: {origin} (fetch only)" if origin else ""))
     if not agent:
         out(f"  no agent commands yet: set them in {host}")
-    out(f"Next:\n  export LOOP_ROOT={dest} PATH={loop}/bin:$PATH\n  10km kickoff")
+    out(f"Next:\n  . {host}\n  10km kickoff")
     return loop
 
 

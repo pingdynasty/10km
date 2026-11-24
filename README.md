@@ -68,7 +68,7 @@ says otherwise). If `LOOP_ROOT` isn't set, the scripts guess it from where they 
 ```sh
 git clone <10km or your fork> ~/10km
 ~/10km/bin/10km create ~/myloop --agent claude   # or kiro, codex
-export LOOP_ROOT=~/myloop PATH=~/myloop/central/loop/bin:$PATH
+. ~/myloop/host.env               # LOOP_ROOT, and the loop's 10km and msm on PATH
 10km kickoff                     # set up the loop with your agent
 10km start                       # run the dispatcher every DISPATCH_INTERVAL seconds
 ```
@@ -76,7 +76,8 @@ export LOOP_ROOT=~/myloop PATH=~/myloop/central/loop/bin:$PATH
 `10km create` clones 10km into `central/loop` on a branch of the loop's own (`myloop`;
 `--branch` to choose), so the loop's changes stay off `main`, and 10km's updates can be
 merged from `origin` (where your 10km came from) or `local` (`~/10km`), both fetch
-only. It writes `host.env` with the agent's commands, and creates the database.
+only. It writes `host.env` with the agent's commands, and lines that set up your
+shell when you source it, and creates the database.
 
 `10km start` runs `run-loop` in the background; `10km pause`, `resume` and `stop`
 control the loop. Or call `10km dispatch` from cron or another scheduler instead.
