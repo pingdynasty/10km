@@ -146,10 +146,28 @@ class TestContainer(CreateCase):
         self.assertEqual(p.returncode, 1)  # before installing anything
         self.assertIn("unknown agent: nope", p.stderr)
 
+    def fake_harness(self, command):
+        """A fake harness on PATH, so install-agent has nothing to download."""
+        bindir = os.path.join(self.tmp, "fakebin")
+        os.makedirs(bindir, exist_ok=True)
+        path = os.path.join(bindir, command)
+        with open(path, "w") as f:
+            f.write("#!/bin/sh\n")
+        os.chmod(path, 0o755)
+        return dict(self.env, PATH=bindir + os.pathsep + self.env["PATH"])
+
+    def test_install_agent_leaves_an_installed_harness_alone(self):
+        script = os.path.join(CODE, "docker", "install-agent.sh")
+        env = dict(self.fake_harness("kiro-cli"), HOME=self.tmp)
+        p = subprocess.run(["bash", script, "kiro"], env=env, capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("kiro is installed", p.stdout)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, ".local")))
+
     def start_container(self, root):
         """Run container-start as the image does; wait for its run-loop; stop it."""
-        env = dict(self.env, TENKM_SOURCE=self.src, LOOP_ROOT=root, AGENTS="kiro claude",
-                   LOOP_NAME="myloop")
+        env = dict(self.fake_harness("kiro-cli"), TENKM_SOURCE=self.src, LOOP_ROOT=root,
+                   AGENT="kiro", LOOP_NAME="myloop")
         env.pop("LOOP_CONFIG")
         log = os.path.join(self.tmp, "container.log")
         with open(log, "w") as f:
@@ -166,11 +184,12 @@ class TestContainer(CreateCase):
         root = os.path.join(self.tmp, "home", "loop")
         os.makedirs(root)
         out = self.start_container(root)
+        self.assertIn("kiro is installed", out)
         self.assertIn("Created the loop", out)
         loop = os.path.join(root, "central", "loop")
         self.assertEqual(self.git(loop, "symbolic-ref", "--short", "HEAD"), "myloop")
         with open(os.path.join(root, "host.env")) as f:
-            self.assertIn(presets.command("kiro", "LOOP_AGENT"), f.read())  # AGENTS' first
+            self.assertIn(presets.command("kiro", "LOOP_AGENT"), f.read())
         self.assertNotIn("Created the loop", self.start_container(root))
 
 

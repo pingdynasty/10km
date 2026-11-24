@@ -29,30 +29,30 @@ can use any harness or coding agent, with cloud or local models.
 ## Run it in a container
 
 The recommended way to run 10km is in a container or secure sandbox: unprivileged
-user, no exposed ports, and only the directories you mount. Network egress control is
-a good idea.
+user, no exposed ports, and only the directories you mount. Make sure to also have 
+network egress controls in place.
 
 ```sh
-docker build --build-arg AGENTS="claude kiro" -t 10km .   # harnesses: claude, kiro, codex
 docker run -d --name myloop -e AGENT=claude -e LOOP_NAME=myloop \
-  -v myloop-home:/home/monkey 10km
+  -v myloop-home:/home/monkey ghcr.io/pingdynasty/10km    # AGENT: claude, kiro, codex, pi, hermes
 docker exec -it myloop claude                              # log in once
 docker exec -it myloop 10km kickoff
 ```
 
-The volume `myloop-home` holds everything: the loop (`/home/monkey/loop`: worktrees,
-database, logs, `host.env`) and the harnesses' logins, so a new container on the same
-volume carries on. Add `-v "$PWD/central:/home/monkey/loop/central"` to see and edit
-the central worktrees on the host (on Linux the directory must be writable by uid 1000).
+The image comes with pi; on start the container installs any other `AGENT` harness
+with its vendor's installer, if it isn't installed yet. On first start it creates the
+loop on branch `LOOP_NAME` (default `loop`), and runs it. Log in with the harness's own
+command: `claude` or `pi` then `/login`, `kiro-cli login --use-device-flow`,
+`codex login` or `hermes model`. Keys passed with `-e` are visible to the agents.
 
-On first start the container runs `10km create` from its copy of 10km, with `AGENT`'s
-agent commands (default: the first of `AGENTS`) and the branch `LOOP_NAME` (default
-`loop`), then runs `run-loop`. The loop's `local` remote is the image's 10km, so after
-a new image, `local/main` has its updates.
+The volume holds the loop, the harness and its login, so a new container (or image) on
+it carries on; the new image's 10km is on the loop's `local` remote, to merge when you
+like. To see the central worktrees on the host, add
+`-v "$PWD/central:/home/monkey/loop/central"` (on Linux, writable by uid 1000). Use
+`10km pause` rather than `stop`, which ends the container.
 
-Log in with the harness's own command, in the container: `claude` (then `/login`; or
-`claude setup-token` and pass `-e CLAUDE_CODE_OAUTH_TOKEN`), or
-`kiro-cli login --use-device-flow`. Keys passed with `-e` are visible to the agents.
+To run your fork, build its image with `docker build -t 10km .` and run `10km`
+instead.
 
 ## Run it on a host
 
